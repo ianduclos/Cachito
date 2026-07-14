@@ -7,7 +7,7 @@ import { installOnlineRooms } from "../dev/onlineRooms";
 const development = process.argv.includes("--dev");
 const root = resolve(import.meta.dirname, "..");
 const assets = resolve(root, "dist");
-const contentTypes: Record<string, string> = { ".css": "text/css", ".html": "text/html", ".js": "text/javascript", ".svg": "image/svg+xml", ".json": "application/json", ".png": "image/png" };
+const contentTypes: Record<string, string> = { ".css": "text/css", ".html": "text/html", ".js": "text/javascript", ".svg": "image/svg+xml", ".json": "application/json", ".png": "image/png", ".wav": "audio/wav" };
 let vite: ViteDevServer | undefined;
 
 const httpServer = createServer((request, response) => {

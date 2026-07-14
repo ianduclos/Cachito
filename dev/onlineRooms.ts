@@ -25,16 +25,24 @@ const botNames = [
   "Min-chi Park",
   "Henry Sarria",
   "Fogey Baxter",
+  "Poeta Dalmacia",
+  "Balú Johnson",
+  "McDonald Lewis",
+  "Luciano Torres",
 ];
 const logBucket = process.env.MATCH_LOG_BUCKET;
 const storage = logBucket ? new Storage() : undefined;
 const GAME_IDLE_MS = 20 * 60_000;
 const LOBBY_IDLE_MS = 60 * 60_000;
-const TURN_LIMIT_MS = 2 * 60_000;
+const TURN_LIMIT_MS = 90_000;
 const ROUND_ADVANCE_MS = 60_000;
 const SHUFFLE_LIMIT_MS = 60_000;
-const BOT_DELAY_MIN_MS = 4_000;
-const BOT_DELAY_SPREAD_MS = 2_000;
+const BOT_TURN_DELAY_MIN_MS = 6_000;
+const BOT_TURN_DELAY_SPREAD_MS = 2_000;
+const BOT_SHAKE_DELAY_MIN_MS = 2_000;
+const BOT_SHAKE_DELAY_SPREAD_MS = 1_000;
+const BOT_NEXT_ROUND_DELAY_MIN_MS = 4_000;
+const BOT_NEXT_ROUND_DELAY_SPREAD_MS = 2_000;
 
 function code() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -102,8 +110,12 @@ function scheduleTurn(room: Room) {
   if (!room.game || room.game.phase !== "playing" || !everyoneShuffled(room)) return;
   const actor = room.players.find((candidate) => candidate.id === room.game?.currentPlayerId);
   if (!actor) return;
-  const delay = actor.isBot ? 900 : TURN_LIMIT_MS;
-  room.turnDeadlineAt = Date.now() + delay;
+  // Bots get the same visible clock as humans. Their actual choice is made earlier,
+  // after a natural thinking pause, rather than shortening the public timer.
+  const delay = actor.isBot
+    ? BOT_TURN_DELAY_MIN_MS + Math.floor(Math.random() * BOT_TURN_DELAY_SPREAD_MS)
+    : TURN_LIMIT_MS;
+  room.turnDeadlineAt = Date.now() + TURN_LIMIT_MS;
   publish(room);
   room.turnTimer = setTimeout(() => {
     room.turnTimer = undefined;
@@ -155,7 +167,7 @@ function startRoundShuffle(room: Room) {
       void persistRoomSnapshot(room);
       publish(room);
       scheduleTurn(room);
-    }, BOT_DELAY_MIN_MS + Math.floor(Math.random() * BOT_DELAY_SPREAD_MS));
+    }, BOT_SHAKE_DELAY_MIN_MS + Math.floor(Math.random() * BOT_SHAKE_DELAY_SPREAD_MS));
     room.botShuffleTimers.push(timer);
   }
 }
@@ -177,6 +189,9 @@ function beginNextRound(room: Room) {
 }
 function startNextRoundVote(room: Room) {
   if (!room.game || room.game.phase !== "reveal") return;
+  if (room.turnTimer) clearTimeout(room.turnTimer);
+  room.turnTimer = undefined;
+  room.turnDeadlineAt = undefined;
   if (room.nextRoundTimer) clearTimeout(room.nextRoundTimer);
   for (const timer of room.botNextRoundTimers ?? []) clearTimeout(timer);
   room.botNextRoundTimers = [];
@@ -191,7 +206,7 @@ function startNextRoundVote(room: Room) {
       room.announcement = { text: `${bot.name} is ready for the next round.`, playerId: bot.id };
       if (everyoneReadyForNextRound(room)) beginNextRound(room);
       else publish(room);
-    }, BOT_DELAY_MIN_MS + Math.floor(Math.random() * BOT_DELAY_SPREAD_MS));
+    }, BOT_NEXT_ROUND_DELAY_MIN_MS + Math.floor(Math.random() * BOT_NEXT_ROUND_DELAY_SPREAD_MS));
     room.botNextRoundTimers.push(timer);
   }
 }

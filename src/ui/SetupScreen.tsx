@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { release } from "../release";
+import { GameSettings } from "./GameSettings";
 
 type Props = {
   onStart: (seats: LocalSeatSetup[]) => void;
@@ -18,6 +19,7 @@ export function SetupScreen({ onStart, onOpenOnline }: Props) {
   if (screen === "home") return (
     <main className="setup-shell">
       <section className="setup-card start-card">
+        <GameSettings />
         <div className="brand-mark" aria-hidden="true"><span>●</span><span>●</span></div>
         <h1>Cachito</h1>
         {onOpenOnline ? <button className="button button--primary start-online-button" type="button" onClick={onOpenOnline}>Play online</button> : <p className="rules-note">Rooms are being set up.</p>}
@@ -29,6 +31,7 @@ export function SetupScreen({ onStart, onOpenOnline }: Props) {
   return (
     <main className="setup-shell">
       <section className="setup-card">
+        <GameSettings />
         <button className="button button--ghost back-button" type="button" onClick={() => setScreen("home")}>← Back</button>
         <h1>Local game</h1>
         <p className="intro">Set up the people and bots sharing this device.</p>

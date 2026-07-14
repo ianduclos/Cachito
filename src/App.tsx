@@ -31,6 +31,7 @@ import {
 } from "./analytics";
 import { DiceRow, Die as DieFace } from "./ui/Dice";
 import { SetupScreen, type LocalSeatSetup } from "./ui/SetupScreen";
+import { playSound, useGenericButtonSounds } from "./ui/sound";
 import { OnlineGame } from "./online/OnlineGame";
 import "./styles.css";
 
@@ -43,7 +44,8 @@ const denominationNames: Record<Die, string> = {
 };
 
 const botPolicy = createProbabilityPolicy();
-export const BOT_TURN_DELAY_MS = 800;
+export const BOT_TURN_DELAY_MIN_MS = 6_000;
+export const BOT_TURN_DELAY_SPREAD_MS = 2_000;
 
 function playerName(view: PublicGameView, id: string | null | undefined) {
   return view.players.find((player) => player.id === id)?.name ?? "Unknown player";
@@ -80,7 +82,45 @@ export default function App() {
   const backgroundSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const backgroundSaveSequenceRef = useRef(0);
   const pendingBotTurnRef = useRef<string | null>(null);
-  const onlineEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_ONLINE === "true";
+  const lastTurnRef = useRef<string | null>(null);
+  const lastResolvedRoundRef = useRef<string | null>(null);
+  const lastWinnerRef = useRef<string | null>(null);
+  // Firebase Hosting publishes the prebuilt static bundle, so rooms stay enabled
+  // unless a deployment deliberately turns them off.
+  const onlineEnabled = import.meta.env.VITE_ENABLE_ONLINE !== "false";
+  useGenericButtonSounds();
+
+  useEffect(() => {
+    if (!game || game.phase !== "playing") {
+      lastTurnRef.current = null;
+      return;
+    }
+    const turn = `${game.round}:${game.currentPlayerId}`;
+    if (lastTurnRef.current !== turn) {
+      playSound("turnPass");
+      lastTurnRef.current = turn;
+    }
+  }, [game]);
+
+  useEffect(() => {
+    if (!game || game.phase !== "gameOver" || lastWinnerRef.current === game.winnerId) return;
+    lastWinnerRef.current = game.winnerId;
+    playSound("winner");
+  }, [game]);
+
+  useEffect(() => {
+    if (!game || game.phase !== "reveal") return;
+    const resolution = game.resolution;
+    const round = `${game.round}:${resolution.kind}:${resolution.callerId}`;
+    if (lastResolvedRoundRef.current === round) return;
+    lastResolvedRoundRef.current = round;
+    playSound("suspense");
+    const resultTimer = window.setTimeout(() => {
+      playSound(resolution.correct ? "rightGuess" : "wrongGuess");
+      if (resolution.diceChanges.some((change) => change.after === 0)) playSound("dead");
+    }, 1_100);
+    return () => window.clearTimeout(resultTimer);
+  }, [game]);
 
   const addLog = useCallback((text: string) => {
     setLogs((current) => [{ id: (current[0]?.id ?? -1) + 1, text }, ...current]);
@@ -191,7 +231,7 @@ export default function App() {
       } finally {
         pendingBotTurnRef.current = null;
       }
-    }, BOT_TURN_DELAY_MS);
+    }, BOT_TURN_DELAY_MIN_MS + Math.floor(Math.random() * BOT_TURN_DELAY_SPREAD_MS));
 
     return () => {
       window.clearTimeout(timer);
@@ -306,6 +346,7 @@ export default function App() {
               ? <Reveal view={view} spectator={spectating} onNext={() => {
                   const resolution = view.resolution;
                   const nextName = playerName(view, resolution?.nextStarterId);
+                  playSound("nextRound");
                   act({ type: "nextRound" }, `A new round begins with ${nextName}.`);
                 }} />
               : <PlayingTable
@@ -422,9 +463,9 @@ function PlayingTable({ game, view, viewMode, botTurn, handRevealed, error, onBi
             <div>
               <label className="field-label" htmlFor="bid-quantity">Quantity</label>
               <div className="stepper">
-                <button onClick={() => setQuantity((value) => Math.max(1, value - 1))} disabled={quantity <= 1} aria-label="Decrease quantity">−</button>
+                <button data-sound="number" onClick={() => { playSound("numDown"); setQuantity((value) => Math.max(1, value - 1)); }} disabled={quantity <= 1} aria-label="Decrease quantity">−</button>
                 <span id="bid-quantity">{quantity}</span>
-                <button onClick={() => setQuantity((value) => Math.min(maxQuantity, value + 1))} disabled={quantity >= maxQuantity} aria-label="Increase quantity">+</button>
+                <button data-sound="number" onClick={() => { playSound("numUp"); setQuantity((value) => Math.min(maxQuantity, value + 1)); }} disabled={quantity >= maxQuantity} aria-label="Increase quantity">+</button>
               </div>
             </div>
             <div>
@@ -435,7 +476,8 @@ function PlayingTable({ game, view, viewMode, botTurn, handRevealed, error, onBi
                     className="denom-button"
                     key={value}
                     aria-pressed={denomination === value}
-                    onClick={() => setDenomination(value)}
+                    data-sound="denomination"
+                    onClick={() => { playSound("denomination"); setDenomination(value); }}
                     disabled={!legal.bids.some((bid) => bid.quantity === quantity && bid.denomination === value)}
                     aria-label={`Choose ${denominationNames[value]}`}
                   ><span>{value}</span><small>{denominationNames[value]}</small></button>
@@ -446,7 +488,7 @@ function PlayingTable({ game, view, viewMode, botTurn, handRevealed, error, onBi
           <div className="action-row">
             <button className="challenge-button challenge-button--dudo" onClick={onDudo} disabled={!legal.canDudo}>Dudo</button>
             <button className="challenge-button challenge-button--calzo" onClick={onCalzo} disabled={!legal.canCalzo}>Calzo</button>
-            <button className="button button--primary" onClick={() => onBid({ quantity, denomination })} disabled={!chosenLegal}>Raise bid</button>
+            <button className="button button--primary" onClick={() => onBid({ quantity, denomination })} disabled={!chosenLegal}>{view.currentBid ? "Raise bid" : "Make bid"}</button>
           </div>
           {error && <p className="form-error" role="alert">{error}</p>}
         </section>
