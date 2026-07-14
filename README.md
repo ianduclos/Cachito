@@ -18,7 +18,27 @@ The initial app targets:
 - deterministic, testable engine behavior; and
 - a clean boundary between rules, presentation, and future networking.
 
-The local app includes a playable probability bot and an experimental parameter-learning lab. An initial realtime room mode supports private room codes, player reconnect tokens, and normal spectators during local development; it is not enabled in the static Firebase Hosting build until the room service is moved to Firebase-backed infrastructure. Accounts, matchmaking, durable server persistence, and neural policies are not implemented.
+The local app includes a playable probability bot and an experimental parameter-learning lab. Realtime room play is live at `https://cachito.ianduclos.com`: it uses Firebase Hosting for the browser app and a server-authoritative Cloud Run service for rooms. Accounts, matchmaking, and durable relational persistence are not implemented.
+
+## Maintainer handoff — production reminders
+
+Read this before changing or deploying online play.
+
+- **Bump the visible release marker** in `src/release.ts` for every production interface release. It is deliberately subtle on the opening screen and is the quickest way to confirm that a visitor has the current build.
+- **Run all checks before publishing:** `npm run build && npm test && npm run lint`.
+- **Deploy the server first** when changing `dev/onlineRooms.ts`, `src/online/protocol.ts`, or engine behavior used online. The room service is Cloud Run service `cachito-rooms` in project `ian-duclos`, region `europe-west4`. Wait until its new revision receives traffic before deploying the browser.
+- **Build the browser with the production room endpoint**, then deploy Firebase Hosting:
+
+  ```sh
+  VITE_ENABLE_ONLINE=true VITE_ONLINE_ENDPOINT=https://cachito-rooms-ribcxidnzq-ez.a.run.app npm run build
+  firebase deploy --only hosting --project ian-duclos
+  ```
+
+- **Do not weaken the no-cache header** in `firebase.json`. `Cache-Control: no-store, max-age=0` is intentional: it prevents old game clients being left behind after a release. Verify it, and the live favicon, with `curl -I https://cachito.ianduclos.com/` after deployment.
+- **Keep the room server authoritative.** Never send an opponent's live hand, an admin view, or a bot's private observation to any browser. Generate `projectForPlayer` / `projectForSpectator` views on the server.
+- **Current online pacing is intentional:** two minutes per turn; a reveal advances once all active players select **Next round**, or automatically after one minute; unshaken cups auto-shake after another minute. Bots wait a randomized 4–6 seconds before shuffle and next-round readiness.
+- **Keep private match data private.** Production room snapshots go to the `ian-duclos-cachito-bot-logs` bucket; do not expose that bucket through Hosting or browser APIs. Local `logs/*.json` remains ignored by Git.
+- **Favicon source:** `public/favicon.png`. Replace that file when changing the browser icon.
 
 ## Run locally
 
@@ -78,7 +98,7 @@ The public table is also the local normal spectator view. Normal spectators can 
 
 Bot seats obey the same privacy boundary. Their live hands are hidden in Player and normal Spectator modes and are visible only in Admin testing mode. A bot takes its turn automatically after a short delay; consecutive bot bids continue without a human handoff. Dudo and Calzo still stop on the public reveal screen so a user can inspect the result and explicitly start the next round.
 
-Each UI bot turn has an explicit 800 ms thinking delay. This delay is presentation-only: headless matches and later training runs execute without waiting.
+Each UI bot turn has a 6–8 second thinking delay. This delay is presentation-only: headless matches and later training runs execute without waiting.
 
 ## Game logs
 
@@ -165,8 +185,8 @@ The first 3,000-game learning experiment found a well-calibrated 2/4-player spec
 - Server-authoritative private rooms and room codes are available through **Play online**.
 - Connections are bound to a player or normal-spectator identity; the local admin view is not exposed online.
 - The server validates every action and sends each connection a separately sanitized projection.
-- Lobbies, host-only start, basic reconnect tokens, eliminated players, and normal spectators are supported. Inactive-turn handling, room expiry/cleanup, persistence, accounts, and deployment observability remain to be added.
-- Add deployment observability before treating the online mode as reliable.
+- Lobbies, host-only start, reconnect tokens, eliminated-player spectating, normal spectators, host bot management, and host kick controls are supported. Rooms expire after 20 minutes of in-game inactivity or one hour in the lobby; private snapshots are retained for bot analysis.
+- The production service is intentionally small and in-memory. Deployments should verify the Cloud Run revision, Firebase Hosting release, and the custom-domain no-cache response before inviting players.
 
 An early networking proof of concept should connect two player windows and one normal spectator window, then verify each view against the current round's privacy rules. Admin testing access must use a separate authorized path and remain disabled in production.
 
