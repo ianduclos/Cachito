@@ -1,12 +1,12 @@
 # Cachito
 
-Cachito is an implementation of the hidden-dice game also known as Dudo, Liar's Dice, or Perudo. The first milestone is a tested rules engine and a 2–6 player pass-and-play interface. The engine and privacy boundaries will also support machine players and realtime online rooms.
+Cachito is a browser implementation of the hidden-dice game also known as Dudo, Liar's Dice, or Perudo. It supports 2–6 player local games and live, server-authoritative private online rooms.
 
 See [RULES.md](./RULES.md) for the game rules, denomination names, bid examples, Palo Fijo behavior, and privacy rules. See [MACHINE_PLAYER.md](./MACHINE_PLAYER.md) for the staged bot plan.
 
 ## Current scope
 
-The initial app targets:
+The current app includes:
 
 - 2–6 local players, each starting with five dice;
 - a Human/Bot switch for every seat during setup, allowing mixed or all-bot local games;
@@ -14,11 +14,24 @@ The initial app targets:
 - private per-player hands on a shared device;
 - a non-interactive normal spectator/public-table view and a clearly labeled admin testing view;
 - downloadable, versioned JSON game logs with bot decision diagnostics;
+- live private rooms with room codes, lobbies, reconnects, normal spectators, host bot management, and host kick controls;
+- 90-second visible online turns, automatic round-shake and next-round fallbacks, and paced bot actions;
+- sound effects, looping theme music, music/effects volume controls, and reduced-motion settings;
 - a live, worker-backed adversarial learning dashboard with evolutionary progress, rankings, and exportable results;
 - deterministic, testable engine behavior; and
 - a clean boundary between rules, presentation, and future networking.
 
-The local app includes a playable probability bot and an experimental parameter-learning lab. Realtime room play is live at `https://cachito.ianduclos.com`: it uses Firebase Hosting for the browser app and a server-authoritative Cloud Run service for rooms. Accounts, matchmaking, and durable relational persistence are not implemented.
+The local app includes a playable probability bot and an experimental parameter-learning lab. Realtime room play is live at [cachito.ianduclos.com](https://cachito.ianduclos.com): it uses Firebase Hosting for the browser app and a server-authoritative Cloud Run service for rooms. Accounts, public matchmaking, and durable relational persistence are not implemented.
+
+## Live online play
+
+1. Choose **Play online**, then create a room, join a room code, or watch a room as a spectator.
+2. The host can add bots, remove bots, or remove players while still in the lobby. Two or more players are required to start.
+3. Every active player shakes at the beginning of a round. Humans have one minute to do so; bots shake after 2–3 seconds. Eliminated players skip this step and spectate.
+4. Once all active cups are ready, every turn shows the same 90-second timer. Bots act after a 6–8 second thinking pause, not a shortened timer.
+5. The first action of a round is a **Make bid**; later bids are **Raise bid**. Dudo and Calzo resolve the round, reveal hands, and let active players select **Next round**. The room advances when all active players are ready or after one minute.
+
+The final-ten-seconds clock cue stops immediately when a move resolves. Theme music ducks for longer effects, and the settings menu controls music and effects separately. A reconnect token stored in the browser restores an existing player after a brief connection loss when the room is still active.
 
 ## Maintainer handoff — production reminders
 
@@ -36,7 +49,7 @@ Read this before changing or deploying online play.
 
 - **Do not weaken the no-cache header** in `firebase.json`. `Cache-Control: no-store, max-age=0` is intentional: it prevents old game clients being left behind after a release. Verify it, and the live favicon, with `curl -I https://cachito.ianduclos.com/` after deployment.
 - **Keep the room server authoritative.** Never send an opponent's live hand, an admin view, or a bot's private observation to any browser. Generate `projectForPlayer` / `projectForSpectator` views on the server.
-- **Current online pacing is intentional:** 90 seconds per turn; a reveal advances once all active players select **Next round**, or automatically after one minute; unshaken cups auto-shake after another minute. Bots shake after 2–3 seconds, decide a turn after 6–8 seconds, and wait 4–6 seconds before next-round readiness.
+- **Current online pacing is intentional:** 90 seconds per turn; a reveal advances once all active players select **Next round**, or automatically after one minute; unshaken cups auto-shake after another minute. Bots shake after 2–3 seconds, decide a turn after 6–8 seconds, and wait 4–6 seconds before next-round readiness. The final-ten-seconds clock cue must stop when a move resolves.
 - **Keep private match data private.** Production room snapshots go to the `ian-duclos-cachito-bot-logs` bucket; do not expose that bucket through Hosting or browser APIs. Local `logs/*.json` remains ignored by Git.
 - **Favicon source:** `public/favicon.png`. Replace that file when changing the browser icon.
 
@@ -182,19 +195,13 @@ The first 3,000-game learning experiment found a well-calibrated 2/4-player spec
 
 ### 4. Realtime multiplayer
 
-- Server-authoritative private rooms and room codes are available through **Play online**.
-- Connections are bound to a player or normal-spectator identity; the local admin view is not exposed online.
-- The server validates every action and sends each connection a separately sanitized projection.
-- Lobbies, host-only start, reconnect tokens, eliminated-player spectating, normal spectators, host bot management, and host kick controls are supported. Rooms expire after 20 minutes of in-game inactivity or one hour in the lobby; private snapshots are retained for bot analysis.
-- The production service is intentionally small and in-memory. Deployments should verify the Cloud Run revision, Firebase Hosting release, and the custom-domain no-cache response before inviting players.
-
-An early networking proof of concept should connect two player windows and one normal spectator window, then verify each view against the current round's privacy rules. Admin testing access must use a separate authorized path and remain disabled in production.
+Realtime multiplayer is live through **Play online**. The server validates every action and sends each player or spectator a separately sanitized projection; the local admin view is never exposed online. The production service remains intentionally small and in-memory, so deployments must verify the Cloud Run revision, Firebase Hosting release, and the custom-domain no-cache response before inviting players.
 
 ### 5. Later possibilities
 
 - Configurable house rules.
 - Private invitations and public matchmaking.
 - Additional bot personalities and difficulty levels.
-- Match history, accounts, rankings, cosmetics, sound, and animation.
+- Match history, accounts, rankings, cosmetics, and additional game modes.
 
 These features should follow a reliable engine and privacy-safe online architecture rather than shape the first implementation.

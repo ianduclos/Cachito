@@ -30,11 +30,11 @@ A bid is a quantity and a denomination: for example, “four Chinas” predicts 
 
 On a player's turn, they must take one legal action:
 
-1. Make a higher bid.
+1. Make the opening bid, if the round has no bid yet, or make a higher bid otherwise.
 2. Call **Dudo** against the previous bid.
 3. Call **Calzo** on the previous bid.
 
-Dudo and Calzo require an existing bid. The player whose turn it is is the only player who may act.
+Dudo and Calzo require an existing bid. The player whose turn it is is the only player who may act. An opening bid may use any denomination and any quantity from one through the total number of active dice.
 
 ### Normal-to-normal bids
 
@@ -66,7 +66,7 @@ Examples:
 - Three Aces → seven Dones is legal: `(3 × 2) + 1 = 7`.
 - Three Aces → six Sambas is illegal.
 
-The ceiling rule is the agreed rule for the first release. Bid conversion formulas may become configurable variants later.
+The ceiling rule is the authoritative legality rule. The interface may suggest a more conservative starting value when changing to Aces, but a player can still choose any legal bid. Bid conversion formulas may become configurable variants later.
 
 ## Counting dice
 
@@ -146,6 +146,21 @@ The engine owns the complete state, including every hand, but consumers receive 
 - A future server must build player and normal spectator views server-side. It must never send the full live state to an ordinary browser and rely on the interface to hide other hands. Any admin testing access must be explicitly authorized and excluded from production play.
 
 For local pass-and-play, the shared table screen doubles as the normal spectator/public view. A privacy handoff screen must hide the previous player's dice before the device changes hands. In a normal round, the active player explicitly reveals their own hand, takes an action, then hides it again. In Palo Fijo, this reveal control is available only to a player holding one die; other active players act from the public table without seeing their hand.
+
+## Online room flow
+
+The live online table uses the same engine rules above. The following points describe the current room experience rather than additional house rules:
+
+- A host creates a five-character room code, can add or remove bots before the match starts, and can remove other players from the lobby. Players can also join as normal spectators.
+- At the start of each round, every active player shakes their cup. Eliminated players do not shake again and go directly to spectating. A cup that has not been shaken is accepted automatically after one minute.
+- Once all active cups are ready, the current player receives a visible 90-second turn timer. Bots see the same timer, but normally shake after 2–3 seconds and decide their move after 6–8 seconds.
+- The clock cue plays only for the final ten seconds of a turn and stops as soon as a move resolves. It does not change the rules or shorten a bot's visible timer.
+- The current bid and its bidder remain visible for the whole round. The first player is prompted to **Make bid**; later players are prompted to **Raise bid**.
+- A Dudo or Calzo reveals every hand. The result screen identifies the caller, bidder, bid, actual qualifying count, and dice change. Dudo starts red and Calzo yellow before the result; a correct call turns green.
+- Active players select **Next round** after the reveal. The next round begins when everyone active is ready, or after one minute. Bots mark ready after 4–6 seconds.
+- A browser stores a reconnect token locally so an existing player can rejoin an in-memory room after a brief connection loss. Rooms expire after 20 minutes without game activity or one hour in the lobby.
+
+Online rooms are server-authoritative: the browser receives only its permitted player or spectator view. Private hands, the full engine state, and bot observations remain on the server.
 
 ## Future configurable variants
 
