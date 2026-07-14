@@ -1,4 +1,6 @@
 import type { IncomingMessage } from "node:http";
+import { createHmac, randomUUID } from "node:crypto";
+import { isIP } from "node:net";
 import { WebSocketServer, type WebSocket } from "ws";
 import { Storage } from "@google-cloud/storage";
 import { applyAction, createGame, getLegalActions, projectForPlayer, projectForSpectator, type GameAction, type GameState, type PlayerSetup } from "../src/engine";
@@ -8,8 +10,11 @@ import type { OnlineClientMessage, OnlineServerMessage } from "../src/online/pro
 type RoomPlayer = { id: string; name: string; isBot: boolean; token?: string; socket?: WebSocket };
 type RoomEvent = { type: "round-start" } | { type: "shuffle-dice" };
 type Spectator = { socket: WebSocket; queuedPlayer?: RoomPlayer };
-type Room = { code: string; hostPlayerId: string; players: RoomPlayer[]; spectators: Map<WebSocket, Spectator>; game?: GameState; history: string[]; announcement?: { text: string; playerId?: string }; shuffleReadyPlayerIds?: Set<string>; nextRoundReadyPlayerIds?: Set<string>; nextRoundDeadlineAt?: number; actions: Array<{ at: string; playerId?: string; action: GameAction | RoomEvent }>; startedAt?: string; lastActivityAt: number; nextGameStarterId?: string; turnDeadlineAt?: number; turnTimer?: ReturnType<typeof setTimeout>; shuffleTimer?: ReturnType<typeof setTimeout>; nextRoundTimer?: ReturnType<typeof setTimeout>; botShuffleTimers?: Array<ReturnType<typeof setTimeout>>; botNextRoundTimers?: Array<ReturnType<typeof setTimeout>> };
+type ConnectionContext = { connectionId: string; ipHash: string | null; ipVersion: "ipv4" | "ipv6" | "unknown"; forwardedForCount: number; userAgentHash: string | null; origin?: string; language?: string; protocol?: string; hashConfigured: boolean };
+type ConnectionEvent = ConnectionContext & { at: string; event: "room-created" | "player-joined" | "player-reconnected" | "player-queued" | "spectator-joined" | "disconnected"; role: "player" | "spectator"; playerId?: string };
+type Room = { code: string; hostPlayerId: string; players: RoomPlayer[]; spectators: Map<WebSocket, Spectator>; connectionEvents: ConnectionEvent[]; game?: GameState; history: string[]; announcement?: { text: string; playerId?: string }; shuffleReadyPlayerIds?: Set<string>; nextRoundReadyPlayerIds?: Set<string>; nextRoundDeadlineAt?: number; actions: Array<{ at: string; playerId?: string; action: GameAction | RoomEvent }>; startedAt?: string; lastActivityAt: number; nextGameStarterId?: string; turnDeadlineAt?: number; turnTimer?: ReturnType<typeof setTimeout>; shuffleTimer?: ReturnType<typeof setTimeout>; nextRoundTimer?: ReturnType<typeof setTimeout>; botShuffleTimers?: Array<ReturnType<typeof setTimeout>>; botNextRoundTimers?: Array<ReturnType<typeof setTimeout>> };
 const rooms = new Map<string, Room>();
+const connectionContexts = new WeakMap<WebSocket, ConnectionContext>();
 const botPolicy = createProbabilityPolicy();
 const botNames = [
   "Khaleesi",
@@ -43,6 +48,7 @@ const BOT_SHAKE_DELAY_MIN_MS = 2_000;
 const BOT_SHAKE_DELAY_SPREAD_MS = 1_000;
 const BOT_NEXT_ROUND_DELAY_MIN_MS = 4_000;
 const BOT_NEXT_ROUND_DELAY_SPREAD_MS = 2_000;
+const ipHashSalt = process.env.IP_HASH_SALT;
 
 function code() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -53,6 +59,26 @@ function code() {
 }
 function token() { return crypto.randomUUID(); }
 function touch(room: Room) { room.lastActivityAt = Date.now(); }
+function headerValue(value: string | string[] | undefined) { return Array.isArray(value) ? value.join(",") : value; }
+function createConnectionContext(request: IncomingMessage): ConnectionContext {
+  const forwardedFor = (headerValue(request.headers["x-forwarded-for"]) ?? "").split(",").map((value) => value.trim()).filter(Boolean);
+  const ip = (forwardedFor[0] ?? request.socket.remoteAddress ?? "").replace(/^::ffff:/, "");
+  const userAgent = headerValue(request.headers["user-agent"]);
+  const hash = (value: string) => ipHashSalt ? createHmac("sha256", ipHashSalt).update(value).digest("base64url") : null;
+  const version = isIP(ip);
+  return {
+    connectionId: randomUUID(), ipHash: ip ? hash(`ip:v1:${ip}`) : null,
+    ipVersion: version === 4 ? "ipv4" : version === 6 ? "ipv6" : "unknown", forwardedForCount: forwardedFor.length,
+    userAgentHash: userAgent ? hash(`user-agent:v1:${userAgent}`) : null,
+    ...(headerValue(request.headers.origin) ? { origin: headerValue(request.headers.origin) } : {}),
+    ...(headerValue(request.headers["accept-language"]) ? { language: headerValue(request.headers["accept-language"])!.split(",")[0] } : {}),
+    ...(headerValue(request.headers["x-forwarded-proto"]) ? { protocol: headerValue(request.headers["x-forwarded-proto"]) } : {}), hashConfigured: Boolean(ipHashSalt),
+  };
+}
+function recordConnection(room: Room, socket: WebSocket, event: ConnectionEvent["event"], role: ConnectionEvent["role"], playerId?: string) {
+  const context = connectionContexts.get(socket) ?? { connectionId: "unknown", ipHash: null, ipVersion: "unknown" as const, forwardedForCount: 0, userAgentHash: null, hashConfigured: false };
+  room.connectionEvents.push({ at: new Date().toISOString(), event, role, ...context, ...(playerId ? { playerId } : {}) });
+}
 function nextBotName(room: Room) {
   const unused = botNames.filter((name) => !room.players.some((player) => player.name === name));
   return unused[Math.floor(Math.random() * unused.length)] ?? `Bot ${room.players.filter((player) => player.isBot).length + 1}`;
@@ -234,9 +260,10 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
   const wss = new WebSocketServer({ noServer: true });
   httpServer.on("upgrade", (request: IncomingMessage, socket, head) => {
     if (new URL(request.url ?? "/", "http://localhost").pathname !== "/online") return;
-    wss.handleUpgrade(request, socket, head, (websocket) => wss.emit("connection", websocket));
+    wss.handleUpgrade(request, socket, head, (websocket) => wss.emit("connection", websocket, request));
   });
-  wss.on("connection", (socket) => {
+  wss.on("connection", (socket, request: IncomingMessage) => {
+    connectionContexts.set(socket, createConnectionContext(request));
     let room: Room | undefined;
     let player: RoomPlayer | undefined;
     let spectator = false;
@@ -249,16 +276,17 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           if (!name) throw new Error("Enter your name first.");
           const id = `player-${crypto.randomUUID()}`;
           player = { id, name, isBot: false, token: token(), socket };
-          room = { code: code(), hostPlayerId: id, players: [player], spectators: new Map(), history: [], actions: [], lastActivityAt: Date.now() };
+          room = { code: code(), hostPlayerId: id, players: [player], spectators: new Map(), connectionEvents: [], history: [], actions: [], lastActivityAt: Date.now() };
+          recordConnection(room, socket, "room-created", "player", id);
           rooms.set(room.code, room);
           send(socket, { type: "joined", roomCode: room.code, playerId: id, reconnectToken: player.token, hostPlayerId: id }); publish(room);
         } else if (message.type === "join-room") {
           room = rooms.get(message.roomCode.trim().toUpperCase());
           if (!room) throw new Error("That room does not exist.");
-          if (message.spectator) { spectator = true; room.spectators.set(socket, { socket }); send(socket, { type: "joined", roomCode: room.code, hostPlayerId: room.hostPlayerId }); }
+          if (message.spectator) { spectator = true; room.spectators.set(socket, { socket }); recordConnection(room, socket, "spectator-joined", "spectator"); send(socket, { type: "joined", roomCode: room.code, hostPlayerId: room.hostPlayerId }); }
           else {
             const prior = room.players.find((entry) => !entry.isBot && entry.token === message.reconnectToken);
-            if (prior) { if (prior.socket) prior.socket.close(); prior.socket = socket; player = prior; }
+            if (prior) { if (prior.socket) prior.socket.close(); prior.socket = socket; player = prior; recordConnection(room, socket, "player-reconnected", "player", player.id); }
             else {
               if (room.game) {
                 const name = message.name?.trim().slice(0, 24) ?? "";
@@ -266,8 +294,10 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
                 player = { id: `player-${crypto.randomUUID()}`, name, isBot: false, token: token(), socket };
                 spectator = true;
                 room.spectators.set(socket, { socket, queuedPlayer: player });
+                recordConnection(room, socket, "player-queued", "spectator", player.id);
                 send(socket, { type: "joined", roomCode: room.code, hostPlayerId: room.hostPlayerId });
                 touch(room);
+                void persistRoomSnapshot(room);
                 publish(room);
                 return;
               }
@@ -275,10 +305,12 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
               const name = message.name?.trim().slice(0, 24) ?? "";
               if (!name || room.players.some((entry) => entry.name.toLocaleLowerCase() === name.toLocaleLowerCase())) throw new Error("Choose a unique name.");
               player = { id: `player-${crypto.randomUUID()}`, name, isBot: false, token: token(), socket }; room.players.push(player);
+              recordConnection(room, socket, "player-joined", "player", player.id);
             }
             send(socket, { type: "joined", roomCode: room.code, playerId: player.id, reconnectToken: player.token, hostPlayerId: room.hostPlayerId });
           }
           touch(room);
+          void persistRoomSnapshot(room);
           publish(room);
         } else if (!room) throw new Error("Join a room first.");
         else if (message.type === "add-bot") {
@@ -334,7 +366,7 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
         }
       } catch (error) { send(socket, { type: "error", message: error instanceof Error ? error.message : "Unable to update the room." }); }
     });
-    socket.on("close", () => { if (!room) return; if (player && room.players.some((candidate) => candidate.id === player!.id)) player.socket = undefined; if (spectator) room.spectators.delete(socket); publish(room); });
+    socket.on("close", () => { if (!room) return; if (player && room.players.some((candidate) => candidate.id === player!.id)) player.socket = undefined; if (spectator) room.spectators.delete(socket); recordConnection(room, socket, "disconnected", spectator ? "spectator" : "player", player?.id); void persistRoomSnapshot(room); publish(room); });
   });
 }
 
@@ -375,6 +407,13 @@ async function persistRoomSnapshot(room: Room) {
     seats: room.players.map(({ id, name, isBot }) => ({ id, name, controller: isBot ? "bot" : "human" })),
     history: room.history,
     actions: room.actions,
+    connectionEvents: room.connectionEvents,
+    connectionAudit: {
+      ipHashAlgorithm: "HMAC-SHA-256",
+      rawIpStored: false,
+      rawUserAgentStored: false,
+      hashSaltConfigured: Boolean(ipHashSalt),
+    },
     state: room.game,
   };
   try {

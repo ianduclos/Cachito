@@ -162,6 +162,8 @@ The live online table uses the same engine rules above. The following points des
 
 Online rooms are server-authoritative: the browser receives only its permitted player or spectator view. Private hands, the full engine state, and bot observations remain on the server.
 
+For operational abuse and connection diagnostics, private production snapshots may record a salted, one-way fingerprint of a connecting address along with coarse connection metadata. They never include a raw IP address or raw browser identifier, and this audit data is never sent to players or spectators.
+
 ## Future configurable variants
 
 The first implementation should keep the rules centralized so variants can be introduced without duplicating logic. Possible future settings include:

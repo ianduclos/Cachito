@@ -51,6 +51,7 @@ Read this before changing or deploying online play.
 - **Keep the room server authoritative.** Never send an opponent's live hand, an admin view, or a bot's private observation to any browser. Generate `projectForPlayer` / `projectForSpectator` views on the server.
 - **Current online pacing is intentional:** 90 seconds per turn; a reveal advances once all active players select **Next round**, or automatically after one minute; unshaken cups auto-shake after another minute. Bots shake after 2–3 seconds, decide a turn after 6–8 seconds, and wait 4–6 seconds before next-round readiness. The final-ten-seconds clock cue must stop when a move resolves.
 - **Keep private match data private.** Production room snapshots go to the `ian-duclos-cachito-bot-logs` bucket; do not expose that bucket through Hosting or browser APIs. Local `logs/*.json` remains ignored by Git.
+- **Connection audit data is private.** Online snapshots record connection, reconnect, and disconnect events with a salted HMAC-SHA-256 IP fingerprint, IP version, forwarding-hop count, hashed user-agent, origin, primary language, and protocol. Never store raw IPs or raw user-agent strings. `IP_HASH_SALT` must be configured as a Cloud Run secret before enabling this audit trail.
 - **Favicon source:** `public/favicon.png`. Replace that file when changing the browser icon.
 
 ## Run locally
