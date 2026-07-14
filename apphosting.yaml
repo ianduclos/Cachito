@@ -1,0 +1,30 @@
+# Settings for Backend (on Cloud Run).
+# See https://firebase.google.com/docs/app-hosting/configure#cloud-run
+runConfig:
+  minInstances: 0
+  # Rooms are currently held in memory, so every connected player must reach
+  # the same server instance. Durable shared room storage will remove this cap.
+  maxInstances: 1
+  concurrency: 80
+  cpu: 1
+  memoryMiB: 512
+
+# Environment variables and secrets.
+env:
+  # Configure environment variables.
+  # See https://firebase.google.com/docs/app-hosting/configure#user-defined-environment
+  - variable: VITE_ENABLE_ONLINE
+    value: "true"
+    availability:
+      - BUILD
+  - variable: VITE_ONLINE_ENDPOINT
+    value: "https://cachito-rooms-ribcxidnzq-ez.a.run.app"
+    availability:
+      - BUILD
+  #     - RUNTIME
+
+  # Grant access to secrets in Cloud Secret Manager.
+  # You can create secrets with the CLI command `firebase apphosting:secrets:set <secretName>`.
+  # See https://firebase.google.com/docs/app-hosting/configure#secret-parameters
+  # - variable: MY_SECRET
+  #   secret: mySecretRef

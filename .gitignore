@@ -1,0 +1,25 @@
+node_modules/
+dist/
+coverage/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Firebase emulators and local deployment state
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+ui-debug.log
+
+# Generated game data
+logs/*.json
+logs/*.tmp-*
+
+# Editor and operating-system files
+.DS_Store
+.idea/
+.vscode/

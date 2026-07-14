@@ -1,0 +1,180 @@
+# Cachito
+
+Cachito is an implementation of the hidden-dice game also known as Dudo, Liar's Dice, or Perudo. The first milestone is a tested rules engine and a 2–6 player pass-and-play interface. The engine and privacy boundaries will also support machine players and realtime online rooms.
+
+See [RULES.md](./RULES.md) for the game rules, denomination names, bid examples, Palo Fijo behavior, and privacy rules. See [MACHINE_PLAYER.md](./MACHINE_PLAYER.md) for the staged bot plan.
+
+## Current scope
+
+The initial app targets:
+
+- 2–6 local players, each starting with five dice;
+- a Human/Bot switch for every seat during setup, allowing mixed or all-bot local games;
+- complete bidding, Dudo, Calzo, elimination, and Palo Fijo flows;
+- private per-player hands on a shared device;
+- a non-interactive normal spectator/public-table view and a clearly labeled admin testing view;
+- downloadable, versioned JSON game logs with bot decision diagnostics;
+- a live, worker-backed adversarial learning dashboard with evolutionary progress, rankings, and exportable results;
+- deterministic, testable engine behavior; and
+- a clean boundary between rules, presentation, and future networking.
+
+The local app includes a playable probability bot and an experimental parameter-learning lab. An initial realtime room mode supports private room codes, player reconnect tokens, and normal spectators during local development; it is not enabled in the static Firebase Hosting build until the room service is moved to Firebase-backed infrastructure. Accounts, matchmaking, durable server persistence, and neural policies are not implemented.
+
+## Run locally
+
+Install dependencies, then use the project scripts:
+
+```sh
+npm install
+npm run dev
+```
+
+Other available checks:
+
+```sh
+npm test
+npm run test:watch
+npm run build
+npm run lint
+```
+
+- `dev` starts the Vite development server.
+- `start` serves a built app and its realtime room server (run `npm run build` first).
+- `test` runs the Vitest suite once.
+- `test:watch` reruns tests while files change.
+- `build` type-checks the project and creates a production build.
+- `lint` runs the configured ESLint checks.
+
+## Design
+
+The engine is the sole authority on legal actions and state transitions:
+
+```text
+player action → engine validation → state transition → restricted view → interface
+```
+
+The interface must not reimplement bid ordering, challenge resolution, Palo Fijo, or elimination rules. It may ask the engine which actions are legal and explain rejected actions to the user.
+
+Three state shapes matter:
+
+- **Internal game state:** complete authoritative state, including every hand.
+- **Player view:** public information plus the requesting player's hand only when the rules allow it. In Palo Fijo, players with more than one die do not receive their own hand.
+- **Normal spectator view:** public information only while a round is live; it may show revealed hands after a challenge.
+- **Admin testing spectator view:** a visibly labeled development/testing view that may show every live hand. It is not an ordinary player or spectator role and must not be exposed in production play.
+
+This separation is a security property, not merely a visual choice. A future online server must generate player and normal spectator views before sending updates to clients; admin testing access uses a separate authorized path.
+
+## Local pass-and-play
+
+One device can safely move between players using an explicit handoff:
+
+1. The public table identifies the next player without showing any live hand.
+2. In a normal round, that player takes the device and deliberately reveals their own dice. During Palo Fijo, only a player holding one die may reveal their hand; players with more dice act without seeing it.
+3. They choose a legal bid, Dudo, or Calzo.
+4. Their dice are hidden before the next player takes the device.
+5. Dudo or Calzo temporarily reveals every hand on the public result screen.
+
+The public table is also the local normal spectator view. Normal spectators can follow the turn, current bid, dice remaining, history, and round results, but cannot inspect live hands or submit actions. The separate admin testing view can expose all hands for debugging and must be clearly marked.
+
+Bot seats obey the same privacy boundary. Their live hands are hidden in Player and normal Spectator modes and are visible only in Admin testing mode. A bot takes its turn automatically after a short delay; consecutive bot bids continue without a human handoff. Dudo and Calzo still stop on the public reveal screen so a user can inspect the result and explicitly start the next round.
+
+Each UI bot turn has an explicit 800 ms thinking delay. This delay is presentation-only: headless matches and later training runs execute without waiting.
+
+## Game logs
+
+While the local development server is running, every new game and subsequent logged action is saved automatically to the project `logs/` folder. The same filename is updated atomically throughout the match, so an interrupted game still leaves its latest completed snapshot. The header reports whether the latest snapshot was saved; if local persistence is unavailable, manual export still works.
+
+Use **Export log** in the game header to download the match so far. After a match ends, use **Download log** on the winner screen. Automatic and manual filenames include the match start time and seed, and the document contains:
+
+- a schema version, match seed, start time, seat identities, Human/Bot controllers, and bot policy names;
+- the ordered public action history;
+- public round resolutions and hands only after those hands have been revealed by Dudo or Calzo;
+- the winner once the game is complete; and
+- one diagnostic record per bot turn: its policy, visible hand when legally available, public dice counts, legal-action summary, chosen action, and exact probability estimates for the current or chosen bid.
+
+Probability-bot records also include a decision trace: model version and settings, the reason for acting, effective Dudo/Calzo thresholds, current-bid confidence, the number of legal bid candidates, a bounded top-candidate shortlist with score components, selected rank, and the seeded random rolls used for bluff and tie selection. The trace records values—not hidden hands or random-generator state.
+
+Bot diagnostics are created from the exact restricted observation passed to the policy. They never include an opponent's live hand, an Admin testing view, authoritative game state, or random-generator state. A bot's own `visibleHand` is present only when that bot could legally see it; during Palo Fijo it is omitted for a bot with more than one die. Revealed hands appear separately in round resolutions because they are public at that point.
+
+Logs are intended for local inspection now and later batch analysis. Keep `schemaVersion` when building importers, group comparisons by seed and seat assignment, and treat decision probabilities as predictions to score against later public round resolutions. Logs can become evaluation or self-play examples without granting a learner information that the acting bot did not have at decision time.
+
+### Analyze a logs folder
+
+Put exported files in `logs/`, then run:
+
+```sh
+npm run logs:analyze
+npm run logs:analyze -- --json
+npm run logs:analyze -- path/to/another-folder
+```
+
+The report also summarizes trace coverage, decision-reason counts, and average candidate-set size per policy.
+
+The dependency-free analyzer searches subfolders for JSON files, validates the game-log shape, and deduplicates copies using the match seed and start time (or a stable content identity for older logs). Invalid files are listed without preventing valid matches from being analyzed; the command returns a failing exit status when invalid files are present so automated data pipelines can notice them.
+
+The report covers match completion and player counts, actions, resolved rounds, bot decisions, policy action mixes, Dudo/Calzo correctness, and bot bid calibration. Calibration reports Brier score, mean prediction, and observed support overall and separately for normal and Palo Fijo turns. Revealed dice are used only as post-decision truth labels—never as bot features. Run the analyzer's focused tests with `npm run logs:test`.
+
+The local autosave endpoint is provided by the development server. A hosted build cannot write to a visitor's filesystem directly; online play should implement the same endpoint on the authoritative game server or replace it with database/object storage.
+
+## Project structure
+
+The source tree is organized around responsibility rather than screens:
+
+```text
+src/
+  analytics/    Versioned game logs and privacy-safe bot decision records
+  bot/          Privacy-safe policies, probability model, and seeded match simulation
+  engine/       Pure rules, state transitions, legal actions, views, and engine tests
+  scripts/      Dependency-free exported-log analysis and its tests
+  ui/           Reusable React interface pieces and game screens
+  test/         Shared test setup
+  App.tsx       Local game flow and top-level view selection
+```
+
+As online play is introduced, server-authoritative room code should live outside the browser app and depend on the engine rather than duplicating it. Machine players should consume the same restricted player view and legal-action API as humans so they cannot inspect opponents' hands.
+
+## Roadmap
+
+### 1. Rules engine and basic interface
+
+- Encode the rules as pure state transitions.
+- Inject or seed dice randomness for repeatable tests.
+- Generate legal actions from state instead of duplicating legality in controls.
+- Create sanitized player, normal spectator, and admin testing views.
+- Cover denomination naming, bid transitions, wild Aces, Dudo, Calzo, elimination, Palo Fijo activation, and Palo Fijo hand visibility with tests.
+- Complete a full 2–6 player game through the pass-and-play interface.
+
+### 2. Hardening
+
+- Simulate many complete games using random legal actions to detect deadlocks and broken invariants.
+- Verify that private dice never leak into another player or normal spectator view, including the rule that multi-die players cannot see their own hands during Palo Fijo.
+- Improve mobile layout, accessibility, keyboard support, error explanations, and reveal/handoff clarity.
+- Make state serializable and retain a public event log suitable for replay and reconnects.
+- Profile only after measuring; correctness and clean state boundaries matter more than raw performance at this scale.
+
+### 3. Machine player
+
+The probability-based heuristic bot is playable locally. Each startup seat can be switched between Human and Bot, and mixed or consecutive bot turns run through the normal engine action flow. The bot receives only the same legal player view and public history available to a human, including Palo Fijo restrictions.
+
+The experimental learning dashboard remains available only as development code; it is not part of the player-facing local or online experience.
+
+The first 3,000-game learning experiment found a well-calibrated 2/4-player specialist but did not beat Conservative overall on a separate 2,000-game evaluation because six-player performance did not generalize. The next bot step is therefore stronger multi-seed and held-out selection, followed by a public bid-history opponent model. See [MACHINE_PLAYER.md](./MACHINE_PLAYER.md) and [the experiment report](./reports/adversarial-learning-2026-07-13.md).
+
+### 4. Realtime multiplayer
+
+- Server-authoritative private rooms and room codes are available through **Play online**.
+- Connections are bound to a player or normal-spectator identity; the local admin view is not exposed online.
+- The server validates every action and sends each connection a separately sanitized projection.
+- Lobbies, host-only start, basic reconnect tokens, eliminated players, and normal spectators are supported. Inactive-turn handling, room expiry/cleanup, persistence, accounts, and deployment observability remain to be added.
+- Add deployment observability before treating the online mode as reliable.
+
+An early networking proof of concept should connect two player windows and one normal spectator window, then verify each view against the current round's privacy rules. Admin testing access must use a separate authorized path and remain disabled in production.
+
+### 5. Later possibilities
+
+- Configurable house rules.
+- Private invitations and public matchmaking.
+- Additional bot personalities and difficulty levels.
+- Match history, accounts, rankings, cosmetics, sound, and animation.
+
+These features should follow a reliable engine and privacy-safe online architecture rather than shape the first implementation.

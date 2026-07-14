@@ -1,0 +1,42 @@
+{
+  "name": "cachito",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx server/index.ts --dev",
+    "start": "tsx server/index.ts",
+    "build": "tsc -b && vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "logs:analyze": "node scripts/analyze-logs.mjs",
+    "logs:test": "node --test scripts/analyze-logs.node.mjs",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@google-cloud/storage": "^7.21.0",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "tsx": "^4.23.1",
+    "vite": "latest",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "latest",
+    "@testing-library/jest-dom": "latest",
+    "@testing-library/react": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "eslint": "latest",
+    "eslint-plugin-react-hooks": "latest",
+    "eslint-plugin-react-refresh": "latest",
+    "globals": "latest",
+    "jsdom": "latest",
+    "typescript": "latest",
+    "typescript-eslint": "latest",
+    "vitest": "latest"
+  }
+}
