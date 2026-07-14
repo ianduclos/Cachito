@@ -132,6 +132,10 @@ Bot diagnostics are created from the exact restricted observation passed to the 
 
 Logs are intended for local inspection now and later batch analysis. Keep `schemaVersion` when building importers, group comparisons by seed and seat assignment, and treat decision probabilities as predictions to score against later public round resolutions. Logs can become evaluation or self-play examples without granting a learner information that the acting bot did not have at decision time.
 
+### Private online snapshots
+
+Production online snapshots are private, server-only records. Schema version 2 retains the nickname and controller for every seat, every round's full dealt hands, nickname-labelled actions, and a timing record for each completed turn (start, deadline, finish, elapsed/remaining time, and bid/Dudo/Calzo/timeout outcome). These fields are recorded for new online matches and are never sent to players or spectators.
+
 ### Analyze a logs folder
 
 Put exported files in `logs/`, then run:

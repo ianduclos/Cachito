@@ -12,7 +12,10 @@ type RoomEvent = { type: "round-start" } | { type: "shuffle-dice" };
 type Spectator = { socket: WebSocket; queuedPlayer?: RoomPlayer };
 type ConnectionContext = { connectionId: string; ipHash: string | null; ipVersion: "ipv4" | "ipv6" | "unknown"; forwardedForCount: number; userAgentHash: string | null; origin?: string; language?: string; protocol?: string; hashConfigured: boolean };
 type ConnectionEvent = ConnectionContext & { at: string; event: "room-created" | "player-joined" | "player-reconnected" | "player-queued" | "spectator-joined" | "disconnected"; role: "player" | "spectator"; playerId?: string };
-type Room = { code: string; hostPlayerId: string; players: RoomPlayer[]; spectators: Map<WebSocket, Spectator>; connectionEvents: ConnectionEvent[]; game?: GameState; history: string[]; announcement?: { text: string; playerId?: string }; shuffleReadyPlayerIds?: Set<string>; nextRoundReadyPlayerIds?: Set<string>; nextRoundDeadlineAt?: number; actions: Array<{ at: string; playerId?: string; action: GameAction | RoomEvent }>; startedAt?: string; lastActivityAt: number; nextGameStarterId?: string; turnDeadlineAt?: number; turnTimer?: ReturnType<typeof setTimeout>; shuffleTimer?: ReturnType<typeof setTimeout>; nextRoundTimer?: ReturnType<typeof setTimeout>; botShuffleTimers?: Array<ReturnType<typeof setTimeout>>; botNextRoundTimers?: Array<ReturnType<typeof setTimeout>> };
+type LoggedAction = { at: string; playerId?: string; nickname?: string; action: GameAction | RoomEvent };
+type RoundDeal = { round: number; dealtAt: string; paloFijo: boolean; starterId: string | null; hands: Array<{ playerId: string; nickname: string; dice: number[] }> };
+type TurnTiming = { round: number; playerId: string; nickname: string; controller: "human" | "bot"; startedAt: string; deadlineAt: string; finishedAt?: string; elapsedMs?: number; remainingMs?: number; outcome?: "bid" | "dudo" | "calzo" | "timeout" };
+type Room = { code: string; hostPlayerId: string; players: RoomPlayer[]; spectators: Map<WebSocket, Spectator>; connectionEvents: ConnectionEvent[]; roundDeals: RoundDeal[]; turnTimings: TurnTiming[]; activeTurn?: TurnTiming; game?: GameState; history: string[]; announcement?: { text: string; playerId?: string }; shuffleReadyPlayerIds?: Set<string>; nextRoundReadyPlayerIds?: Set<string>; nextRoundDeadlineAt?: number; actions: LoggedAction[]; startedAt?: string; lastActivityAt: number; nextGameStarterId?: string; turnDeadlineAt?: number; turnTimer?: ReturnType<typeof setTimeout>; shuffleTimer?: ReturnType<typeof setTimeout>; nextRoundTimer?: ReturnType<typeof setTimeout>; botShuffleTimers?: Array<ReturnType<typeof setTimeout>>; botNextRoundTimers?: Array<ReturnType<typeof setTimeout>> };
 const rooms = new Map<string, Room>();
 const connectionContexts = new WeakMap<WebSocket, ConnectionContext>();
 const botPolicy = createProbabilityPolicy();
@@ -79,6 +82,31 @@ function recordConnection(room: Room, socket: WebSocket, event: ConnectionEvent[
   const context = connectionContexts.get(socket) ?? { connectionId: "unknown", ipHash: null, ipVersion: "unknown" as const, forwardedForCount: 0, userAgentHash: null, hashConfigured: false };
   room.connectionEvents.push({ at: new Date().toISOString(), event, role, ...context, ...(playerId ? { playerId } : {}) });
 }
+function recordRoundDeal(room: Room) {
+  const game = room.game;
+  if (!game || game.phase !== "playing") return;
+  room.roundDeals.push({ round: game.round, dealtAt: new Date().toISOString(), paloFijo: game.paloFijo, starterId: game.currentPlayerId, hands: game.players.map((player) => ({ playerId: player.id, nickname: player.name, dice: [...player.hand] })) });
+}
+function startTurnTiming(room: Room, actor: RoomPlayer): TurnTiming | undefined {
+  const game = room.game;
+  if (!game) return undefined;
+  if (room.activeTurn?.round === game.round && room.activeTurn.playerId === actor.id && !room.activeTurn.finishedAt) return room.activeTurn;
+  const now = Date.now();
+  const timing: TurnTiming = { round: game.round, playerId: actor.id, nickname: actor.name, controller: actor.isBot ? "bot" : "human", startedAt: new Date(now).toISOString(), deadlineAt: new Date(now + TURN_LIMIT_MS).toISOString() };
+  room.turnTimings.push(timing);
+  room.activeTurn = timing;
+  return timing;
+}
+function finishTurnTiming(room: Room, outcome: NonNullable<TurnTiming["outcome"]>) {
+  const timing = room.activeTurn;
+  if (!timing || timing.finishedAt) return;
+  const finishedAt = Date.now();
+  timing.finishedAt = new Date(finishedAt).toISOString();
+  timing.elapsedMs = Math.max(0, finishedAt - Date.parse(timing.startedAt));
+  timing.remainingMs = Math.max(0, Date.parse(timing.deadlineAt) - finishedAt);
+  timing.outcome = outcome;
+  room.activeTurn = undefined;
+}
 function nextBotName(room: Room) {
   const unused = botNames.filter((name) => !room.players.some((player) => player.name === name));
   return unused[Math.floor(Math.random() * unused.length)] ?? `Bot ${room.players.filter((player) => player.isBot).length + 1}`;
@@ -141,7 +169,9 @@ function scheduleTurn(room: Room) {
   const delay = actor.isBot
     ? BOT_TURN_DELAY_MIN_MS + Math.floor(Math.random() * BOT_TURN_DELAY_SPREAD_MS)
     : TURN_LIMIT_MS;
-  room.turnDeadlineAt = Date.now() + TURN_LIMIT_MS;
+  const turnTiming = startTurnTiming(room, actor);
+  if (!turnTiming) return;
+  room.turnDeadlineAt = Date.parse(turnTiming.deadlineAt);
   publish(room);
   room.turnTimer = setTimeout(() => {
     room.turnTimer = undefined;
@@ -153,6 +183,7 @@ function scheduleTurn(room: Room) {
       const { choice } = chooseBotAction(botPolicy, observation, Math.random);
       if (!isChoiceLegal(observation, choice)) throw new Error("Bot selected an illegal action.");
       const action = choice.type === "bid" ? { type: "bid" as const, playerId: actor.id, bid: choice.bid } : { type: choice.type, playerId: actor.id };
+      finishTurnTiming(room, actor.isBot ? action.type : "timeout");
       room.game = applyAction(game, action);
       recordAction(room, actor.name, action);
       if (room.game.phase === "reveal") startNextRoundVote(room);
@@ -188,7 +219,7 @@ function startRoundShuffle(room: Room) {
     const timer = setTimeout(() => {
       if (!room.game || room.game.phase !== "playing" || !room.shuffleReadyPlayerIds || room.shuffleReadyPlayerIds.has(bot.id)) return;
       room.shuffleReadyPlayerIds.add(bot.id);
-      room.actions.push({ at: new Date().toISOString(), playerId: bot.id, action: { type: "shuffle-dice" } });
+      room.actions.push({ at: new Date().toISOString(), playerId: bot.id, nickname: bot.name, action: { type: "shuffle-dice" } });
       room.announcement = { text: `${bot.name} shakes their cup.`, playerId: bot.id };
       void persistRoomSnapshot(room);
       publish(room);
@@ -207,7 +238,7 @@ function beginNextRound(room: Room) {
   room.nextRoundDeadlineAt = undefined;
   room.game = applyAction(room.game, { type: "nextRound" });
   recordAction(room, "", { type: "nextRound" });
-  if (room.game.phase === "playing") startRoundShuffle(room);
+  if (room.game.phase === "playing") { recordRoundDeal(room); startRoundShuffle(room); }
   touch(room);
   void persistRoomSnapshot(room);
   publish(room);
@@ -276,7 +307,7 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           if (!name) throw new Error("Enter your name first.");
           const id = `player-${crypto.randomUUID()}`;
           player = { id, name, isBot: false, token: token(), socket };
-          room = { code: code(), hostPlayerId: id, players: [player], spectators: new Map(), connectionEvents: [], history: [], actions: [], lastActivityAt: Date.now() };
+          room = { code: code(), hostPlayerId: id, players: [player], spectators: new Map(), connectionEvents: [], roundDeals: [], turnTimings: [], history: [], actions: [], lastActivityAt: Date.now() };
           recordConnection(room, socket, "room-created", "player", id);
           rooms.set(room.code, room);
           send(socket, { type: "joined", roomCode: room.code, playerId: id, reconnectToken: player.token, hostPlayerId: id }); publish(room);
@@ -340,14 +371,14 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           if (room.game || room.players.length < 2) throw new Error("At least two players are needed.");
           const starter = room.players.find((candidate) => candidate.id === room!.nextGameStarterId) ?? room.players[Math.floor(Math.random() * room.players.length)];
           const otherPlayers = room.players.filter((candidate) => candidate.id !== starter.id).sort(() => Math.random() - .5);
-          room.game = createGame([starter, ...otherPlayers].map(({ id, name }): PlayerSetup => ({ id, name }))); room.startedAt = new Date().toISOString(); room.history = [`Round 1 begins — ${starter.name} starts.`]; room.actions = [{ at: room.startedAt, action: { type: "round-start" } }]; touch(room); startRoundShuffle(room); void persistRoomSnapshot(room); publish(room);
+          room.game = createGame([starter, ...otherPlayers].map(({ id, name }): PlayerSetup => ({ id, name }))); room.startedAt = new Date().toISOString(); room.history = [`Round 1 begins — ${starter.name} starts.`]; room.actions = [{ at: room.startedAt, action: { type: "round-start" } }]; room.roundDeals = []; room.turnTimings = []; room.activeTurn = undefined; recordRoundDeal(room); touch(room); startRoundShuffle(room); void persistRoomSnapshot(room); publish(room);
         } else if (message.type === "return-to-lobby") {
           if (!player || player.id !== room.hostPlayerId || room.game?.phase !== "gameOver") throw new Error("Only the host can return this completed game to the lobby.");
-          promoteQueuedSpectators(room); room.game = undefined; room.history = []; room.announcement = undefined; room.shuffleReadyPlayerIds = undefined; room.nextRoundReadyPlayerIds = undefined; room.nextRoundDeadlineAt = undefined; if (room.shuffleTimer) clearTimeout(room.shuffleTimer); room.shuffleTimer = undefined; for (const timer of room.botShuffleTimers ?? []) clearTimeout(timer); room.botShuffleTimers = []; if (room.nextRoundTimer) clearTimeout(room.nextRoundTimer); room.nextRoundTimer = undefined; for (const timer of room.botNextRoundTimers ?? []) clearTimeout(timer); room.botNextRoundTimers = []; if (room.turnTimer) clearTimeout(room.turnTimer); room.turnTimer = undefined; room.turnDeadlineAt = undefined; room.actions = []; room.startedAt = undefined; touch(room); publish(room);
+          promoteQueuedSpectators(room); room.game = undefined; room.history = []; room.announcement = undefined; room.shuffleReadyPlayerIds = undefined; room.nextRoundReadyPlayerIds = undefined; room.nextRoundDeadlineAt = undefined; if (room.shuffleTimer) clearTimeout(room.shuffleTimer); room.shuffleTimer = undefined; for (const timer of room.botShuffleTimers ?? []) clearTimeout(timer); room.botShuffleTimers = []; if (room.nextRoundTimer) clearTimeout(room.nextRoundTimer); room.nextRoundTimer = undefined; for (const timer of room.botNextRoundTimers ?? []) clearTimeout(timer); room.botNextRoundTimers = []; if (room.turnTimer) clearTimeout(room.turnTimer); room.turnTimer = undefined; room.turnDeadlineAt = undefined; room.actions = []; room.roundDeals = []; room.turnTimings = []; room.activeTurn = undefined; room.startedAt = undefined; touch(room); publish(room);
         } else if (message.type === "shuffle-dice") {
           if (!player || !room.players.some((candidate) => candidate.id === player!.id) || !room.game || room.game.phase !== "playing" || !room.shuffleReadyPlayerIds || !activeRoomPlayers(room).some((candidate) => candidate.id === player!.id)) throw new Error("There are no dice to shuffle right now.");
           room.shuffleReadyPlayerIds.add(player.id);
-          room.actions.push({ at: new Date().toISOString(), playerId: player.id, action: { type: "shuffle-dice" } });
+          room.actions.push({ at: new Date().toISOString(), playerId: player.id, nickname: player.name, action: { type: "shuffle-dice" } });
           room.announcement = { text: `${player.name} shakes their cup.`, playerId: player.id };
           touch(room); void persistRoomSnapshot(room); publish(room); scheduleTurn(room);
         } else if (message.type === "ready-next-round") {
@@ -362,6 +393,7 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           if (message.action.type === "nextRound") throw new Error("Wait for the table to choose the next round.");
           if (room.game.phase === "playing" && !everyoneShuffled(room)) throw new Error("Everyone needs to shake their dice before the round begins.");
           const action: GameAction = { ...message.action, playerId: player.id };
+          if (action.type === "bid" || action.type === "dudo" || action.type === "calzo") finishTurnTiming(room, action.type);
           room.game = applyAction(room.game, action); recordAction(room, player.name, action); if (room.game.phase === "reveal") startNextRoundVote(room); touch(room); void persistRoomSnapshot(room); publish(room); scheduleTurn(room);
         }
       } catch (error) { send(socket, { type: "error", message: error instanceof Error ? error.message : "Unable to update the room." }); }
@@ -372,7 +404,7 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
 
 function recordAction(room: Room, name: string, action: GameAction) {
   if (!room.game) return;
-  room.actions.push({ at: new Date().toISOString(), ...(action.type === "nextRound" ? {} : { playerId: action.playerId }), action });
+  room.actions.push({ at: new Date().toISOString(), ...(action.type === "nextRound" ? {} : { playerId: action.playerId, nickname: name }), action });
   if (action.type === "bid") room.history.unshift(`${name} bids ${action.bid.quantity} ${denominationName(action.bid.denomination)}.`);
   else if (action.type === "dudo") room.history.unshift(`${name} calls Dudo.`);
   else if (action.type === "calzo") room.history.unshift(`${name} calls Calzo.`);
@@ -400,13 +432,15 @@ async function persistRoomSnapshot(room: Room) {
   if (!storage || !logBucket || !room.game || !room.startedAt) return;
   const filename = `online-matches/${room.startedAt.replace(/[:.]/g, "-")}-${room.code}.json`;
   const snapshot = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     roomCode: room.code,
     startedAt: room.startedAt,
     updatedAt: new Date().toISOString(),
-    seats: room.players.map(({ id, name, isBot }) => ({ id, name, controller: isBot ? "bot" : "human" })),
+    seats: room.players.map(({ id, name, isBot }) => ({ id, name, nickname: name, controller: isBot ? "bot" : "human" })),
     history: room.history,
     actions: room.actions,
+    roundDeals: room.roundDeals,
+    turnTimings: room.turnTimings,
     connectionEvents: room.connectionEvents,
     connectionAudit: {
       ipHashAlgorithm: "HMAC-SHA-256",
