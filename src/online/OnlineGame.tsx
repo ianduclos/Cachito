@@ -57,10 +57,10 @@ function inviteRoomFromPath() {
 
 export function OnlineGame({ onExit }: { onExit: () => void }) {
   const [recoveryKey, setRecoveryKey] = useState(0);
-  return <OnlineErrorBoundary onExit={onExit} onReconnect={() => setRecoveryKey((key) => key + 1)} recoveryKey={recoveryKey}><OnlineGameContent key={recoveryKey} onExit={onExit} /></OnlineErrorBoundary>;
+  return <OnlineErrorBoundary onExit={onExit} onReconnect={() => setRecoveryKey((key) => key + 1)} recoveryKey={recoveryKey}><OnlineGameContent key={recoveryKey} onExit={onExit} restoreSavedSession={recoveryKey > 0} /></OnlineErrorBoundary>;
 }
 
-function OnlineGameContent({ onExit }: { onExit: () => void }) {
+function OnlineGameContent({ onExit, restoreSavedSession = false }: { onExit: () => void; restoreSavedSession?: boolean }) {
   const socket = useRef<WebSocket | null>(null);
   const [connected, setConnected] = useState(false);
   const [name, setName] = useState(() => localStorage.getItem("cachito-display-name") ?? "");
@@ -83,15 +83,18 @@ function OnlineGameContent({ onExit }: { onExit: () => void }) {
   useEffect(() => {
     let stopped = false;
     let reconnectTimer: number | undefined;
+    let shouldRestore = restoreSavedSession;
     const connect = () => {
       const connection = new WebSocket(onlineSocketUrl());
       socket.current = connection;
       connection.onopen = () => {
         setConnected(true);
-        const saved = savedSession();
-        if (saved) send(connection, { type: "join-room", roomCode: saved.roomCode, name: localStorage.getItem("cachito-display-name") ?? "", reconnectToken: saved.reconnectToken });
+        if (shouldRestore) {
+          const saved = savedSession();
+          if (saved) send(connection, { type: "join-room", roomCode: saved.roomCode, name: localStorage.getItem("cachito-display-name") ?? "", reconnectToken: saved.reconnectToken });
+        }
       };
-      connection.onclose = () => { setConnected(false); if (socket.current === connection) socket.current = null; if (!stopped) reconnectTimer = window.setTimeout(connect, 1_000); };
+      connection.onclose = () => { setConnected(false); if (socket.current === connection) socket.current = null; shouldRestore = true; if (!stopped) reconnectTimer = window.setTimeout(connect, 1_000); };
       connection.onmessage = (event) => {
         const message = JSON.parse(event.data) as OnlineServerMessage;
         if (message.type === "error") {
@@ -108,7 +111,7 @@ function OnlineGameContent({ onExit }: { onExit: () => void }) {
     };
     connect();
     return () => { stopped = true; if (reconnectTimer) window.clearTimeout(reconnectTimer); socket.current?.close(); };
-  }, []);
+  }, [restoreSavedSession]);
 
   useEffect(() => {
     if (!announcement) return;
