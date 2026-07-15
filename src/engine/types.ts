@@ -19,7 +19,7 @@ export interface GameRules {
 }
 
 export const DEFAULT_GAME_RULES: Readonly<GameRules> = {
-  acesConversion: 'half',
+  acesConversion: 'halfPlusOne',
   paloFijoTrigger: 'oneDie',
   paloFijoBlindDice: true,
   diceAmountsVisible: true,

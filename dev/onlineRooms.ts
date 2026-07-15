@@ -38,6 +38,8 @@ const botNames = [
   "Balú Johnson",
   "McDonald Lewis",
   "Luciano Torres",
+  "La Del Burro",
+  "Tachi Cabrera",
 ];
 const logBucket = process.env.MATCH_LOG_BUCKET;
 const storage = logBucket ? new Storage() : undefined;
@@ -307,6 +309,50 @@ function startNextRoundVote(room: Room, remainingMs = ROUND_ADVANCE_MS, keepRead
     room.botNextRoundTimers.push(timer);
   }
 }
+function resumeRecoveredRoom(room: Room) {
+  if (!room.game || room.paused) return;
+  if (room.game.phase === "playing") {
+    if (room.shuffleReadyPlayerIds && !everyoneShuffled(room)) startRoundShuffle(room, SHUFFLE_LIMIT_MS, true);
+    else if (room.shuffleReadyPlayerIds) scheduleTurn(room);
+    else startRoundShuffle(room);
+  } else if (room.game.phase === "reveal") {
+    startNextRoundVote(room, ROUND_ADVANCE_MS, Boolean(room.nextRoundReadyPlayerIds));
+  }
+}
+async function loadPersistedRoom(roomCode: string): Promise<Room | undefined> {
+  if (!storage || !logBucket) return undefined;
+  try {
+    const [contents] = await storage.bucket(logBucket).file(`active-rooms/${roomCode}.json`).download();
+    const saved = JSON.parse(contents.toString()) as Partial<Room> & { shuffleReadyPlayerIds?: string[]; nextRoundReadyPlayerIds?: string[] };
+    if (!saved.game || !Array.isArray(saved.players) || saved.code !== roomCode) return undefined;
+    const restored: Room = {
+      code: saved.code,
+      hostPlayerId: saved.hostPlayerId ?? "",
+      players: saved.players.map((player) => ({ id: player.id, name: player.name, isBot: player.isBot, ...(player.token ? { token: player.token } : {}) })),
+      spectators: new Map(),
+      connectionEvents: saved.connectionEvents ?? [],
+      rules: saved.rules ?? DEFAULT_GAME_RULES,
+      roundDeals: saved.roundDeals ?? [],
+      turnTimings: saved.turnTimings ?? [],
+      ...(saved.activeTurn ? { activeTurn: saved.activeTurn } : {}),
+      game: saved.game,
+      history: saved.history ?? [],
+      botHistory: saved.botHistory ?? [],
+      ...(saved.announcement ? { announcement: saved.announcement } : {}),
+      ...(saved.shuffleReadyPlayerIds ? { shuffleReadyPlayerIds: new Set(saved.shuffleReadyPlayerIds) } : {}),
+      ...(saved.nextRoundReadyPlayerIds ? { nextRoundReadyPlayerIds: new Set(saved.nextRoundReadyPlayerIds) } : {}),
+      ...(saved.paused ? { paused: saved.paused } : {}),
+      actions: saved.actions ?? [],
+      ...(saved.startedAt ? { startedAt: saved.startedAt } : {}),
+      lastActivityAt: Date.now(),
+      ...(saved.nextGameStarterId ? { nextGameStarterId: saved.nextGameStarterId } : {}),
+    };
+    rooms.set(restored.code, restored);
+    return restored;
+  } catch {
+    return undefined;
+  }
+}
 function pauseGame(room: Room, player: RoomPlayer) {
   if (!room.game || room.paused) return;
   const now = Date.now();
@@ -385,7 +431,7 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
     let room: Room | undefined;
     let player: RoomPlayer | undefined;
     let spectator = false;
-    socket.on("message", (raw) => {
+    socket.on("message", async (raw) => {
       const message = safeMessage(raw);
       if (!message) return send(socket, { type: "error", message: "Invalid message." });
       try {
@@ -399,7 +445,10 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           rooms.set(room.code, room);
           send(socket, { type: "joined", roomCode: room.code, playerId: id, reconnectToken: player.token, hostPlayerId: id }); publish(room);
         } else if (message.type === "join-room") {
-          room = rooms.get(message.roomCode.trim().toUpperCase());
+          const requestedCode = message.roomCode.trim().toUpperCase();
+          room = rooms.get(requestedCode);
+          const recoveredRoom = !room;
+          if (!room) room = await loadPersistedRoom(requestedCode);
           if (!room) throw new Error("That room does not exist.");
           if (message.spectator) { spectator = true; room.spectators.set(socket, { socket }); recordConnection(room, socket, "spectator-joined", "spectator"); send(socket, { type: "joined", roomCode: room.code, hostPlayerId: room.hostPlayerId }); }
           else {
@@ -430,6 +479,7 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           touch(room);
           void persistRoomSnapshot(room);
           publish(room);
+          if (recoveredRoom) resumeRecoveredRoom(room);
         } else if (!room) throw new Error("Join a room first.");
         else if (message.type === "add-bot") {
           if (!player || player.id !== room.hostPlayerId || room.game) throw new Error("Only the host can change bots before the game starts.");
@@ -471,7 +521,7 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           room.game = createGame([starter, ...otherPlayers].map(({ id, name }): PlayerSetup => ({ id, name })), Math.random, room.rules); room.startedAt = new Date().toISOString(); room.history = [`Round 1 begins — ${starter.name} starts.`]; room.botHistory = []; room.actions = [{ at: room.startedAt, action: { type: "round-start" } }]; room.roundDeals = []; room.turnTimings = []; room.activeTurn = undefined; recordRoundDeal(room); touch(room); startRoundShuffle(room); void persistRoomSnapshot(room); publish(room);
         } else if (message.type === "return-to-lobby") {
           if (!player || player.id !== room.hostPlayerId || room.game?.phase !== "gameOver") throw new Error("Only the host can return this completed game to the lobby.");
-          promoteQueuedSpectators(room); room.game = undefined; room.history = []; room.botHistory = []; room.announcement = undefined; room.paused = undefined; room.shuffleReadyPlayerIds = undefined; room.nextRoundReadyPlayerIds = undefined; room.nextRoundDeadlineAt = undefined; room.shuffleDeadlineAt = undefined; if (room.shuffleTimer) clearTimeout(room.shuffleTimer); room.shuffleTimer = undefined; for (const timer of room.botShuffleTimers ?? []) clearTimeout(timer); room.botShuffleTimers = []; if (room.nextRoundTimer) clearTimeout(room.nextRoundTimer); room.nextRoundTimer = undefined; for (const timer of room.botNextRoundTimers ?? []) clearTimeout(timer); room.botNextRoundTimers = []; if (room.turnTimer) clearTimeout(room.turnTimer); room.turnTimer = undefined; room.turnDeadlineAt = undefined; room.actions = []; room.roundDeals = []; room.turnTimings = []; room.activeTurn = undefined; room.startedAt = undefined; touch(room); publish(room);
+          promoteQueuedSpectators(room); room.game = undefined; room.history = []; room.botHistory = []; room.announcement = undefined; room.paused = undefined; room.shuffleReadyPlayerIds = undefined; room.nextRoundReadyPlayerIds = undefined; room.nextRoundDeadlineAt = undefined; room.shuffleDeadlineAt = undefined; if (room.shuffleTimer) clearTimeout(room.shuffleTimer); room.shuffleTimer = undefined; for (const timer of room.botShuffleTimers ?? []) clearTimeout(timer); room.botShuffleTimers = []; if (room.nextRoundTimer) clearTimeout(room.nextRoundTimer); room.nextRoundTimer = undefined; for (const timer of room.botNextRoundTimers ?? []) clearTimeout(timer); room.botNextRoundTimers = []; if (room.turnTimer) clearTimeout(room.turnTimer); room.turnTimer = undefined; room.turnDeadlineAt = undefined; room.actions = []; room.roundDeals = []; room.turnTimings = []; room.activeTurn = undefined; room.startedAt = undefined; touch(room); void persistRoomSnapshot(room); publish(room);
         } else if (message.type === "toggle-pause") {
           if (!player || !room.game || room.game.phase === "gameOver" || !room.players.some((candidate) => candidate.id === player!.id)) throw new Error("Only a player at this table can pause or resume the game.");
           if (room.paused) resumeGame(room, player);
@@ -545,7 +595,39 @@ function denominationName(value: number) { return ["", "Aces", "Dones", "Trenes"
 
 /** Private, server-only snapshots for later bot evaluation. No browser receives this data. */
 async function persistRoomSnapshot(room: Room) {
-  if (!storage || !logBucket || !room.game || !room.startedAt) return;
+  if (!storage || !logBucket) return;
+  const activeFile = storage.bucket(logBucket).file(`active-rooms/${room.code}.json`);
+  if (room.game) {
+    const activeSnapshot = {
+      schemaVersion: 1,
+      code: room.code,
+      hostPlayerId: room.hostPlayerId,
+      players: room.players.map(({ id, name, isBot, token }) => ({ id, name, isBot, ...(token ? { token } : {}) })),
+      connectionEvents: room.connectionEvents,
+      rules: room.rules,
+      roundDeals: room.roundDeals,
+      turnTimings: room.turnTimings,
+      activeTurn: room.activeTurn,
+      game: room.game,
+      history: room.history,
+      botHistory: room.botHistory,
+      announcement: room.announcement,
+      shuffleReadyPlayerIds: room.shuffleReadyPlayerIds ? [...room.shuffleReadyPlayerIds] : undefined,
+      nextRoundReadyPlayerIds: room.nextRoundReadyPlayerIds ? [...room.nextRoundReadyPlayerIds] : undefined,
+      paused: room.paused,
+      actions: room.actions,
+      startedAt: room.startedAt,
+      nextGameStarterId: room.nextGameStarterId,
+    };
+    try {
+      await activeFile.save(JSON.stringify(activeSnapshot), { contentType: "application/json", resumable: false, metadata: { cacheControl: "no-store" } });
+    } catch (error) {
+      console.error("Unable to save active room recovery snapshot", error);
+    }
+  } else {
+    void activeFile.delete({ ignoreNotFound: true }).catch(() => undefined);
+  }
+  if (!room.game || !room.startedAt) return;
   const filename = `online-matches/${room.startedAt.replace(/[:.]/g, "-")}-${room.code}.json`;
   const snapshot = {
     schemaVersion: 4,

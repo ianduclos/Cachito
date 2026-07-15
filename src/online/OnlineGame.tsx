@@ -13,13 +13,26 @@ type Pause = Extract<OnlineServerMessage, { type: "state" }>['paused'];
 const denominationNames: Record<Die, string> = { 1: "Aces", 2: "Dones", 3: "Trenes", 4: "Cuadras", 5: "Chinas", 6: "Sambas" };
 const storageKey = "cachito-online-session";
 
-class OnlineErrorBoundary extends Component<{ children: ReactNode; onExit: () => void }, { failed: boolean }> {
+type SavedSession = { roomCode: string; reconnectToken: string };
+
+function savedSession(): SavedSession | undefined {
+  try {
+    const saved = JSON.parse(localStorage.getItem(storageKey) ?? "null") as Partial<SavedSession> | null;
+    return saved?.roomCode && saved?.reconnectToken ? { roomCode: saved.roomCode, reconnectToken: saved.reconnectToken } : undefined;
+  } catch {
+    localStorage.removeItem(storageKey);
+    return undefined;
+  }
+}
+
+class OnlineErrorBoundary extends Component<{ children: ReactNode; onExit: () => void; onReconnect: () => void; recoveryKey: number }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
   componentDidCatch(error: Error) { console.error("Online table failed to render", error); }
+  componentDidUpdate(previous: Readonly<{ recoveryKey: number }>) { if (previous.recoveryKey !== this.props.recoveryKey && this.state.failed) this.setState({ failed: false }); }
   render() {
     if (!this.state.failed) return this.props.children;
-    return <main className="setup-shell"><section className="setup-card online-entry-card"><p className="eyebrow">Connection recovery</p><h1>Table needs a refresh</h1><p className="intro">Your game is still running. Reload to reconnect and return to the current turn.</p><button className="button button--primary online-entry-action" onClick={() => window.location.reload()}>Reload game</button><button className="button button--ghost online-entry-action" onClick={this.props.onExit}>Back to menu</button></section></main>;
+    return <main className="setup-shell"><section className="setup-card online-entry-card"><p className="eyebrow">Connection recovery</p><h1>Let’s get you back in</h1><p className="intro">Your saved seat is kept on this device. Reconnect will return you to that room if it is still active.</p><button className="button button--primary online-entry-action" onClick={this.props.onReconnect}>Reconnect to saved game</button><button className="button button--ghost online-entry-action" onClick={() => window.location.reload()}>Reload page</button><button className="button button--ghost online-entry-action" onClick={this.props.onExit}>Back to menu</button></section></main>;
   }
 }
 
@@ -43,7 +56,8 @@ function inviteRoomFromPath() {
 }
 
 export function OnlineGame({ onExit }: { onExit: () => void }) {
-  return <OnlineErrorBoundary onExit={onExit}><OnlineGameContent onExit={onExit} /></OnlineErrorBoundary>;
+  const [recoveryKey, setRecoveryKey] = useState(0);
+  return <OnlineErrorBoundary onExit={onExit} onReconnect={() => setRecoveryKey((key) => key + 1)} recoveryKey={recoveryKey}><OnlineGameContent key={recoveryKey} onExit={onExit} /></OnlineErrorBoundary>;
 }
 
 function OnlineGameContent({ onExit }: { onExit: () => void }) {
@@ -69,24 +83,20 @@ function OnlineGameContent({ onExit }: { onExit: () => void }) {
   useEffect(() => {
     let stopped = false;
     let reconnectTimer: number | undefined;
-    let connectedOnce = false;
     const connect = () => {
       const connection = new WebSocket(onlineSocketUrl());
       socket.current = connection;
       connection.onopen = () => {
         setConnected(true);
-        if (connectedOnce) {
-          const saved = JSON.parse(localStorage.getItem(storageKey) ?? "null") as { roomCode?: string; reconnectToken?: string } | null;
-          if (saved?.roomCode && saved.reconnectToken) send(connection, { type: "join-room", roomCode: saved.roomCode, name: localStorage.getItem("cachito-display-name") ?? "", reconnectToken: saved.reconnectToken });
-        }
-        connectedOnce = true;
+        const saved = savedSession();
+        if (saved) send(connection, { type: "join-room", roomCode: saved.roomCode, name: localStorage.getItem("cachito-display-name") ?? "", reconnectToken: saved.reconnectToken });
       };
       connection.onclose = () => { setConnected(false); if (socket.current === connection) socket.current = null; if (!stopped) reconnectTimer = window.setTimeout(connect, 1_000); };
       connection.onmessage = (event) => {
         const message = JSON.parse(event.data) as OnlineServerMessage;
         if (message.type === "error") {
           setError(message.message);
-          if (/room does not exist|idle room expired/i.test(message.message)) { setView(null); setLobby(null); setLegal(undefined); setShuffle(undefined); setNextRound(undefined); setPaused(undefined); }
+          if (/room does not exist|idle room expired/i.test(message.message)) { localStorage.removeItem(storageKey); setView(null); setLobby(null); setLegal(undefined); setShuffle(undefined); setNextRound(undefined); setPaused(undefined); }
         }
         if (message.type === "joined") {
           setRoomCode(message.roomCode); setPlayerId(message.playerId); setHostPlayerId(message.hostPlayerId); setError(null);
@@ -111,7 +121,7 @@ function OnlineGameContent({ onExit }: { onExit: () => void }) {
     send(socket.current, { type: "create-room", name });
   };
   const join = (spectator = false) => {
-    const saved = !spectator ? JSON.parse(localStorage.getItem(storageKey) ?? "null") as { roomCode?: string; reconnectToken?: string } | null : null;
+    const saved = !spectator ? savedSession() : undefined;
     if (!spectator) localStorage.setItem("cachito-display-name", name.trim());
     send(socket.current, { type: "join-room", roomCode, name, spectator, ...(saved?.roomCode === roomCode.toUpperCase() ? { reconnectToken: saved.reconnectToken } : {}) });
   };
@@ -142,11 +152,11 @@ function LobbyScreen({ lobby, playerId, error, onStart, onAddBot, onRemoveBot, o
 
 function ruleSummary(rules: GameRules) {
   return [
-    `Aces: ${rules.acesConversion === "half" ? "half" : "half + 1"}`,
-    `Palo fijo: ${rules.paloFijoTrigger === "oneDie" ? "1 die" : "2 dice"}`,
-    `Blind dice: ${rules.paloFijoBlindDice ? "on" : "off"}`,
-    `Dice counts: ${rules.diceAmountsVisible ? "shown" : "hidden"}`,
-    `Table dice: ${rules.tableDiceEnabled ? "on" : "off"}`,
+    `Aces · ${rules.acesConversion === "half" ? "Half" : "Half + 1"}`,
+    `Palo Fijo · ${rules.paloFijoTrigger === "oneDie" ? "1 die" : "2 dice"}`,
+    `Blind Dice · ${rules.paloFijoBlindDice ? "Yes" : "No"}`,
+    `Dice Amounts · ${rules.diceAmountsVisible ? "Visible" : "Hidden"}`,
+    `Table Dice · ${rules.tableDiceEnabled ? "Enabled" : "Disabled"}`,
   ];
 }
 
@@ -157,7 +167,7 @@ function LobbyRulesScreen({ lobby, playerId, onBack, onPropose, onApprove }: { l
   const approved = Boolean(playerId && proposal?.approvalPlayerIds.includes(playerId));
   const proposer = lobby.players.find((player) => player.id === proposal?.proposedById)?.name ?? "The host";
   const selected = <div className="lobby-rule-summary">{ruleSummary(lobby.rules).map((rule) => <span key={rule}>{rule}</span>)}</div>;
-  return <main className="setup-shell"><section className="setup-card lobby-card rules-page"><button className="button button--ghost back-button" onClick={onBack}>← Back to room</button><p className="eyebrow">Room rules</p><h1>Game rules</h1><p className="intro">Everyone can review the rules. A host proposal takes effect only when every seated player approves it; bots approve automatically.</p><h2>Current rules</h2>{selected}{host && <div className="rule-fields"><label><span>Aces conversion</span><select value={draft.acesConversion} onChange={(event) => setDraft({ ...draft, acesConversion: event.target.value as GameRules["acesConversion"] })}><option value="half">Half</option><option value="halfPlusOne">Half + 1</option></select></label><label><span>Palo fijo starts at</span><select value={draft.paloFijoTrigger} onChange={(event) => setDraft({ ...draft, paloFijoTrigger: event.target.value as GameRules["paloFijoTrigger"] })}><option value="oneDie">1 die</option><option value="twoDice">2 dice</option></select></label><label><span>Blind dice in Palo fijo</span><select value={String(draft.paloFijoBlindDice)} onChange={(event) => setDraft({ ...draft, paloFijoBlindDice: event.target.value === "true" })}><option value="true">Yes</option><option value="false">No</option></select></label><label><span>Show dice amounts</span><select value={String(draft.diceAmountsVisible)} onChange={(event) => setDraft({ ...draft, diceAmountsVisible: event.target.value === "true" })}><option value="true">Yes</option><option value="false">No</option></select></label><label><span>Allow table dice</span><select value={String(draft.tableDiceEnabled)} onChange={(event) => setDraft({ ...draft, tableDiceEnabled: event.target.value === "true" })}><option value="true">Yes</option><option value="false">No</option></select></label><button className="button button--primary" onClick={() => onPropose(draft)}>{proposal ? "Replace proposal" : "Propose rule changes"}</button></div>}{proposal && <section className="rule-proposal"><p className="turn-kicker">Awaiting unanimous approval</p><h2>{proposer}'s proposal</h2><div className="lobby-rule-summary">{ruleSummary(proposal.rules).map((rule) => <span key={rule}>{rule}</span>)}</div><p>{proposal.approvalPlayerIds.length}/{lobby.players.length} players approved</p><div className="rule-approvals">{lobby.players.map((player) => <span className={proposal.approvalPlayerIds.includes(player.id) ? "approved" : "pending"} key={player.id}>{proposal.approvalPlayerIds.includes(player.id) ? "✓" : "○"} {player.name}</span>)}</div>{playerId && !approved && <button className="button button--primary" onClick={onApprove}>Approve these rules</button>}{approved && <p className="rules-note">You approved this proposal.</p>}</section>}</section></main>;
+  return <main className="setup-shell"><section className="setup-card lobby-card rules-page"><button className="button button--ghost back-button" onClick={onBack}>← Back to room</button><p className="eyebrow">Room rules</p><h1>Game Rules</h1><p className="intro">The host can propose changes; every seated player must approve before they apply. Bots approve automatically.</p><section className="rules-section"><div className="rules-section-heading"><p className="turn-kicker">In play</p><h2>Current Rules</h2></div>{selected}</section>{host && <section className="rules-section rule-editor"><div className="rules-section-heading"><p className="turn-kicker">Host controls</p><h2>Propose Changes</h2></div><div className="rule-fields"><label><span>Aces Conversion</span><select value={draft.acesConversion} onChange={(event) => setDraft({ ...draft, acesConversion: event.target.value as GameRules["acesConversion"] })}><option value="half">Half</option><option value="halfPlusOne">Half + 1</option></select></label><label><span>Palo Fijo Starts At</span><select value={draft.paloFijoTrigger} onChange={(event) => setDraft({ ...draft, paloFijoTrigger: event.target.value as GameRules["paloFijoTrigger"] })}><option value="oneDie">1 die</option><option value="twoDice">2 dice</option></select></label><label><span>Blind Dice in Palo Fijo</span><select value={String(draft.paloFijoBlindDice)} onChange={(event) => setDraft({ ...draft, paloFijoBlindDice: event.target.value === "true" })}><option value="true">Yes</option><option value="false">No</option></select></label><label><span>Show Dice Amounts</span><select value={String(draft.diceAmountsVisible)} onChange={(event) => setDraft({ ...draft, diceAmountsVisible: event.target.value === "true" })}><option value="true">Yes</option><option value="false">No</option></select></label><label><span>Allow Table Dice</span><select value={String(draft.tableDiceEnabled)} onChange={(event) => setDraft({ ...draft, tableDiceEnabled: event.target.value === "true" })}><option value="true">Yes</option><option value="false">No</option></select></label></div><button className="button button--primary rule-propose-button" onClick={() => onPropose(draft)}>{proposal ? "Replace Proposal" : "Propose Rule Changes"}</button></section>}{proposal && <section className="rule-proposal"><p className="turn-kicker">Awaiting unanimous approval</p><h2>{proposer}'s Proposal</h2><div className="lobby-rule-summary">{ruleSummary(proposal.rules).map((rule) => <span key={rule}>{rule}</span>)}</div><p>{proposal.approvalPlayerIds.length}/{lobby.players.length} players approved</p><div className="rule-approvals">{lobby.players.map((player) => <span className={proposal.approvalPlayerIds.includes(player.id) ? "approved" : "pending"} key={player.id}>{proposal.approvalPlayerIds.includes(player.id) ? "✓" : "○"} {player.name}</span>)}</div>{playerId && !approved && <button className="button button--primary" onClick={onApprove}>Approve These Rules</button>}{approved && <p className="rules-note">You approved this proposal.</p>}</section>}</section></main>;
 }
 
 function FaceMark({ value, label = false }: { value: Die; label?: boolean }) {
@@ -213,7 +223,8 @@ function RoundReveal({ view, playerId, nextRound, onNext }: { view: PublicGameVi
   if (!showHands) return <div className={`round-result-overlay round-callout round-callout--${callName.toLowerCase()} round-callout--${resultState}`} role="status"><strong>{resultResolved && resolution.correct ? callName.toUpperCase() : [...callName.toUpperCase()].map((letter, index) => <i key={`${letter}-${index}`}>{letter}</i>)}</strong><span>{caller} calls it.</span></div>;
   const nextReady = Boolean(playerId && nextRound?.readyPlayerIds.includes(playerId));
   const remaining = nextRound ? Math.max(0, Math.ceil((nextRound.deadlineAt - clock) / 1_000)) : 0;
-  return <div className="round-result-overlay" role="dialog" aria-modal="true" aria-label="Round result"><section className="reveal-panel round-result"><div className="result-banner"><p className="turn-kicker">All hands revealed · {resolution.actualCount} actual</p><h3>{result}</h3><p>{consequence}</p></div><div className="revealed-hands">{view.players.filter((player) => player.hand?.length).map((player) => <div className="revealed-hand" key={player.id}><strong>{player.name}</strong><DiceRow dice={player.hand!} small highlight={highlight} /></div>)}</div>{playerId && <div className="next-round-ready"><button className="button button--primary" disabled={nextReady} onClick={onNext}>{nextReady ? "Ready for next round" : "Next round"}</button><small>{nextRound ? `${nextRound.readyPlayerIds.length}/${view.players.filter((player) => !player.eliminated).length} ready · auto-starts in ${remaining}s` : "Preparing the next round…"}</small></div>}</section></div>;
+  const missingPlayers = view.players.filter((player) => !player.eliminated && !nextRound?.readyPlayerIds.includes(player.id)).map((player) => player.name);
+  return <div className="round-result-overlay" role="dialog" aria-modal="true" aria-label="Round result"><section className="reveal-panel round-result"><div className="result-banner"><p className="turn-kicker">All hands revealed · {resolution.actualCount} actual</p><h3>{result}</h3><p>{consequence}</p></div><div className="revealed-hands">{view.players.filter((player) => player.hand?.length).map((player) => <div className="revealed-hand" key={player.id}><strong>{player.name}</strong><DiceRow dice={player.hand!} small highlight={highlight} /></div>)}</div>{playerId && <div className="next-round-ready"><button className="button button--primary" disabled={nextReady} onClick={onNext}>{nextReady ? "Ready for next round" : "Next round"}</button><small>{nextRound ? missingPlayers.length ? `Waiting for ${missingPlayers.join(", ")} · auto-starts in ${remaining}s` : `Everyone is ready · auto-starts in ${remaining}s` : "Preparing the next round…"}</small></div>}</section></div>;
 }
 
 function RoundShuffle({ view, playerId, shuffle, shaking, onShuffle }: { view: PublicGameView; playerId?: string; shuffle: NonNullable<Shuffle>; shaking: boolean; onShuffle: () => void }) {
@@ -246,6 +257,7 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
   const [soundLevels, setSoundLevelsState] = useState<SoundLevels>(getSoundLevels);
   const [tableDiceMode, setTableDiceMode] = useState(false);
   const [tableDiceIndices, setTableDiceIndices] = useState<number[]>([]);
+  const [tableRerolling, setTableRerolling] = useState(false);
   const [quantityManuallyAdjusted, setQuantityManuallyAdjusted] = useState(false);
   const [clock, setClock] = useState(() => Date.now());
   const shuffleTimer = useRef<number | undefined>(undefined);
@@ -284,7 +296,8 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
   }, []);
   const bid = () => {
     stopClockSound();
-    if (tableDiceMode && tableDiceIndices.length) playSound("tableDice");
+    const tableReroll = tableDiceMode && tableDiceIndices.length > 0;
+    if (tableReroll) { playSound("tableDice"); setTableRerolling(true); window.setTimeout(() => setTableRerolling(false), 520); }
     lastPlayedDenominationRef.current = selectedDenomination;
     onAction({ type: "bid", playerId: "", bid: { quantity, denomination: selectedDenomination }, ...(tableDiceMode && tableDiceIndices.length ? { tableDiceIndices } : {}) });
     setTableDiceMode(false);
@@ -418,7 +431,7 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
   return <div className={`game-shell${reducedMotion ? " game-shell--reduced-motion" : ""}`}>
     <header className="game-header"><div className="wordmark">Cachito online</div><div className="game-header-actions"><div className="round-label">Room {roomCode} · Round {view.round}{view.paloFijo ? " · Palo fijo" : ""}</div><button className="settings-button" aria-expanded={settingsOpen} aria-label="Game settings" onClick={() => setSettingsOpen((open) => !open)}>⚙</button>{settingsOpen && <div className="settings-popover"><strong>Settings</strong><label><input type="checkbox" checked={reducedMotion} onChange={(event) => setReducedMotion(event.target.checked)} /> Reduce motion</label><label className="sound-slider">Sound FX <input type="range" min="0" max="1" step="0.05" value={soundLevels.effects} onChange={(event) => changeSoundLevel("effects", Number(event.target.value))} /><output>{Math.round(soundLevels.effects * 100)}%</output></label><label className="sound-slider">Music <input type="range" min="0" max="1" step="0.05" value={soundLevels.music} onChange={(event) => changeSoundLevel("music", Number(event.target.value))} /><output>{Math.round(soundLevels.music * 100)}%</output></label>{playerId && <button className="button button--ghost settings-pause" onClick={onPause}>{paused ? "Resume game" : "Pause game"}</button>}<button className="button button--ghost settings-exit" onClick={onExit}>Exit to menu</button></div>}</div></header>
     <div className="table-layout"><main className="table-main">
-      <section className="players-strip">{view.players.map((player) => { const playerBid = roundBids?.round === view.round ? roundBids.bids[player.id] : undefined; return <article className={`player-chip${player.id === current?.id ? " player-chip--active" : ""}${statusById.get(player.id) === false ? " player-chip--offline" : ""}`} key={player.id}>{announcement?.playerId === player.id && <div className="player-speech" role="status">{announcement.text}</div>}<div className="player-name">{player.name}</div><div className="dice-count">{player.eliminated ? "Out · spectating" : statusById.get(player.id) === false ? "Offline · bot cover in 2 min" : view.rules.diceAmountsVisible ? <span className="dice-squares" aria-label={`${player.diceCount} ${player.diceCount === 1 ? "die" : "dice"}`}>{Array.from({ length: player.diceCount }, (_, index) => <i className={index < player.tableDice.length ? "dice-square--table" : ""} key={index} aria-hidden="true" />)}</span> : <span>Dice hidden</span>}</div>{playerBid && <div className="player-last-bid"><span>{playerBid.quantity}</span><span className="player-last-bid-die"><FaceMark value={playerBid.denomination} /></span></div>}</article>; })}</section>
+      <section className="players-strip">{view.players.map((player) => { const playerBid = roundBids?.round === view.round ? roundBids.bids[player.id] : undefined; return <article className={`player-chip${player.id === current?.id ? " player-chip--active" : ""}${statusById.get(player.id) === false ? " player-chip--offline" : ""}`} key={player.id}>{announcement?.playerId === player.id && <div className="player-speech" role="status">{announcement.text}</div>}<div className="player-name">{player.name}</div><div className="dice-count">{player.eliminated ? "Out · spectating" : statusById.get(player.id) === false ? "Offline · bot cover in 2 min" : view.rules.diceAmountsVisible ? <span className="dice-squares" aria-label={`${player.diceCount} ${player.diceCount === 1 ? "die" : "dice"}`}>{Array.from({ length: player.diceCount }, (_, index) => <i className={index < player.tableDice.length ? "dice-square--table" : ""} key={index} aria-hidden="true" />)}</span> : <span>Dice hidden</span>}</div>{playerBid && <div className="player-last-bid"><span>{playerBid.quantity} ×</span><span className="player-last-bid-die"><FaceMark value={playerBid.denomination} /></span></div>}</article>; })}</section>
       {view.players.some((player) => player.tableDice.length) && <section className="table-dice-board" aria-label="Table dice"><p className="turn-kicker">Table dice</p><div>{view.players.filter((player) => player.tableDice.length).map((player) => <article key={player.id}><strong>{player.name}</strong><DiceRow dice={player.tableDice} small /></article>)}</div></section>}
       <section className={`felt-table${isMyTurn ? " felt-table--your-turn" : ""}`}>
         {paused && <div className="game-paused-overlay" role="status"><strong>Game paused</strong><span>{paused.pausedByName} paused the table. Any player can resume it from Settings.</span></div>}
@@ -430,7 +443,7 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
         {view.paloFijo && <div className="palo-fijo-alert"><strong>Palo fijo</strong><span>Aces are not wild this round.{view.rules.paloFijoBlindDice && (view.players.find((player) => player.id === playerId)?.diceCount ?? 0) > 1 ? " Your dice stay hidden until you have one." : ""}</span></div>}
         {roundBid ? <div className="current-bid bid-card"><span className="bid-quantity">{roundBid.quantity}</span><FaceMark value={roundBid.denomination} /><div className="bid-copy"><strong>{denominationNames[roundBid.denomination]}</strong><span>{view.players.find((player) => player.id === roundBidderId)?.name ?? "Unknown player"} made the current bid</span></div></div> : <div className="current-bid bid-empty">No bid yet.</div>}
         {isMyTurn ? <section className="controls-card">{canPutDiceOnTable && <div className="table-dice-control">{tableDiceMode ? <><strong>Select dice for the table</strong><span>Choose at least one and keep one private. They will be public for this round; the rest reroll after your bid.</span><button className="button button--ghost" onClick={() => { setTableDiceMode(false); setTableDiceIndices([]); }}>Cancel table dice</button></> : <button className="button button--ghost" onClick={() => setTableDiceMode(true)}>Put dice on table</button>}</div>}<div className="bid-inputs"><div><span className="field-label">Quantity</span><div className="stepper"><button data-sound="number" onClick={() => { playSound("numDown"); setQuantity((value) => Math.max(1, value - 1)); setQuantityManuallyAdjusted(true); }}>−</button><span>{quantity}</span><button data-sound="number" onClick={() => { playSound("numUp"); setQuantity((value) => Math.min(maxQuantity, value + 1)); setQuantityManuallyAdjusted(true); }}>+</button></div></div><div><span className="field-label">Denomination</span><div className="denominations">{([1,2,3,4,5,6] as Die[]).map((die) => <button className="denom-button" data-sound="denomination" key={die} aria-pressed={selectedDenomination === die} onClick={() => chooseDenomination(die)} disabled={!minimumBidFor(die)}><FaceMark value={die} label /></button>)}</div></div></div><div className="action-row"><button className="challenge-button challenge-button--dudo" data-sound="challenge" disabled={!legal?.canDudo} onClick={() => call("dudo")}>Dudo</button><button className="challenge-button challenge-button--calzo" data-sound="challenge" disabled={!legal?.canCalzo} onClick={() => call("calzo")}>Calzo</button><button className="button button--primary" disabled={!chosen || tableDiceMode && !tableDiceIndices.length} onClick={bid}>{tableDiceMode ? `${view.currentBid ? "Raise" : "Make"} bid & put ${tableDiceIndices.length || "…"} on table` : view.currentBid ? "Raise bid" : "Make bid"}</button></div></section> : <section className="controls-card"><p className="rules-note">{eliminated ? "You are now a spectator for the rest of this game." : playerId ? "Your moves will appear here when it is your turn." : "You are spectating this game and will be seated when it returns to the lobby."}</p></section>}
-        <section className={`hand-panel${needsShuffle || shufflingDice ? " hand-panel--shuffling" : ""}`}><p className="hand-label">Your dice{tableDiceMode ? " · select dice to put on table" : isMyTurn ? " · click a die to choose its face" : ""}</p>{ownHand ? <DiceRow dice={shufflingDice && shuffleFaces ? shuffleFaces : ownHand} className={shufflingDice ? "dice-row--shuffling" : ""} selectedIndices={tableDiceMode ? tableDiceIndices : undefined} onDieClick={isMyTurn ? (value, index) => tableDiceMode ? setTableDiceIndices((current) => current.includes(index) ? current.filter((entry) => entry !== index) : current.length < ownHand.length - 1 ? [...current, index] : current) : setDenomination(value as Die) : undefined} /> : <p className="rules-note">Hands are hidden.</p>}</section>
+        <section className={`hand-panel${needsShuffle || shufflingDice ? " hand-panel--shuffling" : ""}`}><p className="hand-label">Your dice{tableDiceMode ? " · select dice to put on table" : isMyTurn ? " · click a die to choose its face" : ""}</p>{ownHand ? <DiceRow dice={shufflingDice && shuffleFaces ? shuffleFaces : ownHand} className={`${shufflingDice ? "dice-row--shuffling" : ""}${tableRerolling ? " dice-row--table-reroll" : ""}`} selectedIndices={tableDiceMode ? tableDiceIndices : undefined} onDieClick={isMyTurn ? (value, index) => tableDiceMode ? setTableDiceIndices((current) => current.includes(index) ? current.filter((entry) => entry !== index) : current.length < ownHand.length - 1 ? [...current, index] : current) : setDenomination(value as Die) : undefined} /> : <p className="rules-note">Hands are hidden.</p>}</section>
         {error && <p className="form-error">{error}</p>}
       </section>
     </main><OnlineHistory history={history} /></div>

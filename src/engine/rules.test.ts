@@ -53,7 +53,7 @@ describe('legal action generation', () => {
     const legal = getLegalActions(state, 'b')
     expect(legal.canDudo).toBe(true)
     expect(legal.canCalzo).toBe(true)
-    expect(legal.bids).toContainEqual({ quantity: 1, denomination: 1 })
+    expect(legal.bids).toContainEqual({ quantity: 2, denomination: 1 })
     expect(legal.bids).not.toContainEqual({ quantity: 2, denomination: 3 })
   })
 })
