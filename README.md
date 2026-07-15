@@ -15,24 +15,24 @@ The current app includes:
 - a non-interactive normal spectator/public-table view and a clearly labeled admin testing view;
 - downloadable, versioned JSON game logs with bot decision diagnostics;
 - live private rooms with room codes, lobbies, reconnects, normal spectators, host bot management, and host kick controls;
-- 90-second visible online turns, automatic round-shake and next-round fallbacks, and paced bot actions;
+- configurable online turns (one minute by default), a 20-second shake countdown, automatic readiness fallbacks, and paced bot actions;
 - sound effects, looping theme music, music/effects volume controls, and reduced-motion settings;
 - a live, worker-backed adversarial learning dashboard with evolutionary progress, rankings, and exportable results;
 - deterministic, testable engine behavior; and
 - a clean boundary between rules, presentation, and future networking.
 
-The local app includes a playable probability bot and an experimental parameter-learning lab. Realtime room play is live at [cachito.ianduclos.com](https://cachito.ianduclos.com): it uses Firebase Hosting for the browser app and a server-authoritative Cloud Run service for rooms. Accounts, public matchmaking, and durable relational persistence are not implemented.
+The local app includes a playable probability bot and an experimental parameter-learning lab. Realtime room play is live at [cachito.web.app](https://cachito.web.app): it uses Firebase Hosting for the browser app and a server-authoritative Cloud Run service for rooms. Accounts, public matchmaking, and durable relational persistence are not implemented.
 
 ## Live online play
 
 1. Choose **Play online**, then create a room, join a room code, or watch a room as a spectator.
 2. The host can add bots, remove bots, or remove players while still in the lobby. Two or more players are required to start.
-3. The host can propose room rules in the lobby. Every seated player must approve a proposal before it takes effect (bots approve automatically), and the match cannot start while an approval is pending. This includes the default-on **Put dice on table** mechanic: selected dice become public, the private remainder rerolls after the bid, and every player can do this once per round.
-3. Every active player shakes at the beginning of a round. Humans have one minute to do so; bots shake after 2–3 seconds. Eliminated players skip this step and spectate.
-4. Once all active cups are ready, every turn shows the same 90-second timer. Bots act after a 6–8 second thinking pause, not a shortened timer.
-5. The first action of a round is a **Make bid**; later bids are **Raise bid**. Dudo and Calzo resolve the round, reveal hands, and let active players select **Next round**. The room advances when all active players are ready or after one minute.
+3. The host can propose room rules in the lobby. Every seated player must approve a proposal before it takes effect (bots approve automatically), and the match cannot start while an approval is pending. Rules include turn time, ace conversion, Palo Fijo behavior, card visibility, and the default-on **Put dice on table** mechanic: selected dice become public, the private remainder rerolls after the bid, and every player can do this once per round.
+4. Every active player shakes at the beginning of a round. The shared shake screen counts down from 20 seconds; bots shake after 2–3 seconds. Eliminated players skip this step and spectate.
+5. Once all active cups are ready, every turn shows the room's configured timer (one minute by default). Bots act after a 3–8 second thinking pause, not a shortened visible timer.
+6. The first action of a round is a **Make bid**; later bids are **Raise bid**. Dudo and Calzo resolve the round, reveal hands, and let active players select **Next round**. The room advances when all active players are ready or after one minute.
 
-The final-ten-seconds clock cue stops immediately when a move resolves. Theme music ducks for longer effects, and the settings menu controls music and effects separately. A reconnect token stored in the browser restores an existing player after a brief connection loss when the room is still active.
+The final-ten-seconds clock cue stops immediately when a move resolves. Theme music ducks for longer effects, and the settings menu controls music and effects separately. A reconnect token stored in the browser restores an existing player after a connection loss when the room is still active; the Online menu includes a subtle **Reconnect to saved game** action when one is available.
 
 ## Maintainer handoff — production reminders
 
@@ -48,9 +48,10 @@ Read this before changing or deploying online play.
   firebase deploy --only hosting --project ian-duclos
   ```
 
-- **Do not weaken the no-cache header** in `firebase.json`. `Cache-Control: no-store, max-age=0` is intentional: it prevents old game clients being left behind after a release. Verify it, and the live favicon, with `curl -I https://cachito.ianduclos.com/` after deployment.
+- **Do not weaken the no-cache header** in `firebase.json`. `Cache-Control: no-store, max-age=0` is intentional: it prevents old game clients being left behind after a release. Verify it, and the live favicon, with `curl -I https://cachito.web.app/` after deployment.
 - **Keep the room server authoritative.** Never send an opponent's live hand, an admin view, or a bot's private observation to any browser. Generate `projectForPlayer` / `projectForSpectator` views on the server.
-- **Current online pacing is intentional:** 90 seconds per turn; a reveal advances once all active players select **Next round**, or automatically after one minute; unshaken cups auto-shake after another minute. Bots shake after 2–3 seconds, decide a turn after 6–8 seconds, and wait 4–6 seconds before next-round readiness. The final-ten-seconds clock cue must stop when a move resolves.
+- **Current online pacing is intentional:** room rules set turns to 15, 30, 60, or 90 seconds (60 by default); a reveal advances once all active players select **Next round**, or automatically after one minute; the shake screen counts down from 20 seconds. Bots shake after 2–3 seconds, decide a turn after 3–8 seconds, and wait 4–6 seconds before next-round readiness. The final-ten-seconds clock cue must stop when a move resolves.
+- **Online room residency is deliberate:** the Cloud Run service has a service-level maximum of one instance because current room state is in-memory. Active-room snapshots are private, throttled/coalesced recovery records; do not raise the instance count without first moving the authoritative room state to shared storage.
 - **Keep private match data private.** Production room snapshots go to the `ian-duclos-cachito-bot-logs` bucket; do not expose that bucket through Hosting or browser APIs. Local `logs/*.json` remains ignored by Git.
 - **Connection audit data is private.** Online snapshots record connection, reconnect, and disconnect events with a salted HMAC-SHA-256 IP fingerprint, IP version, forwarding-hop count, hashed user-agent, origin, primary language, and protocol. Never store raw IPs or raw user-agent strings. `IP_HASH_SALT` must be configured as a Cloud Run secret before enabling this audit trail.
 - **Favicon source:** `public/favicon.png`. Replace that file when changing the browser icon.
@@ -133,9 +134,9 @@ Bot diagnostics are created from the exact restricted observation passed to the 
 
 Logs are intended for local inspection now and later batch analysis. Keep `schemaVersion` when building importers, group comparisons by seed and seat assignment, and treat decision probabilities as predictions to score against later public round resolutions. Logs can become evaluation or self-play examples without granting a learner information that the acting bot did not have at decision time.
 
-### Private online snapshots
+### Private online snapshots and recovery
 
-Production online snapshots are private, server-only records. Schema version 4 retains the unanimously approved game rules alongside the nickname and controller for every seat, every round's full dealt hands, nickname-labelled actions (including table dice and rerolled private dice), and a timing record for each completed turn (start, deadline, finish, elapsed/remaining time, and bid/Dudo/Calzo/timeout outcome). These fields are recorded for new online matches and are never sent to players or spectators.
+Production online snapshots are private, server-only records. Schema version 4 retains the unanimously approved game rules alongside the nickname and controller for every seat, every round's full dealt hands, nickname-labelled actions (including table dice and rerolled private dice), and a timing record for each completed turn (start, deadline, finish, elapsed/remaining time, and bid/Dudo/Calzo/timeout outcome). Recovery snapshots are rate-limited and coalesced to avoid object-storage mutation limits, preserve reconnect tokens and offline timing state, and are never sent to players or spectators.
 
 ### Analyze a logs folder
 
@@ -201,7 +202,7 @@ The first 3,000-game learning experiment found a well-calibrated 2/4-player spec
 
 ### 4. Realtime multiplayer
 
-Realtime multiplayer is live through **Play online**. The server validates every action and sends each player or spectator a separately sanitized projection; the local admin view is never exposed online. The production service remains intentionally small and in-memory, so deployments must verify the Cloud Run revision, Firebase Hosting release, and the custom-domain no-cache response before inviting players.
+Realtime multiplayer is live through **Play online**. The server validates every action and sends each player or spectator a separately sanitized projection; the local admin view is never exposed online. The production service intentionally runs one Cloud Run instance while rooms remain in-memory, with private active-room snapshots for restart recovery. Deployments must verify the Cloud Run revision, single-instance setting, Firebase Hosting release, and the no-cache response before inviting players.
 
 ### 5. Later possibilities
 

@@ -54,15 +54,15 @@ Examples:
 
 Aces (ones) have special bid transitions in a normal round:
 
-- From a normal denomination to aces, the minimum ace quantity is `ceil(previous quantity / 2)` by default. A unanimously approved online-room setting may instead require `ceil(previous quantity / 2) + 1`.
+- From a normal denomination to aces, the minimum ace quantity is `ceil(previous quantity / 2) + 1` by default. A unanimously approved online-room setting may instead use `ceil(previous quantity / 2)`.
 - From aces to a normal denomination, the minimum normal quantity is `(previous ace quantity × 2) + 1`.
 - An ace bid followed by another ace bid must increase the quantity.
 
 Examples:
 
-- Five Chinas → three Aces is legal: `ceil(5 / 2) = 3`.
-- Six Chinas → three Aces is legal: `ceil(6 / 2) = 3`.
-- Six Chinas → two Aces is illegal.
+- Five Chinas → four Aces is legal under the default half-plus-one rule: `ceil(5 / 2) + 1 = 4`.
+- Six Chinas → four Aces is legal under the default half-plus-one rule: `ceil(6 / 2) + 1 = 4`.
+- With the half rule approved instead, five Chinas → three Aces is legal.
 - Three Aces → seven Dones is legal: `(3 × 2) + 1 = 7`.
 - Three Aces → six Sambas is illegal.
 
@@ -163,16 +163,16 @@ For local pass-and-play, the shared table screen doubles as the normal spectator
 The live online table uses the same engine rules above. The following points describe the current room experience rather than additional house rules:
 
 - A host creates a five-character room code, can add or remove bots before the match starts, and can remove other players from the lobby. Players can also join as normal spectators.
-- At the start of each round, every active player shakes their cup. Eliminated players do not shake again and go directly to spectating. A cup that has not been shaken is accepted automatically after one minute.
-- Once all active cups are ready, the current player receives a visible 90-second turn timer. Bots see the same timer, but normally shake after 2–3 seconds and decide their move after 6–8 seconds.
+- At the start of each round, every active player shakes their cup. Eliminated players do not shake again and go directly to spectating. The shake screen has a 20-second shared countdown; a cup that has not been shaken is accepted automatically when it expires.
+- Once all active cups are ready, the current player receives the room's visible turn timer: 15 seconds, 30 seconds, one minute (the default), or 1:30. Bots see the same timer, but normally shake after 2–3 seconds and decide their move after 3–8 seconds.
 - The clock cue plays only for the final ten seconds of a turn and stops as soon as a move resolves. It does not change the rules or shorten a bot's visible timer.
 - The current bid and its bidder remain visible for the whole round. The first player is prompted to **Make bid**; later players are prompted to **Raise bid**.
 - A Dudo or Calzo reveals every hand. The result screen identifies the caller, bidder, bid, actual qualifying count, and dice change. Dudo starts red and Calzo yellow before the result; a correct call turns green.
 - Active players select **Next round** after the reveal. The next round begins when everyone active is ready, or after one minute. Bots mark ready after 4–6 seconds.
-- A browser stores a reconnect token locally so an existing player can rejoin an in-memory room after a brief connection loss. Rooms expire after 20 minutes without game activity or one hour in the lobby.
-- The host can open **Game rules** in the lobby to propose five room settings: normal-to-ace conversion (half or half-plus-one), Palo Fijo trigger (one or two dice), Palo Fijo blind dice, whether player cards show dice amounts, and Put dice on table. Every seated player must approve a proposal before it takes effect; bots approve automatically. A pending proposal prevents the host from starting the game.
+- A browser stores a reconnect token locally so an existing player can rejoin an active room after a connection loss; the Online menu offers **Reconnect to saved game** when a saved seat exists. After a player has been offline for two minutes, their future turn timer is reduced to 20 seconds and the room auto-accepts their shake and next-round readiness. Rooms expire after 20 minutes without game activity or one hour in the lobby.
+- The host can open **Game rules** in the lobby to propose six room settings: time per play, normal-to-ace conversion (half or half-plus-one), Palo Fijo trigger (one or two dice), Palo Fijo blind dice, whether player cards show dice amounts, and Put dice on table. Every seated player must approve a proposal before it takes effect; bots approve automatically. A pending proposal prevents the host from starting the game.
 
-Online rooms are server-authoritative: the browser receives only its permitted player or spectator view. Private hands, the full engine state, and bot observations remain on the server.
+Online rooms are server-authoritative: the browser receives only its permitted player or spectator view. Private hands, the full engine state, and bot observations remain on the server. The current production room host is intentionally limited to one Cloud Run instance while room state is in-memory; private active-room snapshots provide recovery across a restart.
 
 For operational abuse and connection diagnostics, private production snapshots may record a salted, one-way fingerprint of a connecting address along with coarse connection metadata. They never include a raw IP address or raw browser identifier, and this audit data is never sent to players or spectators. Those private records also retain each match's agreed rules, round dealt hands, table-dice rerolls, player nicknames, actions, and completed-turn timing for match analysis; none of this live private data is exposed in the game.
 
