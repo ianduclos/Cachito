@@ -85,17 +85,27 @@ function OnlineGameContent({ onExit, restoreSavedSession = false }: { onExit: ()
     let reconnectTimer: number | undefined;
     let shouldRestore = restoreSavedSession;
     const connect = () => {
+      if (stopped || socket.current?.readyState === WebSocket.CONNECTING || socket.current?.readyState === WebSocket.OPEN) return;
       const connection = new WebSocket(onlineSocketUrl());
       socket.current = connection;
       connection.onopen = () => {
+        if (socket.current !== connection) return;
         setConnected(true);
         if (shouldRestore) {
           const saved = savedSession();
           if (saved) send(connection, { type: "join-room", roomCode: saved.roomCode, name: localStorage.getItem("cachito-display-name") ?? "", reconnectToken: saved.reconnectToken });
         }
       };
-      connection.onclose = () => { setConnected(false); if (socket.current === connection) socket.current = null; shouldRestore = true; if (!stopped) reconnectTimer = window.setTimeout(connect, 1_000); };
+      connection.onerror = () => { if (socket.current === connection) connection.close(); };
+      connection.onclose = () => {
+        if (socket.current !== connection) return;
+        setConnected(false);
+        socket.current = null;
+        shouldRestore = true;
+        if (!stopped) reconnectTimer = window.setTimeout(connect, 1_000);
+      };
       connection.onmessage = (event) => {
+        if (socket.current !== connection) return;
         const message = JSON.parse(event.data) as OnlineServerMessage;
         if (message.type === "error") {
           setError(message.message);
@@ -230,14 +240,15 @@ function RoundReveal({ view, playerId, nextRound, onNext }: { view: PublicGameVi
   return <div className="round-result-overlay" role="dialog" aria-modal="true" aria-label="Round result"><section className="reveal-panel round-result"><div className="result-banner"><p className="turn-kicker">{callName} · {caller} → {bidder}</p><h3>{resolution.bid.quantity} × {denominationNames[resolution.bid.denomination]} · {resolution.actualCount} there</h3><p>{resolution.correct ? "Correct call." : "Wrong call."} {consequence}</p></div><div className="revealed-hands">{view.players.filter((player) => player.hand?.length).map((player) => <div className="revealed-hand" key={player.id}><strong>{player.name}</strong><DiceRow dice={player.hand!} small highlight={highlight} /></div>)}</div>{playerId && <div className="next-round-ready"><button className="button button--primary" disabled={nextReady} onClick={onNext}>{nextReady ? "Ready for next round" : "Next round"}</button><small>{nextRound ? missingPlayers.length ? `Waiting for ${missingPlayers.join(", ")} · auto-starts in ${remaining}s` : `Everyone is ready · auto-starts in ${remaining}s` : "Preparing the next round…"}</small></div>}</section></div>;
 }
 
-function RoundShuffle({ view, playerId, shuffle, shaking, onShuffle }: { view: PublicGameView; playerId?: string; shuffle: NonNullable<Shuffle>; shaking: boolean; onShuffle: () => void }) {
+function RoundShuffle({ view, playerId, shuffle, shaking, clock, onShuffle }: { view: PublicGameView; playerId?: string; shuffle: NonNullable<Shuffle>; shaking: boolean; clock: number; onShuffle: () => void }) {
   const activePlayers = view.players.filter((player) => !player.eliminated);
   const ready = new Set(shuffle.readyPlayerIds);
   const myReady = Boolean(playerId && ready.has(playerId));
+  const remaining = Math.max(0, Math.ceil((shuffle.deadlineAt - clock) / 1_000));
   useEffect(() => {
     if (view.round > 1) playSound("nextRound");
   }, [shuffle.round, view.round]);
-  return <div className="round-shuffle-overlay" role="dialog" aria-modal="true" aria-label="Shuffle dice"><section className="round-shuffle-card"><p className="turn-kicker">Round {view.round} · First bid waits for everyone</p><h2>Shake your cup</h2><p className="round-shuffle-copy">Your dice below will tumble, then settle into this round’s hand.</p><div className="round-shuffle-players">{activePlayers.map((player) => <div className={`round-shuffle-player${ready.has(player.id) ? " round-shuffle-player--ready" : ""}`} key={player.id}><strong>{player.name}</strong><small>{ready.has(player.id) ? "Dice shuffled" : "Waiting"}</small></div>)}</div>{playerId ? <button className="button button--primary round-shuffle-button" data-sound="shake" disabled={shaking || myReady} onClick={onShuffle}>{myReady ? "Dice shuffled" : shaking ? "Shuffling…" : "Shake my dice"}</button> : <p className="rules-note">Waiting for the players to shake their dice.</p>}</section></div>;
+  return <div className="round-shuffle-overlay" role="dialog" aria-modal="true" aria-label="Shuffle dice"><section className="round-shuffle-card"><p className="turn-kicker">Round {view.round} · First bid waits for everyone</p><h2>Shake your cup</h2><p className="round-shuffle-copy">Your dice below will tumble, then settle into this round’s hand.</p><strong className="shuffle-countdown">{remaining}s</strong><div className="round-shuffle-players">{activePlayers.map((player) => <div className={`round-shuffle-player${ready.has(player.id) ? " round-shuffle-player--ready" : ""}`} key={player.id}><strong>{player.name}</strong><small>{ready.has(player.id) ? "Dice shuffled" : "Waiting"}</small></div>)}</div>{playerId ? <button className="button button--primary round-shuffle-button" data-sound="shake" disabled={shaking || myReady} onClick={onShuffle}>{myReady ? "Dice shuffled" : shaking ? "Shuffling…" : "Shake my dice"}</button> : <p className="rules-note">Waiting for the players to shake their dice.</p>}</section></div>;
 }
 
 function GameSummary({ view, history, isHost, onReturnToLobby, onExit }: { view: PublicGameView; history: string[]; isHost: boolean; onReturnToLobby: () => void; onExit: () => void }) {
@@ -440,7 +451,7 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
       <section className={`felt-table${isMyTurn ? " felt-table--your-turn" : ""}`}>
         {paused && <div className="game-paused-overlay" role="status"><strong>Game paused</strong><span>{paused.pausedByName} paused the table. Any player can resume it from Settings.</span></div>}
         {view.phase === "reveal" && <RoundReveal key={`${view.round}:${view.resolution?.kind}:${view.resolution?.callerId}`} view={view} playerId={playerId} nextRound={nextRound} onNext={onReadyNextRound} />}
-        {needsShuffle && !shufflingDice && <RoundShuffle view={view} playerId={playerId} shuffle={shuffle!} shaking={shufflingDice} onShuffle={shakeDice} />}
+        {needsShuffle && !shufflingDice && <RoundShuffle view={view} playerId={playerId} shuffle={shuffle!} shaking={shufflingDice} clock={clock} onShuffle={shakeDice} />}
         {secondsLeft !== undefined && <div className={`turn-timer${secondsLeft <= 10 ? " turn-timer--urgent" : ""}`} aria-label={`${secondsLeft} seconds remaining`}><span>{String(Math.floor(secondsLeft / 60)).padStart(1, "0")}:{String(secondsLeft % 60).padStart(2, "0")}</span><small>{isMyTurn ? "your turn" : "turn timer"}</small></div>}
         <p className="turn-kicker">{eliminated ? "Spectating — you are out" : isMyTurn ? "Make a bid or call it" : playerId ? "Waiting for turn" : "Spectating until the next lobby"}</p>
         <h2 className="turn-name">{view.phase === "reveal" ? "Round result" : current?.name}</h2>

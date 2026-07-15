@@ -17,7 +17,7 @@ type RoundDeal = { round: number; dealtAt: string; paloFijo: boolean; starterId:
 type TurnTiming = { round: number; playerId: string; nickname: string; controller: "human" | "bot"; startedAt: string; deadlineAt: string; finishedAt?: string; elapsedMs?: number; remainingMs?: number; outcome?: "bid" | "dudo" | "calzo" | "timeout" };
 type RoomRuleProposal = { rules: GameRules; proposedById: string; approvalPlayerIds: Set<string> };
 type PauseState = { pausedById: string; pausedAt: number; turnRemainingMs?: number; shuffleRemainingMs?: number; nextRoundRemainingMs?: number };
-type Room = { code: string; hostPlayerId: string; players: RoomPlayer[]; spectators: Map<WebSocket, Spectator>; connectionEvents: ConnectionEvent[]; rules: GameRules; pendingRules?: RoomRuleProposal; roundDeals: RoundDeal[]; turnTimings: TurnTiming[]; activeTurn?: TurnTiming; game?: GameState; history: string[]; botHistory: PublicActionEntry[]; announcement?: { text: string; playerId?: string }; shuffleReadyPlayerIds?: Set<string>; nextRoundReadyPlayerIds?: Set<string>; nextRoundDeadlineAt?: number; shuffleDeadlineAt?: number; paused?: PauseState; actions: LoggedAction[]; startedAt?: string; lastActivityAt: number; nextGameStarterId?: string; turnDeadlineAt?: number; turnTimer?: ReturnType<typeof setTimeout>; shuffleTimer?: ReturnType<typeof setTimeout>; nextRoundTimer?: ReturnType<typeof setTimeout>; offlineCoverTimer?: ReturnType<typeof setTimeout>; botShuffleTimers?: Array<ReturnType<typeof setTimeout>>; botNextRoundTimers?: Array<ReturnType<typeof setTimeout>> };
+type Room = { code: string; hostPlayerId: string; players: RoomPlayer[]; spectators: Map<WebSocket, Spectator>; connectionEvents: ConnectionEvent[]; rules: GameRules; pendingRules?: RoomRuleProposal; roundDeals: RoundDeal[]; turnTimings: TurnTiming[]; activeTurn?: TurnTiming; game?: GameState; history: string[]; botHistory: PublicActionEntry[]; announcement?: { text: string; playerId?: string }; shuffleReadyPlayerIds?: Set<string>; nextRoundReadyPlayerIds?: Set<string>; nextRoundDeadlineAt?: number; shuffleDeadlineAt?: number; paused?: PauseState; actions: LoggedAction[]; startedAt?: string; lastActivityAt: number; nextGameStarterId?: string; turnDeadlineAt?: number; turnTimer?: ReturnType<typeof setTimeout>; shuffleTimer?: ReturnType<typeof setTimeout>; nextRoundTimer?: ReturnType<typeof setTimeout>; offlineCoverTimer?: ReturnType<typeof setTimeout>; snapshotTimer?: ReturnType<typeof setTimeout>; snapshotPersisting?: boolean; snapshotQueued?: boolean; lastSnapshotAt?: number; botShuffleTimers?: Array<ReturnType<typeof setTimeout>>; botNextRoundTimers?: Array<ReturnType<typeof setTimeout>> };
 const rooms = new Map<string, Room>();
 const connectionContexts = new WeakMap<WebSocket, ConnectionContext>();
 const botNames = [
@@ -46,7 +46,7 @@ const storage = logBucket ? new Storage() : undefined;
 const GAME_IDLE_MS = 20 * 60_000;
 const LOBBY_IDLE_MS = 60 * 60_000;
 const ROUND_ADVANCE_MS = 60_000;
-const SHUFFLE_LIMIT_MS = 60_000;
+const SHUFFLE_LIMIT_MS = 20_000;
 const BOT_TURN_DELAY_MIN_MS = 3_000;
 const BOT_TURN_DELAY_SPREAD_MS = 5_000;
 const BOT_SHAKE_DELAY_MIN_MS = 2_000;
@@ -56,6 +56,7 @@ const BOT_NEXT_ROUND_DELAY_SPREAD_MS = 2_000;
 const OFFLINE_COVER_DELAY_MS = 2 * 60_000;
 const OFFLINE_TURN_LIMIT_MS = 20_000;
 const HEARTBEAT_MS = 30_000;
+const SNAPSHOT_MIN_INTERVAL_MS = 1_250;
 const ipHashSalt = process.env.IP_HASH_SALT;
 
 function code() {
@@ -149,7 +150,7 @@ function lobby(room: Room): Extract<OnlineServerMessage, { type: "lobby" }> {
 function playerStatuses(room: Room) { return room.players.map((player) => ({ id: player.id, connected: player.isBot || Boolean(player.socket), covered: isOfflineCovered(player) })); }
 function shufflePayload(room: Room) {
   return room.game?.phase === "playing" && room.shuffleReadyPlayerIds
-    ? { shuffle: { round: room.game.round, readyPlayerIds: [...room.shuffleReadyPlayerIds] } }
+    ? { shuffle: { round: room.game.round, readyPlayerIds: [...room.shuffleReadyPlayerIds], deadlineAt: room.shuffleDeadlineAt ?? Date.now() + SHUFFLE_LIMIT_MS } }
     : {};
 }
 function nextRoundPayload(room: Room) {
@@ -381,7 +382,7 @@ async function loadPersistedRoom(roomCode: string): Promise<Room | undefined> {
     const restored: Room = {
       code: saved.code,
       hostPlayerId: saved.hostPlayerId ?? "",
-      players: saved.players.map((player) => ({ id: player.id, name: player.name, isBot: player.isBot, ...(player.token ? { token: player.token } : {}), ...(typeof player.disconnectedAt === "number" ? { disconnectedAt: player.disconnectedAt } : {}) })),
+      players: saved.players.map((player) => ({ id: player.id, name: player.name, isBot: player.isBot, ...(player.token ? { token: player.token } : {}), ...(!player.isBot ? { disconnectedAt: typeof player.disconnectedAt === "number" ? player.disconnectedAt : Date.now() } : {}) })),
       spectators: new Map(),
       connectionEvents: saved.connectionEvents ?? [],
       rules: saved.rules ?? DEFAULT_GAME_RULES,
@@ -464,6 +465,7 @@ function expireIdleRooms() {
     if (room.shuffleTimer) clearTimeout(room.shuffleTimer);
     if (room.nextRoundTimer) clearTimeout(room.nextRoundTimer);
     if (room.offlineCoverTimer) clearTimeout(room.offlineCoverTimer);
+    if (room.snapshotTimer) clearTimeout(room.snapshotTimer);
     for (const timer of room.botShuffleTimers ?? []) clearTimeout(timer);
     for (const timer of room.botNextRoundTimers ?? []) clearTimeout(timer);
     for (const player of room.players) if (player.socket) { send(player.socket, { type: "error", message: "This idle room expired." }); player.socket.close(); }
@@ -682,7 +684,29 @@ function recordAction(room: Room, name: string, action: GameAction) {
 function denominationName(value: number) { return ["", "Aces", "Dones", "Trenes", "Cuadras", "Chinas", "Sambas"][value] ?? "dice"; }
 
 /** Private, server-only snapshots for later bot evaluation. No browser receives this data. */
-async function persistRoomSnapshot(room: Room) {
+function persistRoomSnapshot(room: Room) {
+  if (!storage || !logBucket) return;
+  if (room.snapshotPersisting) { room.snapshotQueued = true; return; }
+  if (room.snapshotTimer) return;
+  const waitMs = Math.max(0, (room.lastSnapshotAt ?? 0) + SNAPSHOT_MIN_INTERVAL_MS - Date.now());
+  if (waitMs) {
+    room.snapshotTimer = setTimeout(() => {
+      room.snapshotTimer = undefined;
+      void persistRoomSnapshot(room);
+    }, waitMs);
+    return;
+  }
+  room.snapshotPersisting = true;
+  room.lastSnapshotAt = Date.now();
+  return persistRoomSnapshotNow(room).finally(() => {
+    room.snapshotPersisting = undefined;
+    if (room.snapshotQueued) {
+      room.snapshotQueued = undefined;
+      void persistRoomSnapshot(room);
+    }
+  });
+}
+async function persistRoomSnapshotNow(room: Room) {
   if (!storage || !logBucket) return;
   const activeFile = storage.bucket(logBucket).file(`active-rooms/${room.code}.json`);
   if (room.game) {
