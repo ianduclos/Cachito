@@ -14,6 +14,8 @@ export interface GameRules {
   paloFijoBlindDice: boolean
   /** Whether the table displays dice counts on player cards. */
   diceAmountsVisible: boolean
+  /** Whether a player may put dice on the public table and reroll the rest once per round. */
+  tableDiceEnabled: boolean
 }
 
 export const DEFAULT_GAME_RULES: Readonly<GameRules> = {
@@ -21,6 +23,7 @@ export const DEFAULT_GAME_RULES: Readonly<GameRules> = {
   paloFijoTrigger: 'oneDie',
   paloFijoBlindDice: true,
   diceAmountsVisible: true,
+  tableDiceEnabled: true,
 }
 
 export interface Bid {
@@ -30,7 +33,11 @@ export interface Bid {
 
 export interface EnginePlayer extends PlayerSetup {
   diceCount: number
+  /** Private dice. Once table dice are used, this holds only the rerolled remainder. */
   hand: Die[]
+  /** Dice publicly put on the table for this round. */
+  tableDice: Die[]
+  tableDiceUsed: boolean
   /** True once this player has caused their one-time palo-fijo round. */
   paloFijoTriggered: boolean
 }
@@ -90,7 +97,7 @@ export interface GameOverState extends StateBase {
 export type GameState = PlayingState | RevealState | GameOverState
 
 export type GameAction =
-  | { type: 'bid'; playerId: string; bid: Bid }
+  | { type: 'bid'; playerId: string; bid: Bid; tableDiceIndices?: number[] }
   | { type: 'dudo'; playerId: string }
   | { type: 'calzo'; playerId: string }
   | { type: 'nextRound' }
@@ -100,6 +107,7 @@ export type RandomSource = () => number
 export interface PublicPlayer extends PlayerSetup {
   diceCount: number
   eliminated: boolean
+  tableDice: Die[]
   hand?: Die[]
 }
 
@@ -121,4 +129,5 @@ export interface LegalActions {
   bids: Bid[]
   canDudo: boolean
   canCalzo: boolean
+  canPutDiceOnTable: boolean
 }

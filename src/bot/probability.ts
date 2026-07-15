@@ -49,10 +49,10 @@ export function evaluateBidDistribution(view: PublicGameView, playerId: string, 
   const player = view.players.find((candidate) => candidate.id === playerId)
   if (!player) throw new Error(`Unknown player: ${playerId}`)
 
-  const visibleHand = player.hand ?? []
+  const visibleDice = [...(player.hand ?? []), ...view.players.flatMap((candidate) => candidate.tableDice)]
   const totalDice = view.players.reduce((sum, candidate) => sum + candidate.diceCount, 0)
-  const knownQualifiers = visibleHand.filter((die) => qualifies(die, bid.denomination, view.paloFijo)).length
-  const unknownDice = totalDice - visibleHand.length
+  const knownQualifiers = visibleDice.filter((die) => qualifies(die, bid.denomination, view.paloFijo)).length
+  const unknownDice = totalDice - visibleDice.length
   const probabilityPerUnknown = view.paloFijo || bid.denomination === 1 ? 1 / 6 : 2 / 6
   const unknownNeeded = bid.quantity - knownQualifiers
 
@@ -64,4 +64,3 @@ export function evaluateBidDistribution(view: PublicGameView, playerId: string, 
     exact: binomialPmf(unknownDice, unknownNeeded, probabilityPerUnknown),
   }
 }
-

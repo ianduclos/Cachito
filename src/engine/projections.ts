@@ -1,12 +1,13 @@
 import type { EnginePlayer, GameState, PublicGameView, PublicPlayer } from './types'
 
-function publicPlayer(player: EnginePlayer, revealHand: boolean): PublicPlayer {
+function publicPlayer(player: EnginePlayer, revealHand: boolean, includeTableDiceInHand = false): PublicPlayer {
   return {
     id: player.id,
     name: player.name,
     diceCount: player.diceCount,
     eliminated: player.diceCount === 0,
-    ...(revealHand ? { hand: [...player.hand] } : {}),
+    tableDice: [...player.tableDice],
+    ...(revealHand ? { hand: includeTableDiceInHand ? [...player.tableDice, ...player.hand] : [...player.hand] } : {}),
   }
 }
 
@@ -37,6 +38,7 @@ export function projectForPlayer(state: GameState, playerId: string): PublicGame
     ...baseView(state, state.players.map((player) => publicPlayer(
       player,
       revealAll || (revealViewerHand && player.id === playerId),
+      revealAll,
     ))),
     viewerPlayerId: playerId,
   }
@@ -45,10 +47,10 @@ export function projectForPlayer(state: GameState, playerId: string): PublicGame
 /** Spectators never see live hands, but do see all hands while a result is revealed. */
 export function projectForSpectator(state: GameState): PublicGameView {
   const revealAll = state.phase === 'reveal'
-  return baseView(state, state.players.map((player) => publicPlayer(player, revealAll)))
+  return baseView(state, state.players.map((player) => publicPlayer(player, revealAll, revealAll)))
 }
 
 /** Testing/admin view that exposes all hands, including while a round is live. */
 export function projectForAdminSpectator(state: GameState): PublicGameView {
-  return baseView(state, state.players.map((player) => publicPlayer(player, true)))
+  return baseView(state, state.players.map((player) => publicPlayer(player, true, true)))
 }

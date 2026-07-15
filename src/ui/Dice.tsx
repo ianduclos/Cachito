@@ -3,6 +3,7 @@ type DieProps = {
   hidden?: boolean;
   small?: boolean;
   highlighted?: boolean;
+  selected?: boolean;
 };
 
 const pipPositions: Record<number, number[]> = {
@@ -14,11 +15,11 @@ const pipPositions: Record<number, number[]> = {
   6: [0, 2, 3, 5, 6, 8],
 };
 
-export function Die({ value, hidden = false, small = false, highlighted = false }: DieProps) {
+export function Die({ value, hidden = false, small = false, highlighted = false, selected = false }: DieProps) {
   const pips = hidden ? [] : (pipPositions[value] ?? []);
   return (
     <span
-      className={`die${small ? " die--small" : ""}${hidden ? " die--hidden" : ""}${highlighted ? " die--highlighted" : ""}`}
+      className={`die${small ? " die--small" : ""}${hidden ? " die--hidden" : ""}${highlighted ? " die--highlighted" : ""}${selected ? " die--selected" : ""}`}
       role="img"
       aria-label={hidden ? "Hidden die" : `Die showing ${value}`}
     >
@@ -29,10 +30,10 @@ export function Die({ value, hidden = false, small = false, highlighted = false 
   );
 }
 
-export function DiceRow({ dice, hidden = false, small = false, className = "", onDieClick, highlight }: { dice: number[]; hidden?: boolean; small?: boolean; className?: string; onDieClick?: (value: number) => void; highlight?: (value: number) => boolean }) {
+export function DiceRow({ dice, hidden = false, small = false, className = "", onDieClick, highlight, selectedIndices }: { dice: number[]; hidden?: boolean; small?: boolean; className?: string; onDieClick?: (value: number, index: number) => void; highlight?: (value: number) => boolean; selectedIndices?: readonly number[] }) {
   return (
     <div className={`dice-row ${className}`.trim()}>
-      {dice.map((value, index) => onDieClick ? <button className="die-button" type="button" key={`${value}-${index}`} onClick={() => onDieClick(value)}><Die value={value} hidden={hidden} small={small} highlighted={highlight?.(value)} /></button> : <Die key={`${value}-${index}`} value={value} hidden={hidden} small={small} highlighted={highlight?.(value)} />)}
+      {dice.map((value, index) => onDieClick ? <button className="die-button" type="button" key={`${value}-${index}`} onClick={() => onDieClick(value, index)}><Die value={value} hidden={hidden} small={small} highlighted={highlight?.(value)} selected={selectedIndices?.includes(index)} /></button> : <Die key={`${value}-${index}`} value={value} hidden={hidden} small={small} highlighted={highlight?.(value)} selected={selectedIndices?.includes(index)} />)}
     </div>
   );
 }

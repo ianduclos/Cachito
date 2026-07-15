@@ -43,13 +43,13 @@ describe('legal action generation', () => {
     currentBid: { quantity: 2, denomination: 4 },
     lastBidderId: 'a',
     players: [
-      { id: 'a', name: 'A', diceCount: 2, hand: [1, 4], paloFijoTriggered: false },
-      { id: 'b', name: 'B', diceCount: 2, hand: [2, 2], paloFijoTriggered: false },
+      { id: 'a', name: 'A', diceCount: 2, hand: [1, 4], tableDice: [], tableDiceUsed: false, paloFijoTriggered: false },
+      { id: 'b', name: 'B', diceCount: 2, hand: [2, 2], tableDice: [], tableDiceUsed: false, paloFijoTriggered: false },
     ],
   }
 
   it('only offers actions to the current player', () => {
-    expect(getLegalActions(state, 'a')).toEqual({ bids: [], canDudo: false, canCalzo: false })
+    expect(getLegalActions(state, 'a')).toEqual({ bids: [], canDudo: false, canCalzo: false, canPutDiceOnTable: false })
     const legal = getLegalActions(state, 'b')
     expect(legal.canDudo).toBe(true)
     expect(legal.canCalzo).toBe(true)

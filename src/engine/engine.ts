@@ -45,6 +45,8 @@ export function createGame(playerSetups: PlayerSetup[], random: RandomSource = M
     ...player,
     diceCount: 5,
     hand: rollHand(5, random),
+    tableDice: [],
+    tableDiceUsed: false,
     paloFijoTriggered: false,
   }))
 
@@ -66,7 +68,7 @@ export function applyAction(state: GameState, action: GameAction, random: Random
 
   switch (action.type) {
     case 'bid':
-      return placeBid(state, action.playerId, action.bid)
+      return placeBid(state, action.playerId, action.bid, action.tableDiceIndices, random)
     case 'dudo':
       return resolveDudo(state, action.playerId)
     case 'calzo':
@@ -74,7 +76,7 @@ export function applyAction(state: GameState, action: GameAction, random: Random
   }
 }
 
-function placeBid(state: PlayingState, playerId: string, bid: Bid): PlayingState {
+function placeBid(state: PlayingState, playerId: string, bid: Bid, tableDiceIndices: number[] | undefined, random: RandomSource): PlayingState {
   const totalDice = state.players.reduce((sum, player) => sum + player.diceCount, 0)
   const player = getPlayer(state.players, playerId)
   const valid = state.currentBid
@@ -83,11 +85,31 @@ function placeBid(state: PlayingState, playerId: string, bid: Bid): PlayingState
 
   if (!valid) throw new GameRuleError('INVALID_BID', 'Bid does not legally raise the current bid')
 
+  if (tableDiceIndices !== undefined && !Array.isArray(tableDiceIndices)) {
+    throw new GameRuleError('INVALID_BID', 'The selected table dice are invalid')
+  }
+  const selectedIndices = tableDiceIndices ?? []
+  let players = state.players
+  if (selectedIndices.length > 0) {
+    if (!state.rules.tableDiceEnabled || state.paloFijo && state.rules.paloFijoBlindDice || player.tableDiceUsed) {
+      throw new GameRuleError('INVALID_BID', 'Putting dice on the table is not available right now')
+    }
+    if (selectedIndices.length >= player.hand.length || new Set(selectedIndices).size !== selectedIndices.length || selectedIndices.some((index) => !Number.isInteger(index) || index < 0 || index >= player.hand.length)) {
+      throw new GameRuleError('INVALID_BID', 'Choose at least one die to show and keep at least one private')
+    }
+    const selected = selectedIndices.map((index) => player.hand[index])
+    const selectedSet = new Set(selectedIndices)
+    const remaining = player.hand.filter((_, index) => !selectedSet.has(index))
+    const updatedPlayer: EnginePlayer = { ...player, hand: rollHand(remaining.length, random), tableDice: [...player.tableDice, ...selected], tableDiceUsed: true }
+    players = replacePlayer(state.players, playerId, updatedPlayer)
+  }
+
   return {
     ...state,
+    players,
     currentBid: { ...bid },
     lastBidderId: playerId,
-    currentPlayerId: nextActivePlayerId(state.players, playerId),
+    currentPlayerId: nextActivePlayerId(players, playerId),
   }
 }
 
@@ -157,7 +179,7 @@ function startNextRound(state: GameState, random: RandomSource): GameState {
   if (activePlayers.length === 1) {
     return {
       phase: 'gameOver',
-      players: state.players.map((player) => ({ ...player, hand: [] })),
+      players: state.players.map((player) => ({ ...player, hand: [], tableDice: [], tableDiceUsed: false })),
       round: state.round,
       paloFijo: false,
       rules: { ...state.rules },
@@ -173,6 +195,8 @@ function startNextRound(state: GameState, random: RandomSource): GameState {
     players: state.players.map((player) => ({
       ...player,
       hand: player.diceCount > 0 ? rollHand(player.diceCount, random) : [],
+      tableDice: [],
+      tableDiceUsed: false,
     })),
     round: state.round + 1,
     paloFijo: state.resolution.paloFijoNextRound,

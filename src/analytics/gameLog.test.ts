@@ -45,9 +45,9 @@ describe('game analysis log', () => {
       currentBid: { quantity: 2, denomination: 3 },
       lastBidderId: 'c',
       players: [
-        { id: 'a', name: 'A', diceCount: 2, hand: [4, 6], paloFijoTriggered: false },
-        { id: 'b', name: 'B', diceCount: 1, hand: [2], paloFijoTriggered: true },
-        { id: 'c', name: 'C', diceCount: 3, hand: [1, 3, 5], paloFijoTriggered: false },
+        { id: 'a', name: 'A', diceCount: 2, hand: [4, 6], tableDice: [], tableDiceUsed: false, paloFijoTriggered: false },
+        { id: 'b', name: 'B', diceCount: 1, hand: [2], tableDice: [], tableDiceUsed: false, paloFijoTriggered: true },
+        { id: 'c', name: 'C', diceCount: 3, hand: [1, 3, 5], tableDice: [], tableDiceUsed: false, paloFijoTriggered: false },
       ],
     }
     const observation: BotObservation = {
@@ -88,8 +88,8 @@ describe('game analysis log', () => {
       phase: 'playing', round: 2, paloFijo: false, rules: { ...DEFAULT_GAME_RULES }, currentPlayerId: 'a',
       currentBid: { quantity: 2, denomination: 4 }, lastBidderId: 'b',
       players: [
-        { id: 'a', name: 'A', diceCount: 2, hand: [1, 5], paloFijoTriggered: false },
-        { id: 'b', name: 'B', diceCount: 2, hand: [4, 6], paloFijoTriggered: false },
+        { id: 'a', name: 'A', diceCount: 2, hand: [1, 5], tableDice: [], tableDiceUsed: false, paloFijoTriggered: false },
+        { id: 'b', name: 'B', diceCount: 2, hand: [4, 6], tableDice: [], tableDiceUsed: false, paloFijoTriggered: false },
       ],
     }
     const view = projectForPlayer(state, 'a')

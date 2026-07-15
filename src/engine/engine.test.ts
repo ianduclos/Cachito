@@ -6,6 +6,7 @@ import {
   createSeededRandom,
   DEFAULT_GAME_RULES,
   GameRuleError,
+  getLegalActions,
   projectForAdminSpectator,
   projectForPlayer,
   projectForSpectator,
@@ -21,6 +22,8 @@ function playing(
     name: id.toUpperCase(),
     diceCount: hand.length,
     hand: [...hand],
+    tableDice: [],
+    tableDiceUsed: false,
     paloFijoTriggered: false,
   }))
   return {
@@ -62,6 +65,28 @@ describe('game creation and turns', () => {
 })
 
 describe('counting and round resolution', () => {
+  it('keeps selected dice public, rerolls the private remainder, and counts both', () => {
+    const state = playing({ a: [5, 2, 3], b: [4, 6] })
+    const afterBid = applyAction(state, { type: 'bid', playerId: 'a', bid: { quantity: 2, denomination: 5 }, tableDiceIndices: [0] }, () => 0)
+    if (afterBid.phase !== 'playing') throw new Error('expected playing')
+    const player = afterBid.players.find((candidate) => candidate.id === 'a')!
+    expect(player.tableDice).toEqual([5])
+    expect(player.hand).toEqual([1, 1])
+    expect(player.tableDiceUsed).toBe(true)
+    expect(countBid(afterBid, { quantity: 3, denomination: 5 })).toBe(3)
+    expect(projectForPlayer(afterBid, 'a').players.find((candidate) => candidate.id === 'a')?.hand).toEqual([1, 1])
+    expect(projectForSpectator(afterBid).players.find((candidate) => candidate.id === 'a')?.tableDice).toEqual([5])
+  })
+
+  it('requires a private die and permits table dice only once per round', () => {
+    const state = playing({ a: [5, 2], b: [4, 6] })
+    expect(() => applyAction(state, { type: 'bid', playerId: 'a', bid: { quantity: 1, denomination: 5 }, tableDiceIndices: [0, 1] })).toThrowError(/keep at least one private/i)
+    const afterBid = applyAction(state, { type: 'bid', playerId: 'a', bid: { quantity: 1, denomination: 5 }, tableDiceIndices: [0] })
+    if (afterBid.phase !== 'playing') throw new Error('expected playing')
+    const backToA = { ...afterBid, currentPlayerId: 'a' }
+    expect(() => applyAction(backToA, { type: 'bid', playerId: 'a', bid: { quantity: 2, denomination: 5 }, tableDiceIndices: [0] })).toThrowError(/not available/i)
+  })
+
   it('counts ones as wild in normal rounds but not for ace bids or palo fijo', () => {
     const state = playing({ a: [1, 5, 5], b: [1, 2] })
     expect(countBid(state, { quantity: 4, denomination: 5 })).toBe(4)
@@ -135,6 +160,11 @@ describe('palo fijo', () => {
     const reveal = applyAction(state, { type: 'dudo', playerId: 'b' })
     expect(reveal.phase === 'reveal' && reveal.resolution.paloFijoNextRound).toBe(true)
     expect(reveal.players.find((player) => player.id === 'a')?.diceCount).toBe(2)
+  })
+
+  it('does not offer table dice during blind palo fijo', () => {
+    const state = playing({ a: [2, 3], b: [4, 5], c: [6] }, { paloFijo: true })
+    expect(getLegalActions(state, 'a').canPutDiceOnTable).toBe(false)
   })
 
   it('lasts one round and only triggers the first time a player reaches one die', () => {

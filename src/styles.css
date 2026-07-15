@@ -248,6 +248,17 @@ h1 { font: 800 clamp(3.2rem, 9vw, 5rem)/.95 "Fraunces", Georgia, serif; text-ali
 .denom-button small { font-size: .62rem; font-weight: 600; line-height: 1; overflow: visible; white-space: nowrap; letter-spacing: -.02em; }
 .denom-button[aria-pressed="true"] { border-color: var(--gold); color: var(--ink); background: var(--gold); }
 .action-row { display: grid; grid-template-columns: 1fr 1fr 1.4fr; gap: 8px; margin-top: 15px; }
+.table-dice-control { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; margin: 0 0 14px; padding: 10px; border: 1px dashed #74d39f88; border-radius: 12px; background: #74d39f0c; }
+.table-dice-control strong { color: #b4edc9; font-size: .78rem; }
+.table-dice-control span { color: var(--muted); font-size: .71rem; line-height: 1.35; }
+.table-dice-control .button { min-height: 34px; padding: 6px 9px; font-size: .7rem; }
+.table-dice-board { margin: 12px 0 4px; padding: 11px 14px; border: 1px solid #f2bd5a4a; border-radius: 14px; background: #061f1bbd; }
+.table-dice-board > p { margin-bottom: 7px; }
+.table-dice-board > div { display: flex; flex-wrap: wrap; gap: 10px; }
+.table-dice-board article { display: flex; align-items: center; gap: 7px; padding-right: 10px; border-right: 1px solid #ffffff1b; }
+.table-dice-board article:last-child { border-right: 0; }
+.table-dice-board strong { color: var(--cream); font-size: .7rem; white-space: nowrap; }
+.table-dice-board .dice-row { gap: 4px; justify-content: flex-start; }
 .challenge-button { border: 1px solid #ffffff20; border-radius: 11px; background: transparent; color: var(--cream); font-weight: 800; }
 .challenge-button--dudo { color: #ff927e; border-color: #ee765e66; }
 .challenge-button--calzo { color: var(--gold); border-color: #f2bd5a55; }
@@ -268,6 +279,7 @@ h1 { font: 800 clamp(3.2rem, 9vw, 5rem)/.95 "Fraunces", Georgia, serif; text-ali
 .die-button:hover .die, .die-button:focus-visible .die { outline: 3px solid var(--gold); outline-offset: 3px; transform: translateY(-4px) rotate(3deg); }
 .die { width: 62px; height: 62px; display: grid; grid-template-columns: repeat(3,1fr); grid-template-rows: repeat(3,1fr); padding: 8px; border-radius: 13px; background: var(--cream); box-shadow: inset -3px -3px 0 #dacda9, 0 6px 10px #0005; transform: rotate(-1.5deg); }
 .die--highlighted { outline: 3px solid var(--gold); outline-offset: 3px; box-shadow: inset -3px -3px 0 #dacda9, 0 0 0 5px #f2bd5a25, 0 7px 15px #0007; }
+.die--selected { outline: 3px solid #74d39f; outline-offset: 4px; box-shadow: inset -3px -3px 0 #dacda9, 0 0 0 6px #74d39f24, 0 7px 15px #0007; transform: translateY(-5px) rotate(2deg); }
 .die:nth-child(even) { transform: rotate(2.5deg); }
 .die--small { width: 31px; height: 31px; padding: 4px; border-radius: 7px; }
 .pip { align-self: center; justify-self: center; width: 7px; height: 7px; border-radius: 50%; background: #173129; }

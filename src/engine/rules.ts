@@ -32,7 +32,7 @@ export function isHigherBid(previous: Bid, next: Bid, paloFijo: boolean, bidderH
 }
 
 export function countBid(state: GameState, bid: Bid): number {
-  const dice = state.players.flatMap((player) => player.hand)
+  const dice = state.players.flatMap((player) => [...player.hand, ...player.tableDice])
   if (state.paloFijo || bid.denomination === 1) {
     return dice.filter((die) => die === bid.denomination).length
   }
@@ -41,11 +41,11 @@ export function countBid(state: GameState, bid: Bid): number {
 
 export function getLegalActions(state: GameState, playerId: string): LegalActions {
   if (state.phase !== 'playing' || state.currentPlayerId !== playerId) {
-    return { bids: [], canDudo: false, canCalzo: false }
+    return { bids: [], canDudo: false, canCalzo: false, canPutDiceOnTable: false }
   }
 
   const player = state.players.find((candidate) => candidate.id === playerId)
-  if (!player || player.diceCount === 0) return { bids: [], canDudo: false, canCalzo: false }
+  if (!player || player.diceCount === 0) return { bids: [], canDudo: false, canCalzo: false, canPutDiceOnTable: false }
 
   const totalDice = state.players.reduce((sum, candidate) => sum + candidate.diceCount, 0)
   const bids: Bid[] = []
@@ -62,5 +62,6 @@ export function getLegalActions(state: GameState, playerId: string): LegalAction
     bids,
     canDudo: state.currentBid !== null,
     canCalzo: state.currentBid !== null,
+    canPutDiceOnTable: state.rules.tableDiceEnabled && !(state.paloFijo && state.rules.paloFijoBlindDice) && !player.tableDiceUsed && player.hand.length >= 2,
   }
 }

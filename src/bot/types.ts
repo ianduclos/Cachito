@@ -6,7 +6,7 @@ import type {
 } from '../engine'
 
 export type BotChoice =
-  | { type: 'bid'; bid: Bid }
+  | { type: 'bid'; bid: Bid; tableDiceIndices?: number[] }
   | { type: 'dudo' }
   | { type: 'calzo' }
 

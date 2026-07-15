@@ -77,6 +77,17 @@ During a normal round:
 
 During Palo Fijo, aces are not wild. Every die counts only as its printed denomination.
 
+## Put dice on table
+
+When the room enables **Put dice on table** (the default), a player with at least two visible private dice may use it once during a round as part of their bid.
+
+- The player selects one or more dice to put on the table, while keeping at least one die private.
+- The bid and selected dice are committed together. Selected dice remain public in the Table dice area until the round ends.
+- Immediately after the bid, the player's remaining private dice reroll before the next player takes their turn.
+- Public table dice and private dice both count toward every bid.
+- This option is unavailable during blind Palo Fijo, since the player cannot see their dice. It is available during non-blind Palo Fijo if the room has disabled blind dice.
+- Table dice are visible even if the room hides dice amounts on player cards; that setting affects only the cards.
+
 ## Dudo
 
 Dudo claims that the previous bid's quantity is too high.
@@ -159,11 +170,11 @@ The live online table uses the same engine rules above. The following points des
 - A Dudo or Calzo reveals every hand. The result screen identifies the caller, bidder, bid, actual qualifying count, and dice change. Dudo starts red and Calzo yellow before the result; a correct call turns green.
 - Active players select **Next round** after the reveal. The next round begins when everyone active is ready, or after one minute. Bots mark ready after 4–6 seconds.
 - A browser stores a reconnect token locally so an existing player can rejoin an in-memory room after a brief connection loss. Rooms expire after 20 minutes without game activity or one hour in the lobby.
-- The host can open **Game rules** in the lobby to propose four room settings: normal-to-ace conversion (half or half-plus-one), Palo Fijo trigger (one or two dice), Palo Fijo blind dice, and whether player cards show dice amounts. Every seated player must approve a proposal before it takes effect; bots approve automatically. A pending proposal prevents the host from starting the game.
+- The host can open **Game rules** in the lobby to propose five room settings: normal-to-ace conversion (half or half-plus-one), Palo Fijo trigger (one or two dice), Palo Fijo blind dice, whether player cards show dice amounts, and Put dice on table. Every seated player must approve a proposal before it takes effect; bots approve automatically. A pending proposal prevents the host from starting the game.
 
 Online rooms are server-authoritative: the browser receives only its permitted player or spectator view. Private hands, the full engine state, and bot observations remain on the server.
 
-For operational abuse and connection diagnostics, private production snapshots may record a salted, one-way fingerprint of a connecting address along with coarse connection metadata. They never include a raw IP address or raw browser identifier, and this audit data is never sent to players or spectators. Those private records also retain each match's agreed rules, round dealt hands, player nicknames, actions, and completed-turn timing for match analysis; none of this live private data is exposed in the game.
+For operational abuse and connection diagnostics, private production snapshots may record a salted, one-way fingerprint of a connecting address along with coarse connection metadata. They never include a raw IP address or raw browser identifier, and this audit data is never sent to players or spectators. Those private records also retain each match's agreed rules, round dealt hands, table-dice rerolls, player nicknames, actions, and completed-turn timing for match analysis; none of this live private data is exposed in the game.
 
 ## Future configurable variants
 

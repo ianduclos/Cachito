@@ -30,6 +30,8 @@ function stateWithHands(
     name: id.toUpperCase(),
     diceCount: hand.length,
     hand: [...hand],
+    tableDice: [],
+    tableDiceUsed: false,
     paloFijoTriggered: false,
   }))
   return {
@@ -195,7 +197,7 @@ describe('bot decision traces', () => {
     const fallbackObservation = {
       ...observation,
       view: { ...observation.view, currentBid: null },
-      legalActions: { bids: [], canDudo: true, canCalzo: false },
+      legalActions: { bids: [], canDudo: true, canCalzo: false, canPutDiceOnTable: false },
     }
     const fallback = chooseBotAction(createProbabilityPolicy(), fallbackObservation, () => 0)
     expect(fallback.trace?.decisionReason).toBe('forced_fallback')

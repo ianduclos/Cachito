@@ -3,7 +3,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 import { WebSocketServer, type WebSocket } from "ws";
 import { Storage } from "@google-cloud/storage";
-import { applyAction, createGame, DEFAULT_GAME_RULES, getLegalActions, projectForPlayer, projectForSpectator, type GameAction, type GameRules, type GameState, type PlayerSetup } from "../src/engine";
+import { applyAction, createGame, DEFAULT_GAME_RULES, getLegalActions, projectForPlayer, projectForSpectator, type Die, type GameAction, type GameRules, type GameState, type PlayerSetup } from "../src/engine";
 import { chooseBotAction, createProbabilityPolicy, isChoiceLegal, type BotObservation } from "../src/bot";
 import type { OnlineClientMessage, OnlineServerMessage } from "../src/online/protocol";
 
@@ -12,7 +12,7 @@ type RoomEvent = { type: "round-start" } | { type: "shuffle-dice" };
 type Spectator = { socket: WebSocket; queuedPlayer?: RoomPlayer };
 type ConnectionContext = { connectionId: string; ipHash: string | null; ipVersion: "ipv4" | "ipv6" | "unknown"; forwardedForCount: number; userAgentHash: string | null; origin?: string; language?: string; protocol?: string; hashConfigured: boolean };
 type ConnectionEvent = ConnectionContext & { at: string; event: "room-created" | "player-joined" | "player-reconnected" | "player-queued" | "spectator-joined" | "disconnected"; role: "player" | "spectator"; playerId?: string };
-type LoggedAction = { at: string; playerId?: string; nickname?: string; action: GameAction | RoomEvent };
+type LoggedAction = { at: string; playerId?: string; nickname?: string; action: GameAction | RoomEvent; tableDice?: Die[]; rerolledDice?: Die[] };
 type RoundDeal = { round: number; dealtAt: string; paloFijo: boolean; starterId: string | null; hands: Array<{ playerId: string; nickname: string; dice: number[] }> };
 type TurnTiming = { round: number; playerId: string; nickname: string; controller: "human" | "bot"; startedAt: string; deadlineAt: string; finishedAt?: string; elapsedMs?: number; remainingMs?: number; outcome?: "bid" | "dudo" | "calzo" | "timeout" };
 type RoomRuleProposal = { rules: GameRules; proposedById: string; approvalPlayerIds: Set<string> };
@@ -69,7 +69,8 @@ function isGameRules(value: unknown): value is GameRules {
   return (rules.acesConversion === "half" || rules.acesConversion === "halfPlusOne")
     && (rules.paloFijoTrigger === "oneDie" || rules.paloFijoTrigger === "twoDice")
     && typeof rules.paloFijoBlindDice === "boolean"
-    && typeof rules.diceAmountsVisible === "boolean";
+    && typeof rules.diceAmountsVisible === "boolean"
+    && typeof rules.tableDiceEnabled === "boolean";
 }
 function settleRuleProposal(room: Room) {
   const proposal = room.pendingRules;
@@ -200,7 +201,7 @@ function scheduleTurn(room: Room) {
       const observation: BotObservation = { playerId: actor.id, view: projectForPlayer(game, actor.id), legalActions: getLegalActions(game, actor.id), history: [] };
       const { choice } = chooseBotAction(botPolicy, observation, Math.random);
       if (!isChoiceLegal(observation, choice)) throw new Error("Bot selected an illegal action.");
-      const action = choice.type === "bid" ? { type: "bid" as const, playerId: actor.id, bid: choice.bid } : { type: choice.type, playerId: actor.id };
+      const action = choice.type === "bid" ? { type: "bid" as const, playerId: actor.id, bid: choice.bid, ...(choice.tableDiceIndices?.length ? { tableDiceIndices: choice.tableDiceIndices } : {}) } : { type: choice.type, playerId: actor.id };
       finishTurnTiming(room, actor.isBot ? action.type : "timeout");
       room.game = applyAction(game, action);
       recordAction(room, actor.name, action);
@@ -432,8 +433,10 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
 
 function recordAction(room: Room, name: string, action: GameAction) {
   if (!room.game) return;
-  room.actions.push({ at: new Date().toISOString(), ...(action.type === "nextRound" ? {} : { playerId: action.playerId, nickname: name }), action });
-  if (action.type === "bid") room.history.unshift(`${name} bids ${action.bid.quantity} ${denominationName(action.bid.denomination)}.`);
+  const player = action.type === "nextRound" ? undefined : room.game.players.find((candidate) => candidate.id === action.playerId);
+  const tableMove = action.type === "bid" && action.tableDiceIndices?.length && player ? { tableDice: [...player.tableDice], rerolledDice: [...player.hand] } : {};
+  room.actions.push({ at: new Date().toISOString(), ...(action.type === "nextRound" ? {} : { playerId: action.playerId, nickname: name }), action, ...tableMove });
+  if (action.type === "bid") room.history.unshift(action.tableDiceIndices?.length ? `${name} puts ${action.tableDiceIndices.length} dice on the table and bids ${action.bid.quantity} ${denominationName(action.bid.denomination)}.` : `${name} bids ${action.bid.quantity} ${denominationName(action.bid.denomination)}.`);
   else if (action.type === "dudo") room.history.unshift(`${name} calls Dudo.`);
   else if (action.type === "calzo") room.history.unshift(`${name} calls Calzo.`);
   else room.history.unshift(`Round ${room.game.round} begins.`);
@@ -460,7 +463,7 @@ async function persistRoomSnapshot(room: Room) {
   if (!storage || !logBucket || !room.game || !room.startedAt) return;
   const filename = `online-matches/${room.startedAt.replace(/[:.]/g, "-")}-${room.code}.json`;
   const snapshot = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     roomCode: room.code,
     startedAt: room.startedAt,
     updatedAt: new Date().toISOString(),

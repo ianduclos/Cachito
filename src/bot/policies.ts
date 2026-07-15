@@ -204,7 +204,7 @@ export function createProbabilityPolicy(options: ProbabilityPolicyOptions = {}):
         rank: scored.indexOf(selected.item) + 1,
         score: selected.item.score,
       }
-      return { choice: { type: 'bid', bid: selected.item.bid }, trace }
+      return { choice: { type: 'bid', bid: selected.item.bid, ...tableDiceForBid(observation, selected.item.bid) }, trace }
   }
 
   return {
@@ -262,8 +262,21 @@ function denominationPreference(hand: Die[] | undefined, denomination: Die, palo
   return matches * 0.008
 }
 
+function tableDiceForBid(observation: BotObservation, bid: Bid): Pick<Extract<BotChoice, { type: 'bid' }>, 'tableDiceIndices'> {
+  if (!observation.legalActions.canPutDiceOnTable) return {}
+  const hand = observation.view.players.find((player) => player.id === observation.playerId)?.hand
+  if (!hand || hand.length < 2) return {}
+  const qualifying = hand.flatMap((die, index) => die === bid.denomination || (!observation.view.paloFijo && bid.denomination !== 1 && die === 1) ? [index] : [])
+  if (!qualifying.length) return {}
+  return { tableDiceIndices: qualifying.slice(0, hand.length - 1) }
+}
+
 export function isChoiceLegal(observation: BotObservation, choice: BotChoice): boolean {
   if (choice.type === 'dudo') return observation.legalActions.canDudo
   if (choice.type === 'calzo') return observation.legalActions.canCalzo
-  return observation.legalActions.bids.some((bid) => sameBid(bid, choice.bid))
+  if (!observation.legalActions.bids.some((bid) => sameBid(bid, choice.bid))) return false
+  const indices = choice.tableDiceIndices
+  if (!indices?.length) return true
+  const handLength = observation.view.players.find((player) => player.id === observation.playerId)?.hand?.length ?? 0
+  return observation.legalActions.canPutDiceOnTable && indices.length < handLength && new Set(indices).size === indices.length && indices.every((index) => Number.isInteger(index) && index >= 0 && index < handLength)
 }
