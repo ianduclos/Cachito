@@ -57,6 +57,27 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .lobby-rename label { color: var(--muted); font-size: .72rem; font-weight: 700; }
 .lobby-rename input { min-width: 0; border: 1px solid #ffffff1f; border-radius: 8px; padding: 8px; background: #ffffff0a; color: var(--cream); }
 .lobby-rename .button { min-height: 37px; padding: 7px 10px; font-size: .72rem; }
+.lobby-rules-strip { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 20px; padding: 12px; border: 1px solid #f2bd5a3d; border-radius: 12px; background: #f2bd5a0b; text-align: left; }
+.lobby-rules-strip strong, .lobby-rules-strip span { display: block; }
+.lobby-rules-strip strong { font-size: .82rem; }
+.lobby-rules-strip span { margin-top: 3px; color: var(--gold); font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.lobby-rules-strip .button { min-height: 34px; padding: 6px 9px; font-size: .72rem; }
+.rules-page { text-align: left; }
+.rules-page > h1, .rules-page > .intro { text-align: center; }
+.rules-page h2 { margin: 22px 0 10px; font: 700 1.2rem/1.2 "Fraunces", Georgia, serif; }
+.lobby-rule-summary { display: grid; gap: 7px; margin: 10px 0 18px; }
+.lobby-rule-summary span { padding: 8px 10px; border: 1px solid #ffffff16; border-radius: 9px; background: #ffffff08; color: var(--cream); font-size: .78rem; }
+.rule-fields { display: grid; gap: 12px; margin: 22px 0; }
+.rule-fields label { display: grid; gap: 6px; color: var(--muted); font-size: .75rem; font-weight: 700; }
+.rule-fields select { width: 100%; border: 1px solid #ffffff1f; border-radius: 9px; padding: 10px; background: #ffffff0a; color: var(--cream); font: inherit; }
+.rule-fields option { background: #082d26; color: var(--cream); }
+.rule-proposal { margin-top: 24px; padding: 15px; border: 1px solid #74d39f55; border-radius: 14px; background: #74d39f0b; }
+.rule-proposal h2 { margin-top: 4px; }
+.rule-proposal > p { color: var(--muted); font-size: .78rem; }
+.rule-approvals { display: flex; flex-wrap: wrap; gap: 7px; margin: 12px 0 16px; }
+.rule-approvals span { padding: 5px 8px; border: 1px solid #ffffff18; border-radius: 999px; font-size: .7rem; font-weight: 700; }
+.rule-approvals .approved { border-color: #74d39f88; color: #9edabd; background: #74d39f12; }
+.rule-approvals .pending { color: var(--muted); }
 .online-sidebar { min-height: 430px; }
 .online-history { min-height: 310px; display: flex; flex-direction: column; }
 .online-history-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }

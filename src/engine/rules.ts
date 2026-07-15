@@ -1,4 +1,4 @@
-import type { Bid, Die, GameState, LegalActions } from './types'
+import type { Bid, Die, GameRules, GameState, LegalActions } from './types'
 
 export function isDie(value: number): value is Die {
   return Number.isInteger(value) && value >= 1 && value <= 6
@@ -9,7 +9,7 @@ export function isValidOpeningBid(bid: Bid, totalDice: number): boolean {
 }
 
 /** Checks ordering only; turn/phase checks are performed by the engine. */
-export function isHigherBid(previous: Bid, next: Bid, paloFijo: boolean, bidderHasOneDie: boolean): boolean {
+export function isHigherBid(previous: Bid, next: Bid, paloFijo: boolean, bidderHasOneDie: boolean, acesConversion: GameRules['acesConversion'] = 'half'): boolean {
   if (!Number.isInteger(next.quantity) || next.quantity < 1 || !isDie(next.denomination)) return false
 
   if (paloFijo) {
@@ -24,7 +24,7 @@ export function isHigherBid(previous: Bid, next: Bid, paloFijo: boolean, bidderH
   }
 
   if (next.denomination === 1) {
-    return next.quantity >= Math.ceil(previous.quantity / 2)
+    return next.quantity >= Math.ceil(previous.quantity / 2) + (acesConversion === 'halfPlusOne' ? 1 : 0)
   }
 
   return next.quantity > previous.quantity ||
@@ -52,7 +52,7 @@ export function getLegalActions(state: GameState, playerId: string): LegalAction
   for (let quantity = 1; quantity <= totalDice; quantity += 1) {
     for (let denomination = 1; denomination <= 6; denomination += 1) {
       const bid = { quantity, denomination: denomination as Die }
-      if (!state.currentBid || isHigherBid(state.currentBid, bid, state.paloFijo, player.diceCount === 1)) {
+      if (!state.currentBid || isHigherBid(state.currentBid, bid, state.paloFijo, player.diceCount === 1, state.rules.acesConversion)) {
         bids.push(bid)
       }
     }

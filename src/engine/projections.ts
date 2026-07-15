@@ -15,6 +15,7 @@ function baseView(state: GameState, players: PublicPlayer[]): PublicGameView {
     phase: state.phase,
     round: state.round,
     paloFijo: state.paloFijo,
+    rules: { ...state.rules },
     players,
     currentPlayerId: state.currentPlayerId,
     currentBid: state.currentBid ? { ...state.currentBid } : null,
@@ -31,7 +32,7 @@ export function projectForPlayer(state: GameState, playerId: string): PublicGame
   }
   const revealAll = state.phase === 'reveal'
   const revealViewerHand = state.phase === 'playing' && playerId === viewer.id
-    && (!state.paloFijo || viewer.diceCount === 1)
+    && (!state.paloFijo || !state.rules.paloFijoBlindDice || viewer.diceCount === 1)
   return {
     ...baseView(state, state.players.map((player) => publicPlayer(
       player,

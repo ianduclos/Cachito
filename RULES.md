@@ -54,7 +54,7 @@ Examples:
 
 Aces (ones) have special bid transitions in a normal round:
 
-- From a normal denomination to aces, the minimum ace quantity is `ceil(previous quantity / 2)`.
+- From a normal denomination to aces, the minimum ace quantity is `ceil(previous quantity / 2)` by default. A unanimously approved online-room setting may instead require `ceil(previous quantity / 2) + 1`.
 - From aces to a normal denomination, the minimum normal quantity is `(previous ace quantity × 2) + 1`.
 - An ace bid followed by another ace bid must increase the quantity.
 
@@ -66,7 +66,7 @@ Examples:
 - Three Aces → seven Dones is legal: `(3 × 2) + 1 = 7`.
 - Three Aces → six Sambas is illegal.
 
-The ceiling rule is the authoritative legality rule. The interface may suggest a more conservative starting value when changing to Aces, but a player can still choose any legal bid. Bid conversion formulas may become configurable variants later.
+The selected room rule is the authoritative legality rule. The interface always follows the agreed conversion rule when it suggests the lowest legal ace bid.
 
 ## Counting dice
 
@@ -111,10 +111,10 @@ Calzo is an alternative to raising or calling Dudo and may be called only by the
 
 ## Palo Fijo
 
-Palo Fijo is a special round triggered the first time each distinct player is reduced to exactly one die, provided more than two players remain active after that reduction.
+Palo Fijo is a special round triggered the first time each distinct player is reduced to exactly one die, provided more than two players remain active after that reduction. Online rooms may unanimously choose to trigger it at two dice instead; one die is the default.
 
 - The immediately following round is Palo Fijo.
-- Reaching one die does not make every later round Palo Fijo; each trigger creates one Palo Fijo round.
+- Reaching the configured trigger count does not make every later round Palo Fijo; each trigger creates one Palo Fijo round.
 - Each player can trigger Palo Fijo at most once during a game. Remaining at one die, rising above one through Calzo, and later returning to one cannot make that same player trigger it again.
 - Different players can each trigger their own Palo Fijo round when they first fall to one die.
 - Palo Fijo is disabled once the game has only two active players. A reduction to one die with two or fewer active players does not create a Palo Fijo round.
@@ -122,7 +122,7 @@ Palo Fijo is a special round triggered the first time each distinct player is re
 - A player who goes directly from two dice to zero does not trigger Palo Fijo.
 - During Palo Fijo, aces are not wild.
 - Ones are an ordinary denomination for Palo Fijo bid ordering; the normal-round ace conversion formulas do not apply.
-- Only players holding exactly one die may view their own hand. Players holding more than one die bid without seeing their dice during that round.
+- By default, only players holding exactly one die may view their own hand. Players holding more than one die bid without seeing their dice during that round. An online room may unanimously disable blind dice, allowing every player to see their own hand during Palo Fijo.
 - Players holding more than one die must keep the current bid's denomination when raising.
 - Any player holding exactly one die may change the denomination when making a legal ordinary raise; the privilege is not limited to the player whose loss triggered Palo Fijo. An ordinary raise increases the quantity with any denomination, or keeps the quantity and increases the denomination.
 
@@ -159,19 +159,20 @@ The live online table uses the same engine rules above. The following points des
 - A Dudo or Calzo reveals every hand. The result screen identifies the caller, bidder, bid, actual qualifying count, and dice change. Dudo starts red and Calzo yellow before the result; a correct call turns green.
 - Active players select **Next round** after the reveal. The next round begins when everyone active is ready, or after one minute. Bots mark ready after 4–6 seconds.
 - A browser stores a reconnect token locally so an existing player can rejoin an in-memory room after a brief connection loss. Rooms expire after 20 minutes without game activity or one hour in the lobby.
+- The host can open **Game rules** in the lobby to propose four room settings: normal-to-ace conversion (half or half-plus-one), Palo Fijo trigger (one or two dice), Palo Fijo blind dice, and whether player cards show dice amounts. Every seated player must approve a proposal before it takes effect; bots approve automatically. A pending proposal prevents the host from starting the game.
 
 Online rooms are server-authoritative: the browser receives only its permitted player or spectator view. Private hands, the full engine state, and bot observations remain on the server.
 
-For operational abuse and connection diagnostics, private production snapshots may record a salted, one-way fingerprint of a connecting address along with coarse connection metadata. They never include a raw IP address or raw browser identifier, and this audit data is never sent to players or spectators. Those private records also retain each round's dealt hands, player nicknames, actions, and completed-turn timing for match analysis; none of this live private data is exposed in the game.
+For operational abuse and connection diagnostics, private production snapshots may record a salted, one-way fingerprint of a connecting address along with coarse connection metadata. They never include a raw IP address or raw browser identifier, and this audit data is never sent to players or spectators. Those private records also retain each match's agreed rules, round dealt hands, player nicknames, actions, and completed-turn timing for match analysis; none of this live private data is exposed in the game.
 
 ## Future configurable variants
 
 The first implementation should keep the rules centralized so variants can be introduced without duplicating logic. Possible future settings include:
 
-- alternative normal-to-ace conversion formulas;
+- additional normal-to-ace conversion formulas;
 - player-count and starting-dice limits;
 - Calzo eligibility, reward, and penalty;
-- Palo Fijo activation and denomination rules;
+- Palo Fijo denomination rules beyond the current trigger and hand-visibility settings;
 - turn timers; and
 - optional house rules.
 

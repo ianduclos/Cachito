@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   createSeededRandom,
+  DEFAULT_GAME_RULES,
   getLegalActions,
   projectForPlayer,
   type Die,
@@ -36,6 +37,7 @@ function stateWithHands(
     players,
     round: 1,
     paloFijo: false,
+    rules: { ...DEFAULT_GAME_RULES },
     currentPlayerId: players[0].id,
     currentBid: null,
     lastBidderId: null,

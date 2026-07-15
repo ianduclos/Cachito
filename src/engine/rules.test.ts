@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_GAME_RULES } from './index'
 import { getLegalActions, isHigherBid } from './rules'
 import type { PlayingState } from './types'
 
@@ -7,6 +8,11 @@ describe('bid ordering', () => {
     expect(isHigherBid({ quantity: 5, denomination: 4 }, { quantity: 3, denomination: 1 }, false, false)).toBe(true)
     expect(isHigherBid({ quantity: 5, denomination: 4 }, { quantity: 2, denomination: 1 }, false, false)).toBe(false)
     expect(isHigherBid({ quantity: 6, denomination: 4 }, { quantity: 3, denomination: 1 }, false, false)).toBe(true)
+  })
+
+  it('optionally requires one extra ace when that conversion rule is selected', () => {
+    expect(isHigherBid({ quantity: 5, denomination: 4 }, { quantity: 3, denomination: 1 }, false, false, 'halfPlusOne')).toBe(false)
+    expect(isHigherBid({ quantity: 5, denomination: 4 }, { quantity: 4, denomination: 1 }, false, false, 'halfPlusOne')).toBe(true)
   })
 
   it('requires double plus one when changing aces to a normal denomination', () => {
@@ -32,6 +38,7 @@ describe('legal action generation', () => {
     phase: 'playing',
     round: 1,
     paloFijo: false,
+    rules: { ...DEFAULT_GAME_RULES },
     currentPlayerId: 'b',
     currentBid: { quantity: 2, denomination: 4 },
     lastBidderId: 'a',

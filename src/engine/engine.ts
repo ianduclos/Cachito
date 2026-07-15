@@ -1,10 +1,12 @@
 import { rollHand } from './random'
 import { countBid, isHigherBid, isValidOpeningBid } from './rules'
+import { DEFAULT_GAME_RULES } from './types'
 import type {
   Bid,
   DiceChange,
   EnginePlayer,
   GameAction,
+  GameRules,
   GameState,
   PlayerSetup,
   PlayingState,
@@ -28,7 +30,7 @@ export class GameRuleError extends Error {
   }
 }
 
-export function createGame(playerSetups: PlayerSetup[], random: RandomSource = Math.random): PlayingState {
+export function createGame(playerSetups: PlayerSetup[], random: RandomSource = Math.random, rules: GameRules = DEFAULT_GAME_RULES): PlayingState {
   if (playerSetups.length < 2 || playerSetups.length > 6) {
     throw new GameRuleError('INVALID_PLAYERS', 'Cachito requires 2 to 6 players')
   }
@@ -51,6 +53,7 @@ export function createGame(playerSetups: PlayerSetup[], random: RandomSource = M
     players,
     round: 1,
     paloFijo: false,
+    rules: { ...DEFAULT_GAME_RULES, ...rules },
     currentPlayerId: players[0].id,
     currentBid: null,
     lastBidderId: null,
@@ -75,7 +78,7 @@ function placeBid(state: PlayingState, playerId: string, bid: Bid): PlayingState
   const totalDice = state.players.reduce((sum, player) => sum + player.diceCount, 0)
   const player = getPlayer(state.players, playerId)
   const valid = state.currentBid
-    ? bid.quantity <= totalDice && isHigherBid(state.currentBid, bid, state.paloFijo, player.diceCount === 1)
+    ? bid.quantity <= totalDice && isHigherBid(state.currentBid, bid, state.paloFijo, player.diceCount === 1, state.rules.acesConversion)
     : isValidOpeningBid(bid, totalDice)
 
   if (!valid) throw new GameRuleError('INVALID_BID', 'Bid does not legally raise the current bid')
@@ -93,7 +96,7 @@ function resolveDudo(state: PlayingState, callerId: string): RevealState {
   const actualCount = countBid(state, bid)
   const correct = actualCount < bid.quantity
   const loserId = correct ? bidderId : callerId
-  const { players, change, triggeredPaloFijo } = loseDice(state.players, loserId, 1, 'dudo')
+  const { players, change, triggeredPaloFijo } = loseDice(state.players, loserId, 1, 'dudo', state.rules)
   const nextStarterId = activeOrNext(players, loserId)
   return revealState(state, players, {
     kind: 'dudo', callerId, bidderId, bid, actualCount, correct,
@@ -115,7 +118,7 @@ function resolveCalzo(state: PlayingState, callerId: string): RevealState {
     players = replacePlayer(state.players, callerId, { ...player, diceCount: after })
     change = { playerId: callerId, before: player.diceCount, after, delta: after - player.diceCount, reason: 'calzo-correct' }
   } else {
-    const result = loseDice(state.players, callerId, 2, 'calzo-wrong')
+    const result = loseDice(state.players, callerId, 2, 'calzo-wrong', state.rules)
     players = result.players
     change = result.change
     triggeredPaloFijo = result.triggeredPaloFijo
@@ -138,6 +141,7 @@ function revealState(
     players,
     round: state.round,
     paloFijo: state.paloFijo,
+    rules: { ...state.rules },
     currentPlayerId: null,
     currentBid: resolution.bid,
     lastBidderId: resolution.bidderId,
@@ -156,6 +160,7 @@ function startNextRound(state: GameState, random: RandomSource): GameState {
       players: state.players.map((player) => ({ ...player, hand: [] })),
       round: state.round,
       paloFijo: false,
+      rules: { ...state.rules },
       currentPlayerId: null,
       currentBid: null,
       lastBidderId: null,
@@ -171,13 +176,14 @@ function startNextRound(state: GameState, random: RandomSource): GameState {
     })),
     round: state.round + 1,
     paloFijo: state.resolution.paloFijoNextRound,
+    rules: { ...state.rules },
     currentPlayerId: state.resolution.nextStarterId,
     currentBid: null,
     lastBidderId: null,
   }
 }
 
-function loseDice(players: EnginePlayer[], playerId: string, amount: number, reason: 'dudo' | 'calzo-wrong') {
+function loseDice(players: EnginePlayer[], playerId: string, amount: number, reason: 'dudo' | 'calzo-wrong', rules: GameRules) {
   const player = getPlayer(players, playerId)
   const after = Math.max(0, player.diceCount - amount)
   const activePlayerCount = players.reduce(
@@ -186,7 +192,8 @@ function loseDice(players: EnginePlayer[], playerId: string, amount: number, rea
       : (candidate.diceCount > 0 ? 1 : 0)),
     0,
   )
-  const triggeredPaloFijo = after === 1 && activePlayerCount > 2 && !player.paloFijoTriggered
+  const triggerDiceCount = rules.paloFijoTrigger === 'twoDice' ? 2 : 1
+  const triggeredPaloFijo = after === triggerDiceCount && activePlayerCount > 2 && !player.paloFijoTriggered
   const updated = {
     ...player,
     diceCount: after,

@@ -5,6 +5,24 @@ export interface PlayerSetup {
   name: string
 }
 
+export interface GameRules {
+  /** Minimum normal-to-ace conversion: ceil(quantity / 2), optionally plus one. */
+  acesConversion: 'half' | 'halfPlusOne'
+  /** Each player can trigger one Palo Fijo round on reaching this many dice. */
+  paloFijoTrigger: 'oneDie' | 'twoDice'
+  /** When enabled, only one-die players may see their own hand during Palo Fijo. */
+  paloFijoBlindDice: boolean
+  /** Whether the table displays dice counts on player cards. */
+  diceAmountsVisible: boolean
+}
+
+export const DEFAULT_GAME_RULES: Readonly<GameRules> = {
+  acesConversion: 'half',
+  paloFijoTrigger: 'oneDie',
+  paloFijoBlindDice: true,
+  diceAmountsVisible: true,
+}
+
 export interface Bid {
   quantity: number
   denomination: Die
@@ -43,6 +61,7 @@ interface StateBase {
   players: EnginePlayer[]
   round: number
   paloFijo: boolean
+  rules: GameRules
 }
 
 export interface PlayingState extends StateBase {
@@ -88,6 +107,7 @@ export interface PublicGameView {
   phase: GameState['phase']
   round: number
   paloFijo: boolean
+  rules: GameRules
   players: PublicPlayer[]
   currentPlayerId: string | null
   currentBid: Bid | null

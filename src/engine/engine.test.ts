@@ -4,6 +4,7 @@ import {
   countBid,
   createGame,
   createSeededRandom,
+  DEFAULT_GAME_RULES,
   GameRuleError,
   projectForAdminSpectator,
   projectForPlayer,
@@ -27,6 +28,7 @@ function playing(
     players,
     round: 1,
     paloFijo: false,
+    rules: { ...DEFAULT_GAME_RULES },
     currentPlayerId: players[0].id,
     currentBid: null,
     lastBidderId: null,
@@ -127,6 +129,14 @@ describe('counting and round resolution', () => {
 })
 
 describe('palo fijo', () => {
+  it('can trigger at two dice when the agreed rule selects it', () => {
+    let state = playing({ a: [2, 2, 2], b: [3, 3], c: [4, 4] }, { rules: { ...DEFAULT_GAME_RULES, paloFijoTrigger: 'twoDice' } })
+    state = applyAction(state, { type: 'bid', playerId: 'a', bid: { quantity: 7, denomination: 2 } }) as PlayingState
+    const reveal = applyAction(state, { type: 'dudo', playerId: 'b' })
+    expect(reveal.phase === 'reveal' && reveal.resolution.paloFijoNextRound).toBe(true)
+    expect(reveal.players.find((player) => player.id === 'a')?.diceCount).toBe(2)
+  })
+
   it('lasts one round and only triggers the first time a player reaches one die', () => {
     let state = playing({ a: [2, 3], b: [4, 5], c: [6, 6] })
     state = applyAction(state, { type: 'bid', playerId: 'a', bid: { quantity: 2, denomination: 6 } }) as PlayingState
@@ -208,6 +218,11 @@ describe('private and spectator views', () => {
     expect(projectForPlayer(state, 'a').players.find((player) => player.id === 'a')?.hand).toEqual([1])
     expect(projectForPlayer(state, 'b').players.find((player) => player.id === 'b')).not.toHaveProperty('hand')
     expect(projectForPlayer(state, 'c').players.find((player) => player.id === 'c')?.hand).toEqual([4])
+  })
+
+  it('shows every player their own hand during palo fijo when blind dice are disabled', () => {
+    const state = playing({ a: [1, 2], b: [3, 4] }, { paloFijo: true, rules: { ...DEFAULT_GAME_RULES, paloFijoBlindDice: false } })
+    expect(projectForPlayer(state, 'a').players.find((player) => player.id === 'a')?.hand).toEqual([1, 2])
   })
 
   it('keeps normal spectators private while admin spectators see every live hand', () => {

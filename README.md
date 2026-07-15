@@ -27,6 +27,7 @@ The local app includes a playable probability bot and an experimental parameter-
 
 1. Choose **Play online**, then create a room, join a room code, or watch a room as a spectator.
 2. The host can add bots, remove bots, or remove players while still in the lobby. Two or more players are required to start.
+3. The host can propose room rules in the lobby. Every seated player must approve a proposal before it takes effect (bots approve automatically), and the match cannot start while an approval is pending.
 3. Every active player shakes at the beginning of a round. Humans have one minute to do so; bots shake after 2–3 seconds. Eliminated players skip this step and spectate.
 4. Once all active cups are ready, every turn shows the same 90-second timer. Bots act after a 6–8 second thinking pause, not a shortened timer.
 5. The first action of a round is a **Make bid**; later bids are **Raise bid**. Dudo and Calzo resolve the round, reveal hands, and let active players select **Next round**. The room advances when all active players are ready or after one minute.
@@ -134,7 +135,7 @@ Logs are intended for local inspection now and later batch analysis. Keep `schem
 
 ### Private online snapshots
 
-Production online snapshots are private, server-only records. Schema version 2 retains the nickname and controller for every seat, every round's full dealt hands, nickname-labelled actions, and a timing record for each completed turn (start, deadline, finish, elapsed/remaining time, and bid/Dudo/Calzo/timeout outcome). These fields are recorded for new online matches and are never sent to players or spectators.
+Production online snapshots are private, server-only records. Schema version 3 retains the unanimously approved game rules alongside the nickname and controller for every seat, every round's full dealt hands, nickname-labelled actions, and a timing record for each completed turn (start, deadline, finish, elapsed/remaining time, and bid/Dudo/Calzo/timeout outcome). These fields are recorded for new online matches and are never sent to players or spectators.
 
 ### Analyze a logs folder
 

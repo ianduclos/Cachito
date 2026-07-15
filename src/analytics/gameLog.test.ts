@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getLegalActions, projectForPlayer, type PlayingState } from '../engine'
+import { DEFAULT_GAME_RULES, getLegalActions, projectForPlayer, type PlayingState } from '../engine'
 import { createProbabilityPolicy, randomLegalPolicy, runBotMatch, type BotObservation } from '../bot'
 import { createBotDecisionRecord, serializeGameLog } from './index'
 
@@ -40,6 +40,7 @@ describe('game analysis log', () => {
       phase: 'playing',
       round: 7,
       paloFijo: true,
+      rules: { ...DEFAULT_GAME_RULES },
       currentPlayerId: 'a',
       currentBid: { quantity: 2, denomination: 3 },
       lastBidderId: 'c',
@@ -84,7 +85,7 @@ describe('game analysis log', () => {
 
   it('records current and chosen bid diagnostics when bidding', () => {
     const state: PlayingState = {
-      phase: 'playing', round: 2, paloFijo: false, currentPlayerId: 'a',
+      phase: 'playing', round: 2, paloFijo: false, rules: { ...DEFAULT_GAME_RULES }, currentPlayerId: 'a',
       currentBid: { quantity: 2, denomination: 4 }, lastBidderId: 'b',
       players: [
         { id: 'a', name: 'A', diceCount: 2, hand: [1, 5], paloFijoTriggered: false },

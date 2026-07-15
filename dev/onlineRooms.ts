@@ -3,7 +3,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 import { WebSocketServer, type WebSocket } from "ws";
 import { Storage } from "@google-cloud/storage";
-import { applyAction, createGame, getLegalActions, projectForPlayer, projectForSpectator, type GameAction, type GameState, type PlayerSetup } from "../src/engine";
+import { applyAction, createGame, DEFAULT_GAME_RULES, getLegalActions, projectForPlayer, projectForSpectator, type GameAction, type GameRules, type GameState, type PlayerSetup } from "../src/engine";
 import { chooseBotAction, createProbabilityPolicy, isChoiceLegal, type BotObservation } from "../src/bot";
 import type { OnlineClientMessage, OnlineServerMessage } from "../src/online/protocol";
 
@@ -15,7 +15,8 @@ type ConnectionEvent = ConnectionContext & { at: string; event: "room-created" |
 type LoggedAction = { at: string; playerId?: string; nickname?: string; action: GameAction | RoomEvent };
 type RoundDeal = { round: number; dealtAt: string; paloFijo: boolean; starterId: string | null; hands: Array<{ playerId: string; nickname: string; dice: number[] }> };
 type TurnTiming = { round: number; playerId: string; nickname: string; controller: "human" | "bot"; startedAt: string; deadlineAt: string; finishedAt?: string; elapsedMs?: number; remainingMs?: number; outcome?: "bid" | "dudo" | "calzo" | "timeout" };
-type Room = { code: string; hostPlayerId: string; players: RoomPlayer[]; spectators: Map<WebSocket, Spectator>; connectionEvents: ConnectionEvent[]; roundDeals: RoundDeal[]; turnTimings: TurnTiming[]; activeTurn?: TurnTiming; game?: GameState; history: string[]; announcement?: { text: string; playerId?: string }; shuffleReadyPlayerIds?: Set<string>; nextRoundReadyPlayerIds?: Set<string>; nextRoundDeadlineAt?: number; actions: LoggedAction[]; startedAt?: string; lastActivityAt: number; nextGameStarterId?: string; turnDeadlineAt?: number; turnTimer?: ReturnType<typeof setTimeout>; shuffleTimer?: ReturnType<typeof setTimeout>; nextRoundTimer?: ReturnType<typeof setTimeout>; botShuffleTimers?: Array<ReturnType<typeof setTimeout>>; botNextRoundTimers?: Array<ReturnType<typeof setTimeout>> };
+type RoomRuleProposal = { rules: GameRules; proposedById: string; approvalPlayerIds: Set<string> };
+type Room = { code: string; hostPlayerId: string; players: RoomPlayer[]; spectators: Map<WebSocket, Spectator>; connectionEvents: ConnectionEvent[]; rules: GameRules; pendingRules?: RoomRuleProposal; roundDeals: RoundDeal[]; turnTimings: TurnTiming[]; activeTurn?: TurnTiming; game?: GameState; history: string[]; announcement?: { text: string; playerId?: string }; shuffleReadyPlayerIds?: Set<string>; nextRoundReadyPlayerIds?: Set<string>; nextRoundDeadlineAt?: number; actions: LoggedAction[]; startedAt?: string; lastActivityAt: number; nextGameStarterId?: string; turnDeadlineAt?: number; turnTimer?: ReturnType<typeof setTimeout>; shuffleTimer?: ReturnType<typeof setTimeout>; nextRoundTimer?: ReturnType<typeof setTimeout>; botShuffleTimers?: Array<ReturnType<typeof setTimeout>>; botNextRoundTimers?: Array<ReturnType<typeof setTimeout>> };
 const rooms = new Map<string, Room>();
 const connectionContexts = new WeakMap<WebSocket, ConnectionContext>();
 const botPolicy = createProbabilityPolicy();
@@ -62,6 +63,22 @@ function code() {
 }
 function token() { return crypto.randomUUID(); }
 function touch(room: Room) { room.lastActivityAt = Date.now(); }
+function isGameRules(value: unknown): value is GameRules {
+  if (!value || typeof value !== "object") return false;
+  const rules = value as Partial<GameRules>;
+  return (rules.acesConversion === "half" || rules.acesConversion === "halfPlusOne")
+    && (rules.paloFijoTrigger === "oneDie" || rules.paloFijoTrigger === "twoDice")
+    && typeof rules.paloFijoBlindDice === "boolean"
+    && typeof rules.diceAmountsVisible === "boolean";
+}
+function settleRuleProposal(room: Room) {
+  const proposal = room.pendingRules;
+  if (!proposal) return;
+  for (const bot of room.players.filter((player) => player.isBot)) proposal.approvalPlayerIds.add(bot.id);
+  if (!room.players.every((player) => proposal.approvalPlayerIds.has(player.id))) return;
+  room.rules = { ...proposal.rules };
+  room.pendingRules = undefined;
+}
 function headerValue(value: string | string[] | undefined) { return Array.isArray(value) ? value.join(",") : value; }
 function createConnectionContext(request: IncomingMessage): ConnectionContext {
   const forwardedFor = (headerValue(request.headers["x-forwarded-for"]) ?? "").split(",").map((value) => value.trim()).filter(Boolean);
@@ -114,7 +131,8 @@ function nextBotName(room: Room) {
 function send(socket: WebSocket, message: OnlineServerMessage) { if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message)); }
 function lobby(room: Room): Extract<OnlineServerMessage, { type: "lobby" }> {
   return { type: "lobby", roomCode: room.code, hostPlayerId: room.hostPlayerId, spectatorCount: room.spectators.size,
-    players: room.players.map(({ id, name, isBot, socket }) => ({ id, name, isBot, connected: isBot || Boolean(socket) })) };
+    players: room.players.map(({ id, name, isBot, socket }) => ({ id, name, isBot, connected: isBot || Boolean(socket) })), rules: { ...room.rules },
+    ...(room.pendingRules ? { pendingRules: { rules: { ...room.pendingRules.rules }, proposedById: room.pendingRules.proposedById, approvalPlayerIds: [...room.pendingRules.approvalPlayerIds] } } : {}) };
 }
 function playerStatuses(room: Room) { return room.players.map((player) => ({ id: player.id, connected: player.isBot || Boolean(player.socket) })); }
 function shufflePayload(room: Room) {
@@ -307,7 +325,7 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           if (!name) throw new Error("Enter your name first.");
           const id = `player-${crypto.randomUUID()}`;
           player = { id, name, isBot: false, token: token(), socket };
-          room = { code: code(), hostPlayerId: id, players: [player], spectators: new Map(), connectionEvents: [], roundDeals: [], turnTimings: [], history: [], actions: [], lastActivityAt: Date.now() };
+          room = { code: code(), hostPlayerId: id, players: [player], spectators: new Map(), connectionEvents: [], rules: { ...DEFAULT_GAME_RULES }, roundDeals: [], turnTimings: [], history: [], actions: [], lastActivityAt: Date.now() };
           recordConnection(room, socket, "room-created", "player", id);
           rooms.set(room.code, room);
           send(socket, { type: "joined", roomCode: room.code, playerId: id, reconnectToken: player.token, hostPlayerId: id }); publish(room);
@@ -347,31 +365,41 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
         else if (message.type === "add-bot") {
           if (!player || player.id !== room.hostPlayerId || room.game) throw new Error("Only the host can change bots before the game starts.");
           if (room.players.length >= 6) throw new Error("This room already has six players.");
-          room.players.push({ id: `bot-${crypto.randomUUID()}`, name: nextBotName(room), isBot: true }); touch(room); publish(room);
+          room.players.push({ id: `bot-${crypto.randomUUID()}`, name: nextBotName(room), isBot: true }); settleRuleProposal(room); touch(room); publish(room);
         } else if (message.type === "remove-bot") {
           if (!player || player.id !== room.hostPlayerId || room.game) throw new Error("Only the host can change bots before the game starts.");
           const index = room.players.findIndex((entry) => entry.id === message.playerId && entry.isBot);
           if (index < 0) throw new Error("That bot is no longer in this room.");
-          room.players.splice(index, 1); touch(room); publish(room);
+          room.players.splice(index, 1); settleRuleProposal(room); touch(room); publish(room);
         } else if (message.type === "kick-player") {
           if (!player || player.id !== room.hostPlayerId || room.game) throw new Error("Only the host can remove players before the game starts.");
           const index = room.players.findIndex((entry) => entry.id === message.playerId && !entry.isBot && entry.id !== room!.hostPlayerId);
           if (index < 0) throw new Error("That player cannot be removed.");
           const [removed] = room.players.splice(index, 1);
           if (removed.socket) { send(removed.socket, { type: "error", message: "The host removed you from this room." }); removed.socket.close(); }
-          touch(room); publish(room);
+          settleRuleProposal(room); touch(room); publish(room);
         } else if (message.type === "rename-player") {
           if (!player || room.game || !room.players.some((candidate) => candidate.id === player!.id)) throw new Error("You can only rename yourself in the lobby.");
           const name = message.name.trim().slice(0, 24);
           if (!name || room.players.some((candidate) => candidate.id !== player!.id && candidate.name.toLocaleLowerCase() === name.toLocaleLowerCase())) throw new Error("Choose a unique name.");
           player.name = name;
           touch(room); publish(room);
+        } else if (message.type === "propose-rules") {
+          if (!player || player.id !== room.hostPlayerId || room.game) throw new Error("Only the host can propose lobby rules before the game starts.");
+          if (!isGameRules(message.rules)) throw new Error("Those game rules are invalid.");
+          room.pendingRules = { rules: { ...message.rules }, proposedById: player.id, approvalPlayerIds: new Set([player.id]) };
+          settleRuleProposal(room); touch(room); publish(room);
+        } else if (message.type === "approve-rules") {
+          if (!player || room.game || !room.pendingRules) throw new Error("There is no lobby rule change to approve.");
+          room.pendingRules.approvalPlayerIds.add(player.id);
+          settleRuleProposal(room); touch(room); publish(room);
         } else if (message.type === "start-game") {
           if (!player || player.id !== room.hostPlayerId) throw new Error("Only the host can start the game.");
           if (room.game || room.players.length < 2) throw new Error("At least two players are needed.");
+          if (room.pendingRules) throw new Error("Every player must approve the pending rules before the game starts.");
           const starter = room.players.find((candidate) => candidate.id === room!.nextGameStarterId) ?? room.players[Math.floor(Math.random() * room.players.length)];
           const otherPlayers = room.players.filter((candidate) => candidate.id !== starter.id).sort(() => Math.random() - .5);
-          room.game = createGame([starter, ...otherPlayers].map(({ id, name }): PlayerSetup => ({ id, name }))); room.startedAt = new Date().toISOString(); room.history = [`Round 1 begins — ${starter.name} starts.`]; room.actions = [{ at: room.startedAt, action: { type: "round-start" } }]; room.roundDeals = []; room.turnTimings = []; room.activeTurn = undefined; recordRoundDeal(room); touch(room); startRoundShuffle(room); void persistRoomSnapshot(room); publish(room);
+          room.game = createGame([starter, ...otherPlayers].map(({ id, name }): PlayerSetup => ({ id, name })), Math.random, room.rules); room.startedAt = new Date().toISOString(); room.history = [`Round 1 begins — ${starter.name} starts.`]; room.actions = [{ at: room.startedAt, action: { type: "round-start" } }]; room.roundDeals = []; room.turnTimings = []; room.activeTurn = undefined; recordRoundDeal(room); touch(room); startRoundShuffle(room); void persistRoomSnapshot(room); publish(room);
         } else if (message.type === "return-to-lobby") {
           if (!player || player.id !== room.hostPlayerId || room.game?.phase !== "gameOver") throw new Error("Only the host can return this completed game to the lobby.");
           promoteQueuedSpectators(room); room.game = undefined; room.history = []; room.announcement = undefined; room.shuffleReadyPlayerIds = undefined; room.nextRoundReadyPlayerIds = undefined; room.nextRoundDeadlineAt = undefined; if (room.shuffleTimer) clearTimeout(room.shuffleTimer); room.shuffleTimer = undefined; for (const timer of room.botShuffleTimers ?? []) clearTimeout(timer); room.botShuffleTimers = []; if (room.nextRoundTimer) clearTimeout(room.nextRoundTimer); room.nextRoundTimer = undefined; for (const timer of room.botNextRoundTimers ?? []) clearTimeout(timer); room.botNextRoundTimers = []; if (room.turnTimer) clearTimeout(room.turnTimer); room.turnTimer = undefined; room.turnDeadlineAt = undefined; room.actions = []; room.roundDeals = []; room.turnTimings = []; room.activeTurn = undefined; room.startedAt = undefined; touch(room); publish(room);
@@ -432,10 +460,11 @@ async function persistRoomSnapshot(room: Room) {
   if (!storage || !logBucket || !room.game || !room.startedAt) return;
   const filename = `online-matches/${room.startedAt.replace(/[:.]/g, "-")}-${room.code}.json`;
   const snapshot = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     roomCode: room.code,
     startedAt: room.startedAt,
     updatedAt: new Date().toISOString(),
+    rules: room.game.rules,
     seats: room.players.map(({ id, name, isBot }) => ({ id, name, nickname: name, controller: isBot ? "bot" : "human" })),
     history: room.history,
     actions: room.actions,
