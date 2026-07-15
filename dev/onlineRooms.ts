@@ -403,8 +403,11 @@ async function loadPersistedRoom(roomCode: string): Promise<Room | undefined> {
     };
     rooms.set(restored.code, restored);
     return restored;
-  } catch {
-    return undefined;
+  } catch (error) {
+    const code = typeof error === "object" && error && "code" in error ? (error as { code?: number }).code : undefined;
+    if (code === 404) return undefined;
+    console.error("Unable to load active room recovery snapshot", error);
+    throw new Error("Room recovery is temporarily unavailable. Please try reconnecting again.", { cause: error });
   }
 }
 function pauseGame(room: Room, player: RoomPlayer) {

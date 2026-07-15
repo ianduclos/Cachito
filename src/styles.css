@@ -99,12 +99,12 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .round-result-wrap { min-height: calc(100vh - 70px); display: grid; place-items: center; padding: 28px 20px; }
 .round-result { text-align: center; }
 .round-shuffle-overlay { position: absolute; z-index: 3; inset: 0; display: grid; place-items: center; padding: 20px; border-radius: inherit; background: linear-gradient(to bottom, #061f1bcf 0%, #061f1b9e 62%, #061f1b3b 100%); backdrop-filter: blur(5px); }
-.round-result-overlay { position: fixed; z-index: 30; inset: 0; display: grid; place-items: center; padding: 18px; background: #061f1be0; backdrop-filter: blur(6px); }
+.round-result-overlay { position: absolute; z-index: 7; inset: 0; display: grid; place-items: center; padding: 18px; background: #061f1b8f; }
 .game-paused-overlay { position: absolute; z-index: 8; inset: 0; display: grid; align-content: center; justify-items: center; gap: 10px; padding: 24px; border-radius: inherit; background: #061f1be6; backdrop-filter: blur(5px); text-align: center; }
 .game-paused-overlay strong { color: var(--gold); font: 800 clamp(2rem, 7vw, 3.8rem)/1 "Fraunces", Georgia, serif; }
 .game-paused-overlay span { max-width: 300px; color: #e8dac0; font-size: .86rem; line-height: 1.5; }
-.round-result-overlay .round-result { width: min(100%, 1120px); max-height: calc(100% - 12px); display: flex; flex-direction: column; overflow: hidden; padding: clamp(30px, 4vw, 46px); border: 1px solid #f2bd5a66; border-radius: 24px; background: #082d26f5; box-shadow: 0 25px 60px #0007; }
-.round-callout { z-index: 7; align-content: center; justify-items: center; gap: 6px; background: #061f1bd9; color: var(--cream); }
+.round-result-overlay .round-result { width: min(100%, 780px); max-height: calc(100% - 28px); display: flex; flex-direction: column; overflow: auto; padding: clamp(22px, 3vw, 32px); border: 1px solid #f2bd5a66; border-radius: 24px; background: #082d26f5; box-shadow: 0 25px 60px #0007; }
+.round-callout { z-index: 7; align-content: center; justify-items: center; gap: 6px; background: transparent; color: var(--cream); }
 .round-callout strong { font: 800 clamp(4rem, 15vw, 9rem)/.85 "Fraunces", Georgia, serif; letter-spacing: .06em; animation: callout-slam 1.1s cubic-bezier(.1,.8,.2,1.2) both; text-shadow: 0 12px 25px #0008; }
 .round-callout span { color: #ffe1a3; font-size: 1rem; font-weight: 800; }
 .round-callout--dudo strong { color: var(--coral); }
