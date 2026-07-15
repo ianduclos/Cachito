@@ -7,7 +7,7 @@ import { applyAction, createGame, DEFAULT_GAME_RULES, getLegalActions, projectFo
 import { chooseBotAction, createProbabilityPolicy, isChoiceLegal, type BotObservation, type PublicActionEntry } from "../src/bot";
 import type { OnlineClientMessage, OnlineServerMessage } from "../src/online/protocol";
 
-type RoomPlayer = { id: string; name: string; isBot: boolean; token?: string; socket?: WebSocket };
+type RoomPlayer = { id: string; name: string; isBot: boolean; token?: string; socket?: WebSocket; disconnectedAt?: number };
 type RoomEvent = { type: "round-start" } | { type: "shuffle-dice" } | { type: "pause-game" } | { type: "resume-game" };
 type Spectator = { socket: WebSocket; queuedPlayer?: RoomPlayer };
 type ConnectionContext = { connectionId: string; ipHash: string | null; ipVersion: "ipv4" | "ipv6" | "unknown"; forwardedForCount: number; userAgentHash: string | null; origin?: string; language?: string; protocol?: string; hashConfigured: boolean };
@@ -17,7 +17,7 @@ type RoundDeal = { round: number; dealtAt: string; paloFijo: boolean; starterId:
 type TurnTiming = { round: number; playerId: string; nickname: string; controller: "human" | "bot"; startedAt: string; deadlineAt: string; finishedAt?: string; elapsedMs?: number; remainingMs?: number; outcome?: "bid" | "dudo" | "calzo" | "timeout" };
 type RoomRuleProposal = { rules: GameRules; proposedById: string; approvalPlayerIds: Set<string> };
 type PauseState = { pausedById: string; pausedAt: number; turnRemainingMs?: number; shuffleRemainingMs?: number; nextRoundRemainingMs?: number };
-type Room = { code: string; hostPlayerId: string; players: RoomPlayer[]; spectators: Map<WebSocket, Spectator>; connectionEvents: ConnectionEvent[]; rules: GameRules; pendingRules?: RoomRuleProposal; roundDeals: RoundDeal[]; turnTimings: TurnTiming[]; activeTurn?: TurnTiming; game?: GameState; history: string[]; botHistory: PublicActionEntry[]; announcement?: { text: string; playerId?: string }; shuffleReadyPlayerIds?: Set<string>; nextRoundReadyPlayerIds?: Set<string>; nextRoundDeadlineAt?: number; shuffleDeadlineAt?: number; paused?: PauseState; actions: LoggedAction[]; startedAt?: string; lastActivityAt: number; nextGameStarterId?: string; turnDeadlineAt?: number; turnTimer?: ReturnType<typeof setTimeout>; shuffleTimer?: ReturnType<typeof setTimeout>; nextRoundTimer?: ReturnType<typeof setTimeout>; botShuffleTimers?: Array<ReturnType<typeof setTimeout>>; botNextRoundTimers?: Array<ReturnType<typeof setTimeout>> };
+type Room = { code: string; hostPlayerId: string; players: RoomPlayer[]; spectators: Map<WebSocket, Spectator>; connectionEvents: ConnectionEvent[]; rules: GameRules; pendingRules?: RoomRuleProposal; roundDeals: RoundDeal[]; turnTimings: TurnTiming[]; activeTurn?: TurnTiming; game?: GameState; history: string[]; botHistory: PublicActionEntry[]; announcement?: { text: string; playerId?: string }; shuffleReadyPlayerIds?: Set<string>; nextRoundReadyPlayerIds?: Set<string>; nextRoundDeadlineAt?: number; shuffleDeadlineAt?: number; paused?: PauseState; actions: LoggedAction[]; startedAt?: string; lastActivityAt: number; nextGameStarterId?: string; turnDeadlineAt?: number; turnTimer?: ReturnType<typeof setTimeout>; shuffleTimer?: ReturnType<typeof setTimeout>; nextRoundTimer?: ReturnType<typeof setTimeout>; offlineCoverTimer?: ReturnType<typeof setTimeout>; botShuffleTimers?: Array<ReturnType<typeof setTimeout>>; botNextRoundTimers?: Array<ReturnType<typeof setTimeout>> };
 const rooms = new Map<string, Room>();
 const connectionContexts = new WeakMap<WebSocket, ConnectionContext>();
 const botNames = [
@@ -53,6 +53,9 @@ const BOT_SHAKE_DELAY_MIN_MS = 2_000;
 const BOT_SHAKE_DELAY_SPREAD_MS = 1_000;
 const BOT_NEXT_ROUND_DELAY_MIN_MS = 4_000;
 const BOT_NEXT_ROUND_DELAY_SPREAD_MS = 2_000;
+const OFFLINE_COVER_DELAY_MS = 2 * 60_000;
+const OFFLINE_TURN_LIMIT_MS = 20_000;
+const HEARTBEAT_MS = 30_000;
 const ipHashSalt = process.env.IP_HASH_SALT;
 
 function code() {
@@ -143,7 +146,7 @@ function lobby(room: Room): Extract<OnlineServerMessage, { type: "lobby" }> {
     players: room.players.map(({ id, name, isBot, socket }) => ({ id, name, isBot, connected: isBot || Boolean(socket) })), rules: { ...room.rules },
     ...(room.pendingRules ? { pendingRules: { rules: { ...room.pendingRules.rules }, proposedById: room.pendingRules.proposedById, approvalPlayerIds: [...room.pendingRules.approvalPlayerIds] } } : {}) };
 }
-function playerStatuses(room: Room) { return room.players.map((player) => ({ id: player.id, connected: player.isBot || Boolean(player.socket) })); }
+function playerStatuses(room: Room) { return room.players.map((player) => ({ id: player.id, connected: player.isBot || Boolean(player.socket), covered: isOfflineCovered(player) })); }
 function shufflePayload(room: Room) {
   return room.game?.phase === "playing" && room.shuffleReadyPlayerIds
     ? { shuffle: { round: room.game.round, readyPlayerIds: [...room.shuffleReadyPlayerIds] } }
@@ -160,6 +163,51 @@ function pausePayload(room: Room) {
 }
 function activeRoomPlayers(room: Room) {
   return room.players.filter((roomPlayer) => room.game?.players.some((player) => player.id === roomPlayer.id && player.diceCount > 0));
+}
+function isOfflineCovered(player: RoomPlayer) {
+  return !player.isBot && !player.socket && player.disconnectedAt !== undefined && Date.now() - player.disconnectedAt >= OFFLINE_COVER_DELAY_MS;
+}
+function automaticallyReadyOfflinePlayers(room: Room) {
+  const covered = activeRoomPlayers(room).filter(isOfflineCovered);
+  if (!covered.length) return false;
+  let changed = false;
+  if (room.game?.phase === "playing" && room.shuffleReadyPlayerIds) {
+    for (const player of covered) {
+      if (!room.shuffleReadyPlayerIds.has(player.id)) { room.shuffleReadyPlayerIds.add(player.id); changed = true; }
+    }
+  } else if (room.game?.phase === "reveal" && room.nextRoundReadyPlayerIds) {
+    for (const player of covered) {
+      if (!room.nextRoundReadyPlayerIds.has(player.id)) { room.nextRoundReadyPlayerIds.add(player.id); changed = true; }
+    }
+  }
+  if (changed) room.announcement = { text: "Offline players are covered automatically." };
+  return changed;
+}
+function scheduleOfflineCoverCheck(room: Room) {
+  if (room.offlineCoverTimer) clearTimeout(room.offlineCoverTimer);
+  room.offlineCoverTimer = undefined;
+  const nextDeadline = room.players
+    .filter((player) => !player.isBot && !player.socket && player.disconnectedAt !== undefined)
+    .map((player) => player.disconnectedAt! + OFFLINE_COVER_DELAY_MS)
+    .filter((deadline) => deadline > Date.now())
+    .sort((left, right) => left - right)[0];
+  if (!nextDeadline) return;
+  room.offlineCoverTimer = setTimeout(() => {
+    room.offlineCoverTimer = undefined;
+    const changed = automaticallyReadyOfflinePlayers(room);
+    const currentActor = room.players.find((player) => player.id === room.game?.currentPlayerId);
+    const currentActorCovered = Boolean(currentActor && isOfflineCovered(currentActor));
+    if (changed || currentActorCovered) {
+      void persistRoomSnapshot(room);
+      if (room.game?.phase === "playing") {
+        if (currentActorCovered) scheduleTurn(room, OFFLINE_TURN_LIMIT_MS);
+        else { publish(room); scheduleTurn(room); }
+      }
+      else if (room.game?.phase === "reveal" && everyoneReadyForNextRound(room)) beginNextRound(room);
+      else publish(room);
+    }
+    scheduleOfflineCoverCheck(room);
+  }, Math.max(1, nextDeadline - Date.now()));
 }
 function promoteQueuedSpectators(room: Room) {
   for (const [socket, spectator] of room.spectators) {
@@ -196,14 +244,15 @@ function scheduleTurn(room: Room, remainingMs = turnLimitMs(room)) {
   if (room.paused || !room.game || room.game.phase !== "playing" || !everyoneShuffled(room)) return;
   const actor = room.players.find((candidate) => candidate.id === room.game?.currentPlayerId);
   if (!actor) return;
+  const effectiveRemainingMs = isOfflineCovered(actor) ? Math.min(remainingMs, OFFLINE_TURN_LIMIT_MS) : remainingMs;
   // Bots get the same visible clock as humans. Their actual choice is made earlier,
   // after a natural thinking pause, rather than shortening the public timer.
   const delay = actor.isBot
-    ? Math.min(remainingMs, BOT_TURN_DELAY_MIN_MS + Math.floor(Math.random() * BOT_TURN_DELAY_SPREAD_MS))
-    : remainingMs;
+    ? Math.min(effectiveRemainingMs, BOT_TURN_DELAY_MIN_MS + Math.floor(Math.random() * BOT_TURN_DELAY_SPREAD_MS))
+    : effectiveRemainingMs;
   const turnTiming = startTurnTiming(room, actor);
   if (!turnTiming) return;
-  room.turnDeadlineAt = Date.now() + remainingMs;
+  room.turnDeadlineAt = Date.now() + effectiveRemainingMs;
   turnTiming.deadlineAt = new Date(room.turnDeadlineAt).toISOString();
   publish(room);
   room.turnTimer = setTimeout(() => {
@@ -240,6 +289,7 @@ function startRoundShuffle(room: Room, remainingMs = SHUFFLE_LIMIT_MS, keepReady
     room.shuffleReadyPlayerIds = new Set();
     room.announcement = { text: `Round ${room.game.round}: shake your dice.` };
   }
+  automaticallyReadyOfflinePlayers(room);
   if (room.shuffleTimer) clearTimeout(room.shuffleTimer);
   for (const timer of room.botShuffleTimers ?? []) clearTimeout(timer);
   room.botShuffleTimers = [];
@@ -297,6 +347,7 @@ function startNextRoundVote(room: Room, remainingMs = ROUND_ADVANCE_MS, keepRead
     room.nextRoundReadyPlayerIds = new Set();
     room.announcement = { text: "Choose Next round when you are ready." };
   }
+  automaticallyReadyOfflinePlayers(room);
   room.nextRoundDeadlineAt = Date.now() + remainingMs;
   room.nextRoundTimer = setTimeout(() => beginNextRound(room), remainingMs);
   for (const bot of activeRoomPlayers(room).filter((player) => player.isBot)) {
@@ -312,6 +363,7 @@ function startNextRoundVote(room: Room, remainingMs = ROUND_ADVANCE_MS, keepRead
 }
 function resumeRecoveredRoom(room: Room) {
   if (!room.game || room.paused) return;
+  scheduleOfflineCoverCheck(room);
   if (room.game.phase === "playing") {
     if (room.shuffleReadyPlayerIds && !everyoneShuffled(room)) startRoundShuffle(room, SHUFFLE_LIMIT_MS, true);
     else if (room.shuffleReadyPlayerIds) scheduleTurn(room);
@@ -329,7 +381,7 @@ async function loadPersistedRoom(roomCode: string): Promise<Room | undefined> {
     const restored: Room = {
       code: saved.code,
       hostPlayerId: saved.hostPlayerId ?? "",
-      players: saved.players.map((player) => ({ id: player.id, name: player.name, isBot: player.isBot, ...(player.token ? { token: player.token } : {}) })),
+      players: saved.players.map((player) => ({ id: player.id, name: player.name, isBot: player.isBot, ...(player.token ? { token: player.token } : {}), ...(typeof player.disconnectedAt === "number" ? { disconnectedAt: player.disconnectedAt } : {}) })),
       spectators: new Map(),
       connectionEvents: saved.connectionEvents ?? [],
       rules: saved.rules ?? DEFAULT_GAME_RULES,
@@ -411,6 +463,7 @@ function expireIdleRooms() {
     if (room.turnTimer) clearTimeout(room.turnTimer);
     if (room.shuffleTimer) clearTimeout(room.shuffleTimer);
     if (room.nextRoundTimer) clearTimeout(room.nextRoundTimer);
+    if (room.offlineCoverTimer) clearTimeout(room.offlineCoverTimer);
     for (const timer of room.botShuffleTimers ?? []) clearTimeout(timer);
     for (const timer of room.botNextRoundTimers ?? []) clearTimeout(timer);
     for (const player of room.players) if (player.socket) { send(player.socket, { type: "error", message: "This idle room expired." }); player.socket.close(); }
@@ -423,11 +476,22 @@ setInterval(expireIdleRooms, 60_000).unref();
 /** Authoritative websocket endpoint. Each browser receives only its permitted game projection. */
 export function installOnlineRooms(httpServer: import("node:http").Server) {
   const wss = new WebSocketServer({ noServer: true });
+  const liveSockets = new WeakMap<WebSocket, boolean>();
+  const heartbeat = setInterval(() => {
+    for (const socket of wss.clients) {
+      if (liveSockets.get(socket) === false) { socket.terminate(); continue; }
+      liveSockets.set(socket, false);
+      socket.ping();
+    }
+  }, HEARTBEAT_MS);
+  heartbeat.unref();
   httpServer.on("upgrade", (request: IncomingMessage, socket, head) => {
     if (new URL(request.url ?? "/", "http://localhost").pathname !== "/online") return;
     wss.handleUpgrade(request, socket, head, (websocket) => wss.emit("connection", websocket, request));
   });
   wss.on("connection", (socket, request: IncomingMessage) => {
+    liveSockets.set(socket, true);
+    socket.on("pong", () => liveSockets.set(socket, true));
     connectionContexts.set(socket, createConnectionContext(request));
     let room: Room | undefined;
     let player: RoomPlayer | undefined;
@@ -454,7 +518,14 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           if (message.spectator) { spectator = true; room.spectators.set(socket, { socket }); recordConnection(room, socket, "spectator-joined", "spectator"); send(socket, { type: "joined", roomCode: room.code, hostPlayerId: room.hostPlayerId }); }
           else {
             const prior = room.players.find((entry) => !entry.isBot && entry.token === message.reconnectToken);
-            if (prior) { if (prior.socket) prior.socket.close(); prior.socket = socket; player = prior; recordConnection(room, socket, "player-reconnected", "player", player.id); }
+            if (prior) {
+              if (prior.socket && prior.socket !== socket) prior.socket.close();
+              prior.socket = socket;
+              delete prior.disconnectedAt;
+              player = prior;
+              recordConnection(room, socket, "player-reconnected", "player", player.id);
+              scheduleOfflineCoverCheck(room);
+            }
             else {
               if (room.game) {
                 const name = message.name?.trim().slice(0, 24) ?? "";
@@ -553,7 +624,23 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
         }
       } catch (error) { send(socket, { type: "error", message: error instanceof Error ? error.message : "Unable to update the room." }); }
     });
-    socket.on("close", () => { if (!room) return; if (player && room.players.some((candidate) => candidate.id === player!.id)) player.socket = undefined; if (spectator) room.spectators.delete(socket); recordConnection(room, socket, "disconnected", spectator ? "spectator" : "player", player?.id); void persistRoomSnapshot(room); publish(room); });
+    socket.on("close", () => {
+      liveSockets.delete(socket);
+      if (!room) return;
+      const ownsPlayerSocket = Boolean(player && player.socket === socket && room.players.some((candidate) => candidate.id === player!.id));
+      if (ownsPlayerSocket && player) {
+        player.socket = undefined;
+        player.disconnectedAt = Date.now();
+        recordConnection(room, socket, "disconnected", "player", player.id);
+        scheduleOfflineCoverCheck(room);
+        void persistRoomSnapshot(room);
+        publish(room);
+      } else if (spectator && room.spectators.delete(socket)) {
+        recordConnection(room, socket, "disconnected", "spectator");
+        void persistRoomSnapshot(room);
+        publish(room);
+      }
+    });
   });
 }
 
@@ -603,7 +690,7 @@ async function persistRoomSnapshot(room: Room) {
       schemaVersion: 1,
       code: room.code,
       hostPlayerId: room.hostPlayerId,
-      players: room.players.map(({ id, name, isBot, token }) => ({ id, name, isBot, ...(token ? { token } : {}) })),
+      players: room.players.map(({ id, name, isBot, token, disconnectedAt }) => ({ id, name, isBot, ...(token ? { token } : {}), ...(typeof disconnectedAt === "number" ? { disconnectedAt } : {}) })),
       connectionEvents: room.connectionEvents,
       rules: room.rules,
       roundDeals: room.roundDeals,
