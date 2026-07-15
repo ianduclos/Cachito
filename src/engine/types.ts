@@ -6,6 +6,8 @@ export interface PlayerSetup {
 }
 
 export interface GameRules {
+  /** Visible time allowed for each turn. */
+  turnTimeSeconds: 15 | 30 | 60 | 90
   /** Minimum normal-to-ace conversion: ceil(quantity / 2), optionally plus one. */
   acesConversion: 'half' | 'halfPlusOne'
   /** Each player can trigger one Palo Fijo round on reaching this many dice. */
@@ -19,6 +21,7 @@ export interface GameRules {
 }
 
 export const DEFAULT_GAME_RULES: Readonly<GameRules> = {
+  turnTimeSeconds: 60,
   acesConversion: 'halfPlusOne',
   paloFijoTrigger: 'oneDie',
   paloFijoBlindDice: true,

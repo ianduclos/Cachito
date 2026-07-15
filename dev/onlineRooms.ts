@@ -45,7 +45,6 @@ const logBucket = process.env.MATCH_LOG_BUCKET;
 const storage = logBucket ? new Storage() : undefined;
 const GAME_IDLE_MS = 20 * 60_000;
 const LOBBY_IDLE_MS = 60 * 60_000;
-const TURN_LIMIT_MS = 90_000;
 const ROUND_ADVANCE_MS = 60_000;
 const SHUFFLE_LIMIT_MS = 60_000;
 const BOT_TURN_DELAY_MIN_MS = 3_000;
@@ -68,7 +67,8 @@ function touch(room: Room) { room.lastActivityAt = Date.now(); }
 function isGameRules(value: unknown): value is GameRules {
   if (!value || typeof value !== "object") return false;
   const rules = value as Partial<GameRules>;
-  return (rules.acesConversion === "half" || rules.acesConversion === "halfPlusOne")
+  return (rules.turnTimeSeconds === 15 || rules.turnTimeSeconds === 30 || rules.turnTimeSeconds === 60 || rules.turnTimeSeconds === 90)
+    && (rules.acesConversion === "half" || rules.acesConversion === "halfPlusOne")
     && (rules.paloFijoTrigger === "oneDie" || rules.paloFijoTrigger === "twoDice")
     && typeof rules.paloFijoBlindDice === "boolean"
     && typeof rules.diceAmountsVisible === "boolean"
@@ -112,7 +112,7 @@ function startTurnTiming(room: Room, actor: RoomPlayer): TurnTiming | undefined 
   if (!game) return undefined;
   if (room.activeTurn?.round === game.round && room.activeTurn.playerId === actor.id && !room.activeTurn.finishedAt) return room.activeTurn;
   const now = Date.now();
-  const timing: TurnTiming = { round: game.round, playerId: actor.id, nickname: actor.name, controller: actor.isBot ? "bot" : "human", startedAt: new Date(now).toISOString(), deadlineAt: new Date(now + TURN_LIMIT_MS).toISOString() };
+  const timing: TurnTiming = { round: game.round, playerId: actor.id, nickname: actor.name, controller: actor.isBot ? "bot" : "human", startedAt: new Date(now).toISOString(), deadlineAt: new Date(now + turnLimitMs(room)).toISOString() };
   room.turnTimings.push(timing);
   room.activeTurn = timing;
   return timing;
@@ -189,7 +189,8 @@ function publish(room: Room) {
     else send(socket, lobby(room));
   }
 }
-function scheduleTurn(room: Room, remainingMs = TURN_LIMIT_MS) {
+function turnLimitMs(room: Room) { return (room.game?.rules.turnTimeSeconds ?? 60) * 1_000; }
+function scheduleTurn(room: Room, remainingMs = turnLimitMs(room)) {
   if (room.turnTimer) clearTimeout(room.turnTimer);
   room.turnDeadlineAt = undefined;
   if (room.paused || !room.game || room.game.phase !== "playing" || !everyoneShuffled(room)) return;
@@ -395,7 +396,7 @@ function resumeGame(room: Room, player: RoomPlayer) {
   room.announcement = { text: `${player.name} resumed the game.`, playerId: player.id };
   if (room.game.phase === "playing") {
     if (room.shuffleReadyPlayerIds && !everyoneShuffled(room)) startRoundShuffle(room, pause.shuffleRemainingMs ?? SHUFFLE_LIMIT_MS, true);
-    else scheduleTurn(room, pause.turnRemainingMs ?? TURN_LIMIT_MS);
+    else scheduleTurn(room, pause.turnRemainingMs ?? turnLimitMs(room));
   } else if (room.game.phase === "reveal" && room.nextRoundReadyPlayerIds) {
     startNextRoundVote(room, pause.nextRoundRemainingMs ?? ROUND_ADVANCE_MS, true);
   }
