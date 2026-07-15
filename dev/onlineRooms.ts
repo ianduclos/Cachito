@@ -4,7 +4,7 @@ import { isIP } from "node:net";
 import { WebSocketServer, type WebSocket } from "ws";
 import { Storage } from "@google-cloud/storage";
 import { applyAction, createGame, DEFAULT_GAME_RULES, getLegalActions, projectForPlayer, projectForSpectator, type Die, type GameAction, type GameRules, type GameState, type PlayerSetup } from "../src/engine";
-import { chooseBotAction, createProbabilityPolicy, isChoiceLegal, type BotObservation } from "../src/bot";
+import { chooseBotAction, createProbabilityPolicy, isChoiceLegal, type BotObservation, type PublicActionEntry } from "../src/bot";
 import type { OnlineClientMessage, OnlineServerMessage } from "../src/online/protocol";
 
 type RoomPlayer = { id: string; name: string; isBot: boolean; token?: string; socket?: WebSocket };
@@ -17,10 +17,9 @@ type RoundDeal = { round: number; dealtAt: string; paloFijo: boolean; starterId:
 type TurnTiming = { round: number; playerId: string; nickname: string; controller: "human" | "bot"; startedAt: string; deadlineAt: string; finishedAt?: string; elapsedMs?: number; remainingMs?: number; outcome?: "bid" | "dudo" | "calzo" | "timeout" };
 type RoomRuleProposal = { rules: GameRules; proposedById: string; approvalPlayerIds: Set<string> };
 type PauseState = { pausedById: string; pausedAt: number; turnRemainingMs?: number; shuffleRemainingMs?: number; nextRoundRemainingMs?: number };
-type Room = { code: string; hostPlayerId: string; players: RoomPlayer[]; spectators: Map<WebSocket, Spectator>; connectionEvents: ConnectionEvent[]; rules: GameRules; pendingRules?: RoomRuleProposal; roundDeals: RoundDeal[]; turnTimings: TurnTiming[]; activeTurn?: TurnTiming; game?: GameState; history: string[]; announcement?: { text: string; playerId?: string }; shuffleReadyPlayerIds?: Set<string>; nextRoundReadyPlayerIds?: Set<string>; nextRoundDeadlineAt?: number; shuffleDeadlineAt?: number; paused?: PauseState; actions: LoggedAction[]; startedAt?: string; lastActivityAt: number; nextGameStarterId?: string; turnDeadlineAt?: number; turnTimer?: ReturnType<typeof setTimeout>; shuffleTimer?: ReturnType<typeof setTimeout>; nextRoundTimer?: ReturnType<typeof setTimeout>; botShuffleTimers?: Array<ReturnType<typeof setTimeout>>; botNextRoundTimers?: Array<ReturnType<typeof setTimeout>> };
+type Room = { code: string; hostPlayerId: string; players: RoomPlayer[]; spectators: Map<WebSocket, Spectator>; connectionEvents: ConnectionEvent[]; rules: GameRules; pendingRules?: RoomRuleProposal; roundDeals: RoundDeal[]; turnTimings: TurnTiming[]; activeTurn?: TurnTiming; game?: GameState; history: string[]; botHistory: PublicActionEntry[]; announcement?: { text: string; playerId?: string }; shuffleReadyPlayerIds?: Set<string>; nextRoundReadyPlayerIds?: Set<string>; nextRoundDeadlineAt?: number; shuffleDeadlineAt?: number; paused?: PauseState; actions: LoggedAction[]; startedAt?: string; lastActivityAt: number; nextGameStarterId?: string; turnDeadlineAt?: number; turnTimer?: ReturnType<typeof setTimeout>; shuffleTimer?: ReturnType<typeof setTimeout>; nextRoundTimer?: ReturnType<typeof setTimeout>; botShuffleTimers?: Array<ReturnType<typeof setTimeout>>; botNextRoundTimers?: Array<ReturnType<typeof setTimeout>> };
 const rooms = new Map<string, Room>();
 const connectionContexts = new WeakMap<WebSocket, ConnectionContext>();
-const botPolicy = createProbabilityPolicy();
 const botNames = [
   "Khaleesi",
   "Calculator",
@@ -47,8 +46,8 @@ const LOBBY_IDLE_MS = 60 * 60_000;
 const TURN_LIMIT_MS = 90_000;
 const ROUND_ADVANCE_MS = 60_000;
 const SHUFFLE_LIMIT_MS = 60_000;
-const BOT_TURN_DELAY_MIN_MS = 6_000;
-const BOT_TURN_DELAY_SPREAD_MS = 2_000;
+const BOT_TURN_DELAY_MIN_MS = 3_000;
+const BOT_TURN_DELAY_SPREAD_MS = 5_000;
 const BOT_SHAKE_DELAY_MIN_MS = 2_000;
 const BOT_SHAKE_DELAY_SPREAD_MS = 1_000;
 const BOT_NEXT_ROUND_DELAY_MIN_MS = 4_000;
@@ -130,6 +129,12 @@ function nextBotName(room: Room) {
   const unused = botNames.filter((name) => !room.players.some((player) => player.name === name));
   return unused[Math.floor(Math.random() * unused.length)] ?? `Bot ${room.players.filter((player) => player.isBot).length + 1}`;
 }
+function onlineBotPolicy(player: RoomPlayer) {
+  const style = [...player.name].reduce((total, character) => total + character.charCodeAt(0), 0) % 3;
+  if (style === 1) return createProbabilityPolicy({ name: "Pressure strategist", bluffRate: 0.12, targetBidConfidence: 0.57, tableAggression: 0.52 });
+  if (style === 2) return createProbabilityPolicy({ name: "Careful strategist", bluffRate: 0.035, targetBidConfidence: 0.67, tableAggression: 0.08 });
+  return createProbabilityPolicy({ name: "Adaptive strategist", bluffRate: 0.07, targetBidConfidence: 0.62, tableAggression: 0.24 });
+}
 function send(socket: WebSocket, message: OnlineServerMessage) { if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message)); }
 function lobby(room: Room): Extract<OnlineServerMessage, { type: "lobby" }> {
   return { type: "lobby", roomCode: room.code, hostPlayerId: room.hostPlayerId, spectatorCount: room.spectators.size,
@@ -204,8 +209,8 @@ function scheduleTurn(room: Room, remainingMs = TURN_LIMIT_MS) {
     const game = room.game;
     if (!game || game.phase !== "playing" || game.currentPlayerId !== actor.id) return;
     try {
-      const observation: BotObservation = { playerId: actor.id, view: projectForPlayer(game, actor.id), legalActions: getLegalActions(game, actor.id), history: [] };
-      const { choice } = chooseBotAction(botPolicy, observation, Math.random);
+      const observation: BotObservation = { playerId: actor.id, view: projectForPlayer(game, actor.id), legalActions: getLegalActions(game, actor.id), history: room.botHistory };
+      const { choice } = chooseBotAction(onlineBotPolicy(actor), observation, Math.random);
       if (!isChoiceLegal(observation, choice)) throw new Error("Bot selected an illegal action.");
       // A timeout bot is a safety net, not a strategic table-dice move.
       const action = choice.type === "bid" ? { type: "bid" as const, playerId: actor.id, bid: choice.bid, ...(actor.isBot && choice.tableDiceIndices?.length ? { tableDiceIndices: choice.tableDiceIndices } : {}) } : { type: choice.type, playerId: actor.id };
@@ -389,7 +394,7 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           if (!name) throw new Error("Enter your name first.");
           const id = `player-${crypto.randomUUID()}`;
           player = { id, name, isBot: false, token: token(), socket };
-          room = { code: code(), hostPlayerId: id, players: [player], spectators: new Map(), connectionEvents: [], rules: { ...DEFAULT_GAME_RULES }, roundDeals: [], turnTimings: [], history: [], actions: [], lastActivityAt: Date.now() };
+          room = { code: code(), hostPlayerId: id, players: [player], spectators: new Map(), connectionEvents: [], rules: { ...DEFAULT_GAME_RULES }, roundDeals: [], turnTimings: [], history: [], botHistory: [], actions: [], lastActivityAt: Date.now() };
           recordConnection(room, socket, "room-created", "player", id);
           rooms.set(room.code, room);
           send(socket, { type: "joined", roomCode: room.code, playerId: id, reconnectToken: player.token, hostPlayerId: id }); publish(room);
@@ -463,10 +468,10 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           if (room.pendingRules) throw new Error("Every player must approve the pending rules before the game starts.");
           const starter = room.players.find((candidate) => candidate.id === room!.nextGameStarterId) ?? room.players[Math.floor(Math.random() * room.players.length)];
           const otherPlayers = room.players.filter((candidate) => candidate.id !== starter.id).sort(() => Math.random() - .5);
-          room.game = createGame([starter, ...otherPlayers].map(({ id, name }): PlayerSetup => ({ id, name })), Math.random, room.rules); room.startedAt = new Date().toISOString(); room.history = [`Round 1 begins — ${starter.name} starts.`]; room.actions = [{ at: room.startedAt, action: { type: "round-start" } }]; room.roundDeals = []; room.turnTimings = []; room.activeTurn = undefined; recordRoundDeal(room); touch(room); startRoundShuffle(room); void persistRoomSnapshot(room); publish(room);
+          room.game = createGame([starter, ...otherPlayers].map(({ id, name }): PlayerSetup => ({ id, name })), Math.random, room.rules); room.startedAt = new Date().toISOString(); room.history = [`Round 1 begins — ${starter.name} starts.`]; room.botHistory = []; room.actions = [{ at: room.startedAt, action: { type: "round-start" } }]; room.roundDeals = []; room.turnTimings = []; room.activeTurn = undefined; recordRoundDeal(room); touch(room); startRoundShuffle(room); void persistRoomSnapshot(room); publish(room);
         } else if (message.type === "return-to-lobby") {
           if (!player || player.id !== room.hostPlayerId || room.game?.phase !== "gameOver") throw new Error("Only the host can return this completed game to the lobby.");
-          promoteQueuedSpectators(room); room.game = undefined; room.history = []; room.announcement = undefined; room.paused = undefined; room.shuffleReadyPlayerIds = undefined; room.nextRoundReadyPlayerIds = undefined; room.nextRoundDeadlineAt = undefined; room.shuffleDeadlineAt = undefined; if (room.shuffleTimer) clearTimeout(room.shuffleTimer); room.shuffleTimer = undefined; for (const timer of room.botShuffleTimers ?? []) clearTimeout(timer); room.botShuffleTimers = []; if (room.nextRoundTimer) clearTimeout(room.nextRoundTimer); room.nextRoundTimer = undefined; for (const timer of room.botNextRoundTimers ?? []) clearTimeout(timer); room.botNextRoundTimers = []; if (room.turnTimer) clearTimeout(room.turnTimer); room.turnTimer = undefined; room.turnDeadlineAt = undefined; room.actions = []; room.roundDeals = []; room.turnTimings = []; room.activeTurn = undefined; room.startedAt = undefined; touch(room); publish(room);
+          promoteQueuedSpectators(room); room.game = undefined; room.history = []; room.botHistory = []; room.announcement = undefined; room.paused = undefined; room.shuffleReadyPlayerIds = undefined; room.nextRoundReadyPlayerIds = undefined; room.nextRoundDeadlineAt = undefined; room.shuffleDeadlineAt = undefined; if (room.shuffleTimer) clearTimeout(room.shuffleTimer); room.shuffleTimer = undefined; for (const timer of room.botShuffleTimers ?? []) clearTimeout(timer); room.botShuffleTimers = []; if (room.nextRoundTimer) clearTimeout(room.nextRoundTimer); room.nextRoundTimer = undefined; for (const timer of room.botNextRoundTimers ?? []) clearTimeout(timer); room.botNextRoundTimers = []; if (room.turnTimer) clearTimeout(room.turnTimer); room.turnTimer = undefined; room.turnDeadlineAt = undefined; room.actions = []; room.roundDeals = []; room.turnTimings = []; room.activeTurn = undefined; room.startedAt = undefined; touch(room); publish(room);
         } else if (message.type === "toggle-pause") {
           if (!player || !room.game || room.game.phase === "gameOver" || !room.players.some((candidate) => candidate.id === player!.id)) throw new Error("Only a player at this table can pause or resume the game.");
           if (room.paused) resumeGame(room, player);
@@ -524,6 +529,16 @@ function recordAction(room: Room, name: string, action: GameAction) {
     room.announcement = { text: `${winner?.name ?? "The last player"} wins the match.`, playerId: gameOver.winnerId };
   }
   room.history = room.history.slice(0, 30);
+  if (room.game.phase === "reveal") {
+    const { resolution } = room.game;
+    room.botHistory.push({
+      round: room.game.round,
+      playerId: resolution.bidderId,
+      action: { type: "bid", bid: { ...resolution.bid } },
+      outcome: { kind: resolution.kind, bidderId: resolution.bidderId, bid: { ...resolution.bid }, correct: resolution.correct },
+    });
+    room.botHistory = room.botHistory.slice(-80);
+  }
 }
 
 function denominationName(value: number) { return ["", "Aces", "Dones", "Trenes", "Cuadras", "Chinas", "Sambas"][value] ?? "dice"; }

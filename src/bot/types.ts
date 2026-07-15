@@ -41,6 +41,7 @@ export type BotDecisionReason =
   | 'opponent_model_dudo'
   | 'supported_bid'
   | 'controlled_bluff'
+  | 'table_dice_pressure'
   | 'forced_fallback'
   | 'random_legal'
 
@@ -89,6 +90,7 @@ export interface BotDecisionTrace {
   consideredCandidates: BotCandidateTrace[]
   /** Rolls consumed for this choice, but never the generator's internal state. */
   random: {
+    posture?: number
     actionRoll?: number
     selectionRoll?: number
     selectedIndex?: number

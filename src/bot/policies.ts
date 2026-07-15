@@ -1,4 +1,4 @@
-import type { Bid, Die, RandomSource } from '../engine'
+import type { Bid, Die, PublicGameView, PublicPlayer, RandomSource } from '../engine'
 import { evaluateBidDistribution, evaluateTableDiceDistribution } from './probability'
 import { adjustSupportForOpponent, buildOpponentProfile } from './opponentModel'
 import type {
@@ -58,6 +58,7 @@ export interface ProbabilityPolicyOptions {
   targetBidConfidence?: number
   bluffRate?: number
   nearEqualWindow?: number
+  tableAggression?: number
 }
 
 /**
@@ -72,6 +73,7 @@ export function createProbabilityPolicy(options: ProbabilityPolicyOptions = {}):
     targetBidConfidence: options.targetBidConfidence ?? 0.62,
     bluffRate: options.bluffRate ?? 0.06,
     nearEqualWindow: options.nearEqualWindow ?? 0.025,
+    tableAggression: options.tableAggression ?? 0.2,
   }
 
   const decide = (observation: BotObservation, random: RandomSource): BotActionResult => {
@@ -87,6 +89,8 @@ export function createProbabilityPolicy(options: ProbabilityPolicyOptions = {}):
         consideredCandidates: [],
         random: {},
       }
+      const strategy = strategyContext(view, player, settings)
+      trace.random.posture = strategy.posture
 
       let actionValues: BotActionValueTrace[] = []
       let dudoValue: number | undefined
@@ -105,9 +109,8 @@ export function createProbabilityPolicy(options: ProbabilityPolicyOptions = {}):
           : current.atLeast
         const dudoConfidence = 1 - adjustedSupport
         const lifeCaution = player.diceCount === 1 ? 0.14 : player.diceCount === 2 ? 0.06 : 0
-        const leaderAdjustment = player.diceCount >= Math.max(...view.players.map((candidate) => candidate.diceCount)) ? -0.03 : 0
-        const effectiveDudoThreshold = settings.dudoThreshold + lifeCaution + leaderAdjustment
-        const effectiveCalzoThreshold = settings.calzoThreshold + (player.diceCount <= 2 ? 0.1 : 0)
+        const effectiveDudoThreshold = clamp(settings.dudoThreshold + lifeCaution + strategy.dudoCaution, 0.2, 0.88)
+        const effectiveCalzoThreshold = clamp(settings.calzoThreshold + (player.diceCount <= 2 ? 0.1 : 0) + strategy.calzoCaution, 0.45, 0.96)
         trace.currentBidAnalysis = {
           supportProbability: current.atLeast,
           exactProbability: current.exact,
@@ -126,12 +129,12 @@ export function createProbabilityPolicy(options: ProbabilityPolicyOptions = {}):
             adjustedSupport,
             player.diceCount,
             bidderId ? view.players.find((candidate) => candidate.id === bidderId)?.diceCount : undefined,
-            settings.dudoThreshold,
+            effectiveDudoThreshold,
           )
           actionValues.push({ action: 'dudo', expectedValue: dudoValue })
         }
         if (legalActions.canCalzo) {
-          calzoValue = expectedCalzoValue(current.exact, player.diceCount, settings.calzoThreshold)
+          calzoValue = expectedCalzoValue(current.exact, player.diceCount, effectiveCalzoThreshold)
           actionValues.push({ action: 'calzo', expectedValue: calzoValue })
         }
       }
@@ -145,7 +148,7 @@ export function createProbabilityPolicy(options: ProbabilityPolicyOptions = {}):
 
       const scored = legalActions.bids.map((bid) => {
         const distribution = evaluateBidDistribution(view, playerId, bid)
-        const confidenceDistance = Math.abs(distribution.atLeast - settings.targetBidConfidence)
+        const confidenceDistance = Math.abs(distribution.atLeast - strategy.targetBidConfidence)
         const quantityPenalty = bid.quantity / 10_000
         const visiblePreference = denominationPreference(player.hand, bid.denomination, view.paloFijo)
         const score = -confidenceDistance - quantityPenalty + visiblePreference
@@ -185,8 +188,8 @@ export function createProbabilityPolicy(options: ProbabilityPolicyOptions = {}):
       const actionRoll = random()
       trace.random.actionRoll = actionRoll
       let pool = nearEqual
-      if (actionRoll < settings.bluffRate) {
-        const plausibleBluffs = scored.filter((candidate) => candidate.confidence >= 0.25 && candidate.confidence < settings.targetBidConfidence).slice(0, 6)
+      if (actionRoll < strategy.bluffRate) {
+        const plausibleBluffs = scored.filter((candidate) => candidate.confidence >= strategy.bluffFloor && candidate.confidence < strategy.targetBidConfidence).slice(0, 6)
         if (plausibleBluffs.length > 0) {
           pool = plausibleBluffs
           trace.decisionReason = 'controlled_bluff'
@@ -205,10 +208,11 @@ export function createProbabilityPolicy(options: ProbabilityPolicyOptions = {}):
         score: selected.item.score,
       }
       const tablePlan = trace.decisionReason === 'supported_bid'
-        ? conservativeTableDicePlan(observation, scored, settings.targetBidConfidence)
+        ? tableDicePlan(observation, scored, strategy.targetBidConfidence, strategy.tableAggression)
         : undefined
-      if (tablePlan && tablePlan.expectedValue > selected.item.expectedValue + 0.025) {
+      if (tablePlan && tablePlan.expectedValue > selected.item.expectedValue + strategy.tableGainRequired) {
         trace.selectedCandidate = { rank: scored.findIndex((candidate) => sameBid(candidate.bid, tablePlan.bid)) + 1, score: tablePlan.score }
+        trace.decisionReason = 'table_dice_pressure'
         return { choice: { type: 'bid', bid: tablePlan.bid, tableDiceIndices: tablePlan.tableDiceIndices }, trace }
       }
       return { choice: { type: 'bid', bid: selected.item.bid }, trace }
@@ -222,6 +226,42 @@ export function createProbabilityPolicy(options: ProbabilityPolicyOptions = {}):
     chooseActionWithTrace(observation, random) {
       return decide(observation, random)
     },
+  }
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.max(minimum, Math.min(maximum, value))
+}
+
+/**
+ * Keeps distinct bot styles, while letting the live table position overrule
+ * personality: a trailing bot presses, while a short-stacked leader protects
+ * its advantage. The hash is stable, so a bot does not change character mid-game.
+ */
+function strategyContext(
+  view: PublicGameView,
+  player: PublicPlayer,
+  settings: { targetBidConfidence: number; bluffRate: number; tableAggression: number },
+) {
+  const activeDice = view.players.filter((candidate) => !candidate.eliminated).map((candidate) => candidate.diceCount)
+  const fewestDice = Math.min(...activeDice)
+  const trailing = player.diceCount >= fewestDice + 2
+  const leading = player.diceCount === fewestDice
+  const endgame = player.diceCount <= 2
+  const posture = [...player.id].reduce((total, character) => total + character.charCodeAt(0), 0) % 3
+  const pressurePersona = posture === 1
+  const carefulPersona = posture === 2
+  const pressure = (trailing ? 0.22 : 0) + (pressurePersona ? 0.14 : 0) - (leading ? 0.12 : 0) - (endgame ? 0.14 : 0) - (carefulPersona ? 0.08 : 0)
+  const targetBidConfidence = clamp(settings.targetBidConfidence - pressure * 0.45, 0.48, 0.76)
+  return {
+    posture,
+    targetBidConfidence,
+    bluffRate: clamp(settings.bluffRate + pressure * 0.52, 0.015, 0.22),
+    bluffFloor: clamp(targetBidConfidence - (0.26 + Math.max(pressure, 0) * 0.18), 0.23, 0.5),
+    tableAggression: clamp(settings.tableAggression + pressure * 1.55, 0, 0.8),
+    tableGainRequired: pressure > 0.12 ? 0.006 : 0.025,
+    dudoCaution: -pressure * 0.38,
+    calzoCaution: leading || endgame ? 0.04 : -Math.max(pressure, 0) * 0.12,
   }
 }
 
@@ -269,30 +309,34 @@ function denominationPreference(hand: Die[] | undefined, denomination: Die, palo
   return matches * 0.008
 }
 
-function conservativeTableDicePlan(
+function tableDicePlan(
   observation: BotObservation,
   candidates: ReadonlyArray<{ bid: Bid; expectedValue: number; distribution: ReturnType<typeof evaluateBidDistribution>; quantityPenalty: number }>,
   targetBidConfidence: number,
+  aggression: number,
 ): { bid: Bid; tableDiceIndices: number[]; expectedValue: number; score: number } | undefined {
   if (!observation.legalActions.canPutDiceOnTable) return undefined
   const player = observation.view.players.find((candidate) => candidate.id === observation.playerId)
   const hand = player?.hand
   if (!player || !hand || player.diceCount <= 2 || hand.length <= 2) return undefined
   const publicTableDice = observation.view.players.flatMap((candidate) => candidate.tableDice)
-  if (publicTableDice.length >= 5) return undefined
+  if (publicTableDice.length >= (aggression >= 0.45 ? 7 : 5)) return undefined
 
   return candidates.flatMap((candidate) => {
     const qualifying = hand.flatMap((die, index) => die === candidate.bid.denomination || (!observation.view.paloFijo && candidate.bid.denomination !== 1 && die === 1) ? [index] : [])
     if (!qualifying.length) return []
-    // One public die is enough for a conservative tell; keep the rest private.
-    const tableDiceIndices = [qualifying[0]]
+    const revealCount = aggression >= 0.45 && qualifying.length >= 2 && hand.length >= 3 ? 2 : 1
+    const tableDiceIndices = qualifying.slice(0, revealCount)
     const afterReroll = evaluateTableDiceDistribution(observation.view, observation.playerId, candidate.bid, tableDiceIndices)
-    const exposureCost = 0.045 + publicTableDice.length * 0.012
+    const exposureCost = 0.045 + publicTableDice.length * 0.012 + (tableDiceIndices.length - 1) * 0.018
     const confidenceDistance = Math.abs(afterReroll.atLeast - targetBidConfidence)
     const expectedValue = expectedBidValue(afterReroll.atLeast, candidate.quantityPenalty, 0, confidenceDistance) - exposureCost
-    if (afterReroll.atLeast < Math.max(0.7, targetBidConfidence + 0.06)) return []
-    if (afterReroll.atLeast < candidate.distribution.atLeast + 0.08) return []
-    if (expectedValue < candidate.expectedValue + 0.025) return []
+    const minimumSupport = aggression >= 0.45 ? Math.max(0.62, targetBidConfidence + 0.02) : Math.max(0.7, targetBidConfidence + 0.06)
+    const minimumImprovement = aggression >= 0.45 ? 0.04 : 0.08
+    const minimumValueGain = aggression >= 0.45 ? 0.006 : 0.025
+    if (afterReroll.atLeast < minimumSupport) return []
+    if (afterReroll.atLeast < candidate.distribution.atLeast + minimumImprovement) return []
+    if (expectedValue < candidate.expectedValue + minimumValueGain) return []
     return [{ bid: candidate.bid, tableDiceIndices, expectedValue, score: expectedValue }]
   }).sort((left, right) => right.expectedValue - left.expectedValue)[0]
 }

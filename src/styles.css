@@ -98,7 +98,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .game-paused-overlay { position: absolute; z-index: 8; inset: 0; display: grid; align-content: center; justify-items: center; gap: 10px; padding: 24px; border-radius: inherit; background: #061f1be6; backdrop-filter: blur(5px); text-align: center; }
 .game-paused-overlay strong { color: var(--gold); font: 800 clamp(2rem, 7vw, 3.8rem)/1 "Fraunces", Georgia, serif; }
 .game-paused-overlay span { max-width: 300px; color: #e8dac0; font-size: .86rem; line-height: 1.5; }
-.round-result-overlay .round-result { width: min(100%, 760px); max-height: calc(100% - 22px); display: flex; flex-direction: column; overflow: hidden; padding: 30px; border: 1px solid #f2bd5a66; border-radius: 20px; background: #082d26f0; box-shadow: 0 25px 60px #0007; }
+.round-result-overlay .round-result { width: min(100%, 940px); max-height: calc(100% - 12px); display: flex; flex-direction: column; overflow: hidden; padding: clamp(28px, 4vw, 42px); border: 1px solid #f2bd5a66; border-radius: 24px; background: #082d26f0; box-shadow: 0 25px 60px #0007; }
 .round-callout { z-index: 7; align-content: center; justify-items: center; gap: 6px; background: #061f1bd9; color: var(--cream); }
 .round-callout strong { font: 800 clamp(4rem, 15vw, 9rem)/.85 "Fraunces", Georgia, serif; letter-spacing: .06em; animation: callout-slam 1.1s cubic-bezier(.1,.8,.2,1.2) both; text-shadow: 0 12px 25px #0008; }
 .round-callout span { color: #ffe1a3; font-size: 1rem; font-weight: 800; }
@@ -309,11 +309,11 @@ h1 { font: 800 clamp(3.2rem, 9vw, 5rem)/.95 "Fraunces", Georgia, serif; text-ali
 .privacy-card p { color: var(--muted); line-height: 1.55; max-width: 370px; margin: 0 auto 24px; }
 .privacy-card .button { width: 100%; max-width: 300px; }
 
-.reveal-panel { width: min(100%, 760px); }
+.reveal-panel { width: min(100%, 940px); }
 .result-banner { margin-bottom: 18px; }
 .result-banner h3 { font: 800 1.75rem "Fraunces", Georgia, serif; margin-bottom: 5px; }
 .result-banner p { color: #c8dad3; }
-.revealed-hands { display: grid; flex: 1; gap: 8px; margin: 12px 0 20px; overflow: auto; }
+.revealed-hands { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex: 1; gap: 10px; margin: 14px 0 22px; overflow: auto; }
 .revealed-hand { display: flex; justify-content: space-between; align-items: center; gap: 12px; border: 1px solid #ffffff14; border-radius: 12px; padding: 9px 11px; background: #061f1b77; }
 .revealed-hand strong { font-size: .82rem; }
 .next-round-ready { display: grid; justify-items: center; gap: 7px; margin-top: 16px; }
@@ -368,6 +368,8 @@ h1 { font: 800 clamp(3.2rem, 9vw, 5rem)/.95 "Fraunces", Georgia, serif; text-ali
   .felt-table { border-radius: 75px; padding: 32px 13px; }
   .round-shuffle-overlay { align-items: start; padding: 12px; }
   .round-result-overlay { align-items: start; padding: 12px; }
+  .round-result-overlay .round-result { padding: 22px 16px; }
+  .revealed-hands { grid-template-columns: 1fr; }
   .round-shuffle-card { width: 100%; padding: 18px 14px; }
   .round-shuffle-card h2 { font-size: 2rem; }
   .round-shuffle-players { margin: 11px 0 14px; }
