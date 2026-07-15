@@ -43,6 +43,8 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .online-entry-card { max-width: 500px; }
 .online-entry-card input { width: 100%; margin-bottom: 20px; border: 1px solid #ffffff1f; border-radius: 12px; padding: 12px 14px; outline: none; background: #ffffff0a; color: var(--cream); }
 .online-entry-action { width: 100%; margin-top: 8px; }
+.online-recover-action { display: inline-flex; align-items: center; gap: 6px; margin: 22px auto 0; border-color: transparent; color: #afc7bda8; font-size: .72rem; font-weight: 700; letter-spacing: .025em; }
+.online-recover-action:hover { border-color: #f2bd5a55; background: #f2bd5a0b; color: #ffe1a3; }
 .lobby-card { max-width: 550px; text-align: center; }
 .lobby-card .setup-heading { text-align: left; }
 .copy-code { margin: -14px 0 18px; }
@@ -333,12 +335,14 @@ h1 { font: 800 clamp(3.2rem, 9vw, 5rem)/.95 "Fraunces", Georgia, serif; text-ali
 
 .game-over { min-height: 100vh; display: grid; place-items: center; text-align: center; padding: 22px; background: radial-gradient(circle,#17614e,#071f1b 67%); }
 .confetti { position: fixed; inset: 0; overflow: hidden; pointer-events: none; }
-.confetti i { position: absolute; top: -8%; background: var(--gold); border-radius: 1px; opacity: .96; animation: confetti-fall 3s cubic-bezier(.16,.6,.32,1) infinite; }
+.confetti::before { content: ""; position: absolute; left: 50%; top: 42%; width: min(74vw, 760px); aspect-ratio: 1; transform: translate(-50%, -50%) scale(.15); border-radius: 50%; background: radial-gradient(circle, #fff7d580 0 2%, #f2bd5a38 11%, #ee765e1c 25%, transparent 64%); animation: winner-bloom 1.35s cubic-bezier(.12,.82,.2,1) both; }
+.confetti i { position: absolute; left: 50%; top: 42%; background: var(--gold); border-radius: 1px; opacity: 0; animation: confetti-burst var(--duration) cubic-bezier(.12,.72,.18,1) var(--delay) both; }
 .confetti i:nth-child(3n) { background: var(--coral); border-radius: 50%; }
 .confetti i:nth-child(4n) { background: #82d9a5; }
 .confetti i:nth-child(5n) { background: #eee0b5; }
 .confetti i:nth-child(2n) { clip-path: polygon(50% 0,100% 100%,0 100%); }
-@keyframes confetti-fall { 0% { transform: translate3d(0,-12vh,0) rotate(0); } 55% { transform: translate3d(18px,55vh,0) rotate(420deg); } 100% { transform: translate3d(-12px,115vh,0) rotate(780deg); } }
+@keyframes winner-bloom { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.12); } 22% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.18); } }
+@keyframes confetti-burst { 0% { opacity: 0; transform: translate(-50%, -50%) scale(0) rotate(0); } 8% { opacity: 1; } 48% { opacity: 1; transform: translate(calc(-50% + var(--burst-x)), calc(-50% + var(--burst-y))) rotate(360deg); } 100% { opacity: 0; transform: translate(calc(-50% + var(--burst-x) + var(--drift)), calc(-50% + var(--burst-y) + 66vh)) rotate(var(--spin)); } }
 .winner-crown { color: var(--gold); font-size: 5.4rem; line-height: 1; margin-bottom: 16px; text-shadow: 0 0 30px #f2bd5a88, 0 10px 20px #0007; animation: winner-pop .8s cubic-bezier(.2,.9,.2,1.25) both; }
 .game-summary-card h1 { font-size: clamp(3.3rem, 8vw, 5.2rem); }
 @keyframes winner-pop { from { opacity: 0; transform: scale(.35) rotate(-18deg); } to { opacity: 1; transform: scale(1) rotate(0); } }
