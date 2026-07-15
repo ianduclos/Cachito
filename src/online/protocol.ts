@@ -13,10 +13,11 @@ export type OnlineClientMessage =
   | { type: "return-to-lobby" }
   | { type: "shuffle-dice" }
   | { type: "ready-next-round" }
+  | { type: "toggle-pause" }
   | { type: "action"; action: GameAction };
 
 export type OnlineServerMessage =
   | { type: "joined"; roomCode: string; playerId?: string; reconnectToken?: string; hostPlayerId: string }
   | { type: "lobby"; roomCode: string; hostPlayerId: string; players: Array<{ id: string; name: string; connected: boolean; isBot: boolean }>; spectatorCount: number; rules: GameRules; pendingRules?: { rules: GameRules; proposedById: string; approvalPlayerIds: string[] } }
-  | { type: "state"; view: PublicGameView; legalActions?: LegalActions; history: string[]; announcement?: { text: string; playerId?: string }; shuffle?: { round: number; readyPlayerIds: string[] }; nextRound?: { readyPlayerIds: string[]; deadlineAt: number }; playerStatuses: Array<{ id: string; connected: boolean }>; turnDeadlineAt?: number }
+  | { type: "state"; view: PublicGameView; legalActions?: LegalActions; history: string[]; announcement?: { text: string; playerId?: string }; shuffle?: { round: number; readyPlayerIds: string[] }; nextRound?: { readyPlayerIds: string[]; deadlineAt: number }; paused?: { pausedByName: string }; playerStatuses: Array<{ id: string; connected: boolean }>; turnDeadlineAt?: number }
   | { type: "error"; message: string };

@@ -8,7 +8,7 @@ import { chooseBotAction, createProbabilityPolicy, isChoiceLegal, type BotObserv
 import type { OnlineClientMessage, OnlineServerMessage } from "../src/online/protocol";
 
 type RoomPlayer = { id: string; name: string; isBot: boolean; token?: string; socket?: WebSocket };
-type RoomEvent = { type: "round-start" } | { type: "shuffle-dice" };
+type RoomEvent = { type: "round-start" } | { type: "shuffle-dice" } | { type: "pause-game" } | { type: "resume-game" };
 type Spectator = { socket: WebSocket; queuedPlayer?: RoomPlayer };
 type ConnectionContext = { connectionId: string; ipHash: string | null; ipVersion: "ipv4" | "ipv6" | "unknown"; forwardedForCount: number; userAgentHash: string | null; origin?: string; language?: string; protocol?: string; hashConfigured: boolean };
 type ConnectionEvent = ConnectionContext & { at: string; event: "room-created" | "player-joined" | "player-reconnected" | "player-queued" | "spectator-joined" | "disconnected"; role: "player" | "spectator"; playerId?: string };
@@ -16,7 +16,8 @@ type LoggedAction = { at: string; playerId?: string; nickname?: string; action: 
 type RoundDeal = { round: number; dealtAt: string; paloFijo: boolean; starterId: string | null; hands: Array<{ playerId: string; nickname: string; dice: number[] }> };
 type TurnTiming = { round: number; playerId: string; nickname: string; controller: "human" | "bot"; startedAt: string; deadlineAt: string; finishedAt?: string; elapsedMs?: number; remainingMs?: number; outcome?: "bid" | "dudo" | "calzo" | "timeout" };
 type RoomRuleProposal = { rules: GameRules; proposedById: string; approvalPlayerIds: Set<string> };
-type Room = { code: string; hostPlayerId: string; players: RoomPlayer[]; spectators: Map<WebSocket, Spectator>; connectionEvents: ConnectionEvent[]; rules: GameRules; pendingRules?: RoomRuleProposal; roundDeals: RoundDeal[]; turnTimings: TurnTiming[]; activeTurn?: TurnTiming; game?: GameState; history: string[]; announcement?: { text: string; playerId?: string }; shuffleReadyPlayerIds?: Set<string>; nextRoundReadyPlayerIds?: Set<string>; nextRoundDeadlineAt?: number; actions: LoggedAction[]; startedAt?: string; lastActivityAt: number; nextGameStarterId?: string; turnDeadlineAt?: number; turnTimer?: ReturnType<typeof setTimeout>; shuffleTimer?: ReturnType<typeof setTimeout>; nextRoundTimer?: ReturnType<typeof setTimeout>; botShuffleTimers?: Array<ReturnType<typeof setTimeout>>; botNextRoundTimers?: Array<ReturnType<typeof setTimeout>> };
+type PauseState = { pausedById: string; pausedAt: number; turnRemainingMs?: number; shuffleRemainingMs?: number; nextRoundRemainingMs?: number };
+type Room = { code: string; hostPlayerId: string; players: RoomPlayer[]; spectators: Map<WebSocket, Spectator>; connectionEvents: ConnectionEvent[]; rules: GameRules; pendingRules?: RoomRuleProposal; roundDeals: RoundDeal[]; turnTimings: TurnTiming[]; activeTurn?: TurnTiming; game?: GameState; history: string[]; announcement?: { text: string; playerId?: string }; shuffleReadyPlayerIds?: Set<string>; nextRoundReadyPlayerIds?: Set<string>; nextRoundDeadlineAt?: number; shuffleDeadlineAt?: number; paused?: PauseState; actions: LoggedAction[]; startedAt?: string; lastActivityAt: number; nextGameStarterId?: string; turnDeadlineAt?: number; turnTimer?: ReturnType<typeof setTimeout>; shuffleTimer?: ReturnType<typeof setTimeout>; nextRoundTimer?: ReturnType<typeof setTimeout>; botShuffleTimers?: Array<ReturnType<typeof setTimeout>>; botNextRoundTimers?: Array<ReturnType<typeof setTimeout>> };
 const rooms = new Map<string, Room>();
 const connectionContexts = new WeakMap<WebSocket, ConnectionContext>();
 const botPolicy = createProbabilityPolicy();
@@ -146,6 +147,10 @@ function nextRoundPayload(room: Room) {
     ? { nextRound: { readyPlayerIds: [...room.nextRoundReadyPlayerIds], deadlineAt: room.nextRoundDeadlineAt } }
     : {};
 }
+function pausePayload(room: Room) {
+  const pausedBy = room.paused && room.players.find((player) => player.id === room.paused!.pausedById);
+  return pausedBy ? { paused: { pausedByName: pausedBy.name } } : {};
+}
 function activeRoomPlayers(room: Room) {
   return room.players.filter((roomPlayer) => room.game?.players.some((player) => player.id === roomPlayer.id && player.diceCount > 0));
 }
@@ -169,28 +174,29 @@ function publish(room: Room) {
     if (!room.game) send(player.socket, lobby(room));
     else {
       const view = projectForPlayer(room.game, player.id);
-      send(player.socket, { type: "state", view, history: [...room.history], playerStatuses: playerStatuses(room), ...(room.turnDeadlineAt ? { turnDeadlineAt: room.turnDeadlineAt } : {}), ...(room.announcement ? { announcement: room.announcement } : {}), ...shufflePayload(room), ...nextRoundPayload(room), ...(room.game.phase === "playing" && everyoneShuffled(room) && room.game.currentPlayerId === player.id ? { legalActions: getLegalActions(room.game, player.id) } : {}) });
+      send(player.socket, { type: "state", view, history: [...room.history], playerStatuses: playerStatuses(room), ...(room.turnDeadlineAt ? { turnDeadlineAt: room.turnDeadlineAt } : {}), ...(room.announcement ? { announcement: room.announcement } : {}), ...pausePayload(room), ...shufflePayload(room), ...nextRoundPayload(room), ...(room.game.phase === "playing" && everyoneShuffled(room) && room.game.currentPlayerId === player.id ? { legalActions: getLegalActions(room.game, player.id) } : {}) });
     }
   }
   for (const { socket } of room.spectators.values()) {
-    if (room.game) send(socket, { type: "state", view: projectForSpectator(room.game), history: [...room.history], playerStatuses: playerStatuses(room), ...(room.turnDeadlineAt ? { turnDeadlineAt: room.turnDeadlineAt } : {}), ...(room.announcement ? { announcement: room.announcement } : {}), ...shufflePayload(room), ...nextRoundPayload(room) });
+    if (room.game) send(socket, { type: "state", view: projectForSpectator(room.game), history: [...room.history], playerStatuses: playerStatuses(room), ...(room.turnDeadlineAt ? { turnDeadlineAt: room.turnDeadlineAt } : {}), ...(room.announcement ? { announcement: room.announcement } : {}), ...pausePayload(room), ...shufflePayload(room), ...nextRoundPayload(room) });
     else send(socket, lobby(room));
   }
 }
-function scheduleTurn(room: Room) {
+function scheduleTurn(room: Room, remainingMs = TURN_LIMIT_MS) {
   if (room.turnTimer) clearTimeout(room.turnTimer);
   room.turnDeadlineAt = undefined;
-  if (!room.game || room.game.phase !== "playing" || !everyoneShuffled(room)) return;
+  if (room.paused || !room.game || room.game.phase !== "playing" || !everyoneShuffled(room)) return;
   const actor = room.players.find((candidate) => candidate.id === room.game?.currentPlayerId);
   if (!actor) return;
   // Bots get the same visible clock as humans. Their actual choice is made earlier,
   // after a natural thinking pause, rather than shortening the public timer.
   const delay = actor.isBot
-    ? BOT_TURN_DELAY_MIN_MS + Math.floor(Math.random() * BOT_TURN_DELAY_SPREAD_MS)
-    : TURN_LIMIT_MS;
+    ? Math.min(remainingMs, BOT_TURN_DELAY_MIN_MS + Math.floor(Math.random() * BOT_TURN_DELAY_SPREAD_MS))
+    : remainingMs;
   const turnTiming = startTurnTiming(room, actor);
   if (!turnTiming) return;
-  room.turnDeadlineAt = Date.parse(turnTiming.deadlineAt);
+  room.turnDeadlineAt = Date.now() + remainingMs;
+  turnTiming.deadlineAt = new Date(room.turnDeadlineAt).toISOString();
   publish(room);
   room.turnTimer = setTimeout(() => {
     room.turnTimer = undefined;
@@ -201,7 +207,8 @@ function scheduleTurn(room: Room) {
       const observation: BotObservation = { playerId: actor.id, view: projectForPlayer(game, actor.id), legalActions: getLegalActions(game, actor.id), history: [] };
       const { choice } = chooseBotAction(botPolicy, observation, Math.random);
       if (!isChoiceLegal(observation, choice)) throw new Error("Bot selected an illegal action.");
-      const action = choice.type === "bid" ? { type: "bid" as const, playerId: actor.id, bid: choice.bid, ...(choice.tableDiceIndices?.length ? { tableDiceIndices: choice.tableDiceIndices } : {}) } : { type: choice.type, playerId: actor.id };
+      // A timeout bot is a safety net, not a strategic table-dice move.
+      const action = choice.type === "bid" ? { type: "bid" as const, playerId: actor.id, bid: choice.bid, ...(actor.isBot && choice.tableDiceIndices?.length ? { tableDiceIndices: choice.tableDiceIndices } : {}) } : { type: choice.type, playerId: actor.id };
       finishTurnTiming(room, actor.isBot ? action.type : "timeout");
       room.game = applyAction(game, action);
       recordAction(room, actor.name, action);
@@ -218,22 +225,27 @@ function scheduleTurn(room: Room) {
     }
   }, delay);
 }
-function startRoundShuffle(room: Room) {
+function startRoundShuffle(room: Room, remainingMs = SHUFFLE_LIMIT_MS, keepReady = false) {
   if (!room.game || room.game.phase !== "playing") return;
-  room.shuffleReadyPlayerIds = new Set();
-  room.announcement = { text: `Round ${room.game.round}: shake your dice.` };
+  if (room.paused) return;
+  if (!keepReady) {
+    room.shuffleReadyPlayerIds = new Set();
+    room.announcement = { text: `Round ${room.game.round}: shake your dice.` };
+  }
   if (room.shuffleTimer) clearTimeout(room.shuffleTimer);
   for (const timer of room.botShuffleTimers ?? []) clearTimeout(timer);
   room.botShuffleTimers = [];
+  room.shuffleDeadlineAt = Date.now() + remainingMs;
   room.shuffleTimer = setTimeout(() => {
     room.shuffleTimer = undefined;
+    room.shuffleDeadlineAt = undefined;
     if (!room.game || room.game.phase !== "playing" || !room.shuffleReadyPlayerIds) return;
     for (const player of activeRoomPlayers(room)) room.shuffleReadyPlayerIds.add(player.id);
     room.announcement = { text: "The table shakes the remaining cups automatically." };
     void persistRoomSnapshot(room);
     publish(room);
     scheduleTurn(room);
-  }, SHUFFLE_LIMIT_MS);
+  }, remainingMs);
   for (const bot of activeRoomPlayers(room).filter((player) => player.isBot)) {
     const timer = setTimeout(() => {
       if (!room.game || room.game.phase !== "playing" || !room.shuffleReadyPlayerIds || room.shuffleReadyPlayerIds.has(bot.id)) return;
@@ -249,6 +261,7 @@ function startRoundShuffle(room: Room) {
 }
 function beginNextRound(room: Room) {
   if (!room.game || room.game.phase !== "reveal") return;
+  if (room.paused) return;
   if (room.nextRoundTimer) clearTimeout(room.nextRoundTimer);
   room.nextRoundTimer = undefined;
   for (const timer of room.botNextRoundTimers ?? []) clearTimeout(timer);
@@ -263,18 +276,21 @@ function beginNextRound(room: Room) {
   publish(room);
   scheduleTurn(room);
 }
-function startNextRoundVote(room: Room) {
+function startNextRoundVote(room: Room, remainingMs = ROUND_ADVANCE_MS, keepReady = false) {
   if (!room.game || room.game.phase !== "reveal") return;
+  if (room.paused) return;
   if (room.turnTimer) clearTimeout(room.turnTimer);
   room.turnTimer = undefined;
   room.turnDeadlineAt = undefined;
   if (room.nextRoundTimer) clearTimeout(room.nextRoundTimer);
   for (const timer of room.botNextRoundTimers ?? []) clearTimeout(timer);
   room.botNextRoundTimers = [];
-  room.nextRoundReadyPlayerIds = new Set();
-  room.nextRoundDeadlineAt = Date.now() + ROUND_ADVANCE_MS;
-  room.announcement = { text: "Choose Next round when you are ready." };
-  room.nextRoundTimer = setTimeout(() => beginNextRound(room), ROUND_ADVANCE_MS);
+  if (!keepReady) {
+    room.nextRoundReadyPlayerIds = new Set();
+    room.announcement = { text: "Choose Next round when you are ready." };
+  }
+  room.nextRoundDeadlineAt = Date.now() + remainingMs;
+  room.nextRoundTimer = setTimeout(() => beginNextRound(room), remainingMs);
   for (const bot of activeRoomPlayers(room).filter((player) => player.isBot)) {
     const timer = setTimeout(() => {
       if (!room.game || room.game.phase !== "reveal" || !room.nextRoundReadyPlayerIds || room.nextRoundReadyPlayerIds.has(bot.id)) return;
@@ -284,6 +300,53 @@ function startNextRoundVote(room: Room) {
       else publish(room);
     }, BOT_NEXT_ROUND_DELAY_MIN_MS + Math.floor(Math.random() * BOT_NEXT_ROUND_DELAY_SPREAD_MS));
     room.botNextRoundTimers.push(timer);
+  }
+}
+function pauseGame(room: Room, player: RoomPlayer) {
+  if (!room.game || room.paused) return;
+  const now = Date.now();
+  room.paused = {
+    pausedById: player.id,
+    pausedAt: now,
+    ...(room.turnDeadlineAt ? { turnRemainingMs: Math.max(0, room.turnDeadlineAt - now) } : {}),
+    ...(room.shuffleDeadlineAt ? { shuffleRemainingMs: Math.max(0, room.shuffleDeadlineAt - now) } : {}),
+    ...(room.nextRoundDeadlineAt ? { nextRoundRemainingMs: Math.max(0, room.nextRoundDeadlineAt - now) } : {}),
+  };
+  if (room.turnTimer) clearTimeout(room.turnTimer);
+  if (room.shuffleTimer) clearTimeout(room.shuffleTimer);
+  if (room.nextRoundTimer) clearTimeout(room.nextRoundTimer);
+  for (const timer of room.botShuffleTimers ?? []) clearTimeout(timer);
+  for (const timer of room.botNextRoundTimers ?? []) clearTimeout(timer);
+  room.turnTimer = undefined;
+  room.shuffleTimer = undefined;
+  room.nextRoundTimer = undefined;
+  room.botShuffleTimers = [];
+  room.botNextRoundTimers = [];
+  room.turnDeadlineAt = undefined;
+  room.shuffleDeadlineAt = undefined;
+  room.nextRoundDeadlineAt = undefined;
+  room.actions.push({ at: new Date(now).toISOString(), playerId: player.id, nickname: player.name, action: { type: "pause-game" } });
+  room.history.unshift(`${player.name} paused the game.`);
+  room.announcement = { text: `${player.name} paused the game. Any player can resume it from Settings.`, playerId: player.id };
+}
+function resumeGame(room: Room, player: RoomPlayer) {
+  const pause = room.paused;
+  if (!room.game || !pause) return;
+  const now = Date.now();
+  const pausedForMs = now - pause.pausedAt;
+  if (room.activeTurn && !room.activeTurn.finishedAt) {
+    room.activeTurn.startedAt = new Date(Date.parse(room.activeTurn.startedAt) + pausedForMs).toISOString();
+    if (pause.turnRemainingMs !== undefined) room.activeTurn.deadlineAt = new Date(now + pause.turnRemainingMs).toISOString();
+  }
+  room.paused = undefined;
+  room.actions.push({ at: new Date(now).toISOString(), playerId: player.id, nickname: player.name, action: { type: "resume-game" } });
+  room.history.unshift(`${player.name} resumed the game.`);
+  room.announcement = { text: `${player.name} resumed the game.`, playerId: player.id };
+  if (room.game.phase === "playing") {
+    if (room.shuffleReadyPlayerIds && !everyoneShuffled(room)) startRoundShuffle(room, pause.shuffleRemainingMs ?? SHUFFLE_LIMIT_MS, true);
+    else scheduleTurn(room, pause.turnRemainingMs ?? TURN_LIMIT_MS);
+  } else if (room.game.phase === "reveal" && room.nextRoundReadyPlayerIds) {
+    startNextRoundVote(room, pause.nextRoundRemainingMs ?? ROUND_ADVANCE_MS, true);
   }
 }
 function safeMessage(data: Buffer | ArrayBuffer | Buffer[]) { try { return JSON.parse(data.toString()) as OnlineClientMessage; } catch { return null; } }
@@ -403,7 +466,14 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           room.game = createGame([starter, ...otherPlayers].map(({ id, name }): PlayerSetup => ({ id, name })), Math.random, room.rules); room.startedAt = new Date().toISOString(); room.history = [`Round 1 begins — ${starter.name} starts.`]; room.actions = [{ at: room.startedAt, action: { type: "round-start" } }]; room.roundDeals = []; room.turnTimings = []; room.activeTurn = undefined; recordRoundDeal(room); touch(room); startRoundShuffle(room); void persistRoomSnapshot(room); publish(room);
         } else if (message.type === "return-to-lobby") {
           if (!player || player.id !== room.hostPlayerId || room.game?.phase !== "gameOver") throw new Error("Only the host can return this completed game to the lobby.");
-          promoteQueuedSpectators(room); room.game = undefined; room.history = []; room.announcement = undefined; room.shuffleReadyPlayerIds = undefined; room.nextRoundReadyPlayerIds = undefined; room.nextRoundDeadlineAt = undefined; if (room.shuffleTimer) clearTimeout(room.shuffleTimer); room.shuffleTimer = undefined; for (const timer of room.botShuffleTimers ?? []) clearTimeout(timer); room.botShuffleTimers = []; if (room.nextRoundTimer) clearTimeout(room.nextRoundTimer); room.nextRoundTimer = undefined; for (const timer of room.botNextRoundTimers ?? []) clearTimeout(timer); room.botNextRoundTimers = []; if (room.turnTimer) clearTimeout(room.turnTimer); room.turnTimer = undefined; room.turnDeadlineAt = undefined; room.actions = []; room.roundDeals = []; room.turnTimings = []; room.activeTurn = undefined; room.startedAt = undefined; touch(room); publish(room);
+          promoteQueuedSpectators(room); room.game = undefined; room.history = []; room.announcement = undefined; room.paused = undefined; room.shuffleReadyPlayerIds = undefined; room.nextRoundReadyPlayerIds = undefined; room.nextRoundDeadlineAt = undefined; room.shuffleDeadlineAt = undefined; if (room.shuffleTimer) clearTimeout(room.shuffleTimer); room.shuffleTimer = undefined; for (const timer of room.botShuffleTimers ?? []) clearTimeout(timer); room.botShuffleTimers = []; if (room.nextRoundTimer) clearTimeout(room.nextRoundTimer); room.nextRoundTimer = undefined; for (const timer of room.botNextRoundTimers ?? []) clearTimeout(timer); room.botNextRoundTimers = []; if (room.turnTimer) clearTimeout(room.turnTimer); room.turnTimer = undefined; room.turnDeadlineAt = undefined; room.actions = []; room.roundDeals = []; room.turnTimings = []; room.activeTurn = undefined; room.startedAt = undefined; touch(room); publish(room);
+        } else if (message.type === "toggle-pause") {
+          if (!player || !room.game || room.game.phase === "gameOver" || !room.players.some((candidate) => candidate.id === player!.id)) throw new Error("Only a player at this table can pause or resume the game.");
+          if (room.paused) resumeGame(room, player);
+          else pauseGame(room, player);
+          touch(room); void persistRoomSnapshot(room); publish(room);
+        } else if (room.paused) {
+          throw new Error("The game is paused. Open Settings to resume it.");
         } else if (message.type === "shuffle-dice") {
           if (!player || !room.players.some((candidate) => candidate.id === player!.id) || !room.game || room.game.phase !== "playing" || !room.shuffleReadyPlayerIds || !activeRoomPlayers(room).some((candidate) => candidate.id === player!.id)) throw new Error("There are no dice to shuffle right now.");
           room.shuffleReadyPlayerIds.add(player.id);

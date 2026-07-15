@@ -9,6 +9,7 @@ type Lobby = Extract<OnlineServerMessage, { type: "lobby" }>;
 type EntryMode = "choose" | "create" | "join" | "watch";
 type Shuffle = Extract<OnlineServerMessage, { type: "state" }>['shuffle'];
 type NextRound = Extract<OnlineServerMessage, { type: "state" }>['nextRound'];
+type Pause = Extract<OnlineServerMessage, { type: "state" }>['paused'];
 const denominationNames: Record<Die, string> = { 1: "Aces", 2: "Dones", 3: "Trenes", 4: "Cuadras", 5: "Chinas", 6: "Sambas" };
 const storageKey = "cachito-online-session";
 
@@ -58,6 +59,7 @@ function OnlineGameContent({ onExit }: { onExit: () => void }) {
   const [announcement, setAnnouncement] = useState<{ text: string; playerId?: string }>();
   const [shuffle, setShuffle] = useState<Shuffle>();
   const [nextRound, setNextRound] = useState<NextRound>();
+  const [paused, setPaused] = useState<Pause>();
   const [playerStatuses, setPlayerStatuses] = useState<Array<{ id: string; connected: boolean }>>([]);
   const [turnDeadlineAt, setTurnDeadlineAt] = useState<number | undefined>();
   const [playerId, setPlayerId] = useState<string | undefined>();
@@ -84,14 +86,14 @@ function OnlineGameContent({ onExit }: { onExit: () => void }) {
         const message = JSON.parse(event.data) as OnlineServerMessage;
         if (message.type === "error") {
           setError(message.message);
-          if (/room does not exist|idle room expired/i.test(message.message)) { setView(null); setLobby(null); setLegal(undefined); setShuffle(undefined); setNextRound(undefined); }
+          if (/room does not exist|idle room expired/i.test(message.message)) { setView(null); setLobby(null); setLegal(undefined); setShuffle(undefined); setNextRound(undefined); setPaused(undefined); }
         }
         if (message.type === "joined") {
           setRoomCode(message.roomCode); setPlayerId(message.playerId); setHostPlayerId(message.hostPlayerId); setError(null);
           if (message.playerId && message.reconnectToken) localStorage.setItem(storageKey, JSON.stringify({ roomCode: message.roomCode, reconnectToken: message.reconnectToken }));
         }
-        if (message.type === "lobby") { setLobby(message); setHostPlayerId(message.hostPlayerId); setView(null); setLegal(undefined); setAnnouncement(undefined); setShuffle(undefined); setNextRound(undefined); setPlayerStatuses([]); setTurnDeadlineAt(undefined); }
-        if (message.type === "state") { setView(message.view); setLobby(null); setLegal(message.legalActions); setHistory(message.history); setAnnouncement(message.announcement); setShuffle(message.shuffle); setNextRound(message.nextRound); setPlayerStatuses(message.playerStatuses); setTurnDeadlineAt(message.turnDeadlineAt); }
+        if (message.type === "lobby") { setLobby(message); setHostPlayerId(message.hostPlayerId); setView(null); setLegal(undefined); setAnnouncement(undefined); setShuffle(undefined); setNextRound(undefined); setPaused(undefined); setPlayerStatuses([]); setTurnDeadlineAt(undefined); }
+        if (message.type === "state") { setView(message.view); setLobby(null); setLegal(message.legalActions); setHistory(message.history); setAnnouncement(message.announcement); setShuffle(message.shuffle); setNextRound(message.nextRound); setPaused(message.paused); setPlayerStatuses(message.playerStatuses); setTurnDeadlineAt(message.turnDeadlineAt); }
       };
     };
     connect();
@@ -116,7 +118,7 @@ function OnlineGameContent({ onExit }: { onExit: () => void }) {
 
   if (!lobby && !view) return <><OnlineEntry mode={entryMode} name={name} roomCode={roomCode} connected={connected} error={error} onExit={onExit} onChoose={setEntryMode} onName={setName} onRoomCode={setRoomCode} onCreate={create} onJoin={() => join(false)} onWatch={() => join(true)} /><div className="menu-settings"><GameSettings /></div></>;
   if (lobby) return <><LobbyScreen lobby={lobby} playerId={playerId} error={error} onStart={() => send(socket.current, { type: "start-game" })} onAddBot={() => send(socket.current, { type: "add-bot" })} onRemoveBot={(botId) => send(socket.current, { type: "remove-bot", playerId: botId })} onKickPlayer={(targetId) => send(socket.current, { type: "kick-player", playerId: targetId })} onRename={(nextName) => { localStorage.setItem("cachito-display-name", nextName); send(socket.current, { type: "rename-player", name: nextName }); }} onProposeRules={(rules) => send(socket.current, { type: "propose-rules", rules })} onApproveRules={() => send(socket.current, { type: "approve-rules" })} onExit={onExit} /><div className="menu-settings"><GameSettings /></div></>;
-  return <OnlineTable view={view!} roomCode={roomCode} history={history} legal={legal} playerId={playerId} playerStatuses={playerStatuses} turnDeadlineAt={turnDeadlineAt} error={error} isHost={playerId === hostPlayerId} announcement={announcement} shuffle={shuffle} nextRound={nextRound} onExit={onExit} onShuffle={() => send(socket.current, { type: "shuffle-dice" })} onReadyNextRound={() => send(socket.current, { type: "ready-next-round" })} onAction={(action) => send(socket.current, { type: "action", action })} onReturnToLobby={() => send(socket.current, { type: "return-to-lobby" })} />;
+  return <OnlineTable view={view!} roomCode={roomCode} history={history} legal={legal} playerId={playerId} playerStatuses={playerStatuses} turnDeadlineAt={turnDeadlineAt} error={error} isHost={playerId === hostPlayerId} announcement={announcement} shuffle={shuffle} nextRound={nextRound} paused={paused} onExit={onExit} onPause={() => send(socket.current, { type: "toggle-pause" })} onShuffle={() => send(socket.current, { type: "shuffle-dice" })} onReadyNextRound={() => send(socket.current, { type: "ready-next-round" })} onAction={(action) => send(socket.current, { type: "action", action })} onReturnToLobby={() => send(socket.current, { type: "return-to-lobby" })} />;
 }
 
 function OnlineEntry({ mode, name, roomCode, connected, error, onExit, onChoose, onName, onRoomCode, onCreate, onJoin, onWatch }: { mode: EntryMode; name: string; roomCode: string; connected: boolean; error: string | null; onExit: () => void; onChoose: (mode: EntryMode) => void; onName: (name: string) => void; onRoomCode: (code: string) => void; onCreate: () => void; onJoin: () => void; onWatch: () => void }) {
@@ -231,9 +233,9 @@ function GameSummary({ view, history, isHost, onReturnToLobby, onExit }: { view:
   return <main className="game-over"><div className="confetti" aria-hidden="true">{Array.from({ length: 64 }, (_, index) => <i key={index} style={{ left: `${(index * 37) % 101}%`, width: `${6 + (index % 6)}px`, height: `${10 + ((index * 3) % 12)}px`, animationDelay: `${-(index % 12) * .22}s`, animationDuration: `${2.7 + (index % 7) * .23}s` }} />)}</div><section className="game-summary-card"><p className="winner-crown" aria-hidden="true">♛</p><p className="eyebrow">Game complete</p><h1>{winner?.name} wins!</h1><p>After {view.round} {view.round === 1 ? "round" : "rounds"}, here is how the table finished.</p><ol className="summary-standings">{standings.map((player, index) => <li key={player.id}><span>{index + 1}</span><strong>{player.name}</strong><em>{player.id === view.winnerId ? "Winner" : player.diceCount ? `${player.diceCount} dice left` : "Out"}</em></li>)}</ol>{lastCall && <p className="summary-last-call">Last call: {lastCall}</p>}<div className="game-over-actions">{isHost && <button className="button button--primary" onClick={onReturnToLobby}>Return to lobby</button>}<button className="button button--ghost" onClick={onExit}>Leave game</button></div></section></main>;
 }
 
-function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses, turnDeadlineAt, error, isHost, announcement, shuffle, nextRound, onShuffle, onReadyNextRound, onAction, onReturnToLobby, onExit }: { view: PublicGameView; roomCode: string; history: string[]; legal?: LegalActions; playerId?: string; playerStatuses: Array<{ id: string; connected: boolean }>; turnDeadlineAt?: number; error: string | null; isHost: boolean; announcement?: { text: string; playerId?: string }; shuffle?: Shuffle; nextRound?: NextRound; onShuffle: () => void; onReadyNextRound: () => void; onAction: (action: GameAction) => void; onReturnToLobby: () => void; onExit: () => void }) {
+function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses, turnDeadlineAt, error, isHost, announcement, shuffle, nextRound, paused, onPause, onShuffle, onReadyNextRound, onAction, onReturnToLobby, onExit }: { view: PublicGameView; roomCode: string; history: string[]; legal?: LegalActions; playerId?: string; playerStatuses: Array<{ id: string; connected: boolean }>; turnDeadlineAt?: number; error: string | null; isHost: boolean; announcement?: { text: string; playerId?: string }; shuffle?: Shuffle; nextRound?: NextRound; paused?: Pause; onPause: () => void; onShuffle: () => void; onReadyNextRound: () => void; onAction: (action: GameAction) => void; onReturnToLobby: () => void; onExit: () => void }) {
   const current = view.players.find((player) => player.id === view.currentPlayerId);
-  const isMyTurn = view.phase === "playing" && view.currentPlayerId === playerId;
+  const isMyTurn = !paused && view.phase === "playing" && view.currentPlayerId === playerId;
   const first = legal?.bids[0];
   const [quantity, setQuantity] = useState(first?.quantity ?? 1);
   const [denomination, setDenomination] = useState<Die>(first?.denomination ?? 2);
@@ -285,6 +287,8 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
     if (tableDiceMode && tableDiceIndices.length) playSound("tableDice");
     lastPlayedDenominationRef.current = selectedDenomination;
     onAction({ type: "bid", playerId: "", bid: { quantity, denomination: selectedDenomination }, ...(tableDiceMode && tableDiceIndices.length ? { tableDiceIndices } : {}) });
+    setTableDiceMode(false);
+    setTableDiceIndices([]);
   };
   const call = (type: "dudo" | "calzo") => {
     stopClockSound();
@@ -394,8 +398,8 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
     clockSound.addEventListener("ended", () => { if (clockSoundRef.current === clockSound) clockSoundRef.current = undefined; }, { once: true });
   }, [secondsLeft, stopClockSound, turnDeadlineAt, view.currentPlayerId]);
   useEffect(() => {
-    if (view.phase !== "playing" || view.currentPlayerId !== clockSoundTurnRef.current) stopClockSound();
-  }, [stopClockSound, view.currentPlayerId, view.phase]);
+    if (paused || view.phase !== "playing" || view.currentPlayerId !== clockSoundTurnRef.current) stopClockSound();
+  }, [paused, stopClockSound, view.currentPlayerId, view.phase]);
   useEffect(() => {
     localStorage.setItem("cachito-reduced-motion", String(reducedMotion));
   }, [reducedMotion]);
@@ -412,11 +416,12 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
   if (view.phase === "gameOver") return <GameSummary view={view} history={history} isHost={isHost} onReturnToLobby={onReturnToLobby} onExit={onExit} />;
   const needsShuffle = !eliminated && view.phase === "playing" && shuffle?.round === view.round && shuffle.readyPlayerIds.length < view.players.filter((player) => !player.eliminated).length;
   return <div className={`game-shell${reducedMotion ? " game-shell--reduced-motion" : ""}`}>
-    <header className="game-header"><div className="wordmark">Cachito online</div><div className="game-header-actions"><div className="round-label">Room {roomCode} · Round {view.round}{view.paloFijo ? " · Palo fijo" : ""}</div><button className="settings-button" aria-expanded={settingsOpen} aria-label="Game settings" onClick={() => setSettingsOpen((open) => !open)}>⚙</button>{settingsOpen && <div className="settings-popover"><strong>Settings</strong><label><input type="checkbox" checked={reducedMotion} onChange={(event) => setReducedMotion(event.target.checked)} /> Reduce motion</label><label className="sound-slider">Sound FX <input type="range" min="0" max="1" step="0.05" value={soundLevels.effects} onChange={(event) => changeSoundLevel("effects", Number(event.target.value))} /><output>{Math.round(soundLevels.effects * 100)}%</output></label><label className="sound-slider">Music <input type="range" min="0" max="1" step="0.05" value={soundLevels.music} onChange={(event) => changeSoundLevel("music", Number(event.target.value))} /><output>{Math.round(soundLevels.music * 100)}%</output></label><button className="button button--ghost settings-exit" onClick={onExit}>Exit to menu</button></div>}</div></header>
+    <header className="game-header"><div className="wordmark">Cachito online</div><div className="game-header-actions"><div className="round-label">Room {roomCode} · Round {view.round}{view.paloFijo ? " · Palo fijo" : ""}</div><button className="settings-button" aria-expanded={settingsOpen} aria-label="Game settings" onClick={() => setSettingsOpen((open) => !open)}>⚙</button>{settingsOpen && <div className="settings-popover"><strong>Settings</strong><label><input type="checkbox" checked={reducedMotion} onChange={(event) => setReducedMotion(event.target.checked)} /> Reduce motion</label><label className="sound-slider">Sound FX <input type="range" min="0" max="1" step="0.05" value={soundLevels.effects} onChange={(event) => changeSoundLevel("effects", Number(event.target.value))} /><output>{Math.round(soundLevels.effects * 100)}%</output></label><label className="sound-slider">Music <input type="range" min="0" max="1" step="0.05" value={soundLevels.music} onChange={(event) => changeSoundLevel("music", Number(event.target.value))} /><output>{Math.round(soundLevels.music * 100)}%</output></label>{playerId && <button className="button button--ghost settings-pause" onClick={onPause}>{paused ? "Resume game" : "Pause game"}</button>}<button className="button button--ghost settings-exit" onClick={onExit}>Exit to menu</button></div>}</div></header>
     <div className="table-layout"><main className="table-main">
       <section className="players-strip">{view.players.map((player) => { const playerBid = roundBids?.round === view.round ? roundBids.bids[player.id] : undefined; return <article className={`player-chip${player.id === current?.id ? " player-chip--active" : ""}${statusById.get(player.id) === false ? " player-chip--offline" : ""}`} key={player.id}>{announcement?.playerId === player.id && <div className="player-speech" role="status">{announcement.text}</div>}<div className="player-name">{player.name}</div><div className="dice-count">{player.eliminated ? "Out · spectating" : statusById.get(player.id) === false ? "Offline · bot cover in 2 min" : view.rules.diceAmountsVisible ? <span className="dice-squares" aria-label={`${player.diceCount} ${player.diceCount === 1 ? "die" : "dice"}`}>{Array.from({ length: player.diceCount }, (_, index) => <i className={index < player.tableDice.length ? "dice-square--table" : ""} key={index} aria-hidden="true" />)}</span> : <span>Dice hidden</span>}</div>{playerBid && <div className="player-last-bid"><span>{playerBid.quantity}</span><span className="player-last-bid-die"><FaceMark value={playerBid.denomination} /></span></div>}</article>; })}</section>
       {view.players.some((player) => player.tableDice.length) && <section className="table-dice-board" aria-label="Table dice"><p className="turn-kicker">Table dice</p><div>{view.players.filter((player) => player.tableDice.length).map((player) => <article key={player.id}><strong>{player.name}</strong><DiceRow dice={player.tableDice} small /></article>)}</div></section>}
       <section className={`felt-table${isMyTurn ? " felt-table--your-turn" : ""}`}>
+        {paused && <div className="game-paused-overlay" role="status"><strong>Game paused</strong><span>{paused.pausedByName} paused the table. Any player can resume it from Settings.</span></div>}
         {view.phase === "reveal" && <RoundReveal key={`${view.round}:${view.resolution?.kind}:${view.resolution?.callerId}`} view={view} playerId={playerId} nextRound={nextRound} onNext={onReadyNextRound} />}
         {needsShuffle && !shufflingDice && <RoundShuffle view={view} playerId={playerId} shuffle={shuffle!} shaking={shufflingDice} onShuffle={shakeDice} />}
         {secondsLeft !== undefined && <div className={`turn-timer${secondsLeft <= 10 ? " turn-timer--urgent" : ""}`} aria-label={`${secondsLeft} seconds remaining`}><span>{String(Math.floor(secondsLeft / 60)).padStart(1, "0")}:{String(secondsLeft % 60).padStart(2, "0")}</span><small>{isMyTurn ? "your turn" : "turn timer"}</small></div>}
