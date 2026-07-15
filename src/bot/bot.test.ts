@@ -14,6 +14,7 @@ import {
   chooseBotAction,
   createProbabilityPolicy,
   evaluateBidDistribution,
+  evaluateTableDiceDistribution,
   randomLegalPolicy,
   runBotBatch,
   runBotMatch,
@@ -67,6 +68,22 @@ describe('bot probability model', () => {
     const paloDistribution = evaluateBidDistribution(hidden, 'a', { quantity: 1, denomination: 5 })
     expect(hidden.players.find((player) => player.id === 'a')).not.toHaveProperty('hand')
     expect(paloDistribution).toMatchObject({ knownQualifiers: 0, unknownDice: 4, probabilityPerUnknown: 1 / 6 })
+  })
+
+  it('models a table-dice reroll from public table dice plus the selected die', () => {
+    const state = stateWithHands({ a: [5, 2, 3], b: [4, 6] })
+    const view = projectForPlayer(state, 'a')
+    const before = evaluateBidDistribution(view, 'a', { quantity: 2, denomination: 5 })
+    const after = evaluateTableDiceDistribution(view, 'a', { quantity: 2, denomination: 5 }, [0])
+    expect(after).toMatchObject({ knownQualifiers: 1, unknownDice: 4, probabilityPerUnknown: 2 / 6 })
+    expect(after.atLeast).toBeGreaterThan(before.atLeast)
+  })
+
+  it('keeps two-die bots conservative about putting dice on the table', () => {
+    const state = stateWithHands({ a: [5, 2], b: [4, 6, 3] })
+    const observation = { playerId: 'a', view: projectForPlayer(state, 'a'), legalActions: getLegalActions(state, 'a'), history: [] }
+    const { choice } = chooseBotAction(createProbabilityPolicy(), observation, createSeededRandom(4))
+    if (choice.type === 'bid') expect(choice.tableDiceIndices).toBeUndefined()
   })
 })
 

@@ -1,5 +1,5 @@
 import type { Bid, Die, RandomSource } from '../engine'
-import { evaluateBidDistribution } from './probability'
+import { evaluateBidDistribution, evaluateTableDiceDistribution } from './probability'
 import { adjustSupportForOpponent, buildOpponentProfile } from './opponentModel'
 import type {
   BotActionResult,
@@ -204,7 +204,14 @@ export function createProbabilityPolicy(options: ProbabilityPolicyOptions = {}):
         rank: scored.indexOf(selected.item) + 1,
         score: selected.item.score,
       }
-      return { choice: { type: 'bid', bid: selected.item.bid, ...tableDiceForBid(observation, selected.item.bid) }, trace }
+      const tablePlan = trace.decisionReason === 'supported_bid'
+        ? conservativeTableDicePlan(observation, scored, settings.targetBidConfidence)
+        : undefined
+      if (tablePlan && tablePlan.expectedValue > selected.item.expectedValue + 0.025) {
+        trace.selectedCandidate = { rank: scored.findIndex((candidate) => sameBid(candidate.bid, tablePlan.bid)) + 1, score: tablePlan.score }
+        return { choice: { type: 'bid', bid: tablePlan.bid, tableDiceIndices: tablePlan.tableDiceIndices }, trace }
+      }
+      return { choice: { type: 'bid', bid: selected.item.bid }, trace }
   }
 
   return {
@@ -262,13 +269,32 @@ function denominationPreference(hand: Die[] | undefined, denomination: Die, palo
   return matches * 0.008
 }
 
-function tableDiceForBid(observation: BotObservation, bid: Bid): Pick<Extract<BotChoice, { type: 'bid' }>, 'tableDiceIndices'> {
-  if (!observation.legalActions.canPutDiceOnTable) return {}
-  const hand = observation.view.players.find((player) => player.id === observation.playerId)?.hand
-  if (!hand || hand.length < 2) return {}
-  const qualifying = hand.flatMap((die, index) => die === bid.denomination || (!observation.view.paloFijo && bid.denomination !== 1 && die === 1) ? [index] : [])
-  if (!qualifying.length) return {}
-  return { tableDiceIndices: qualifying.slice(0, hand.length - 1) }
+function conservativeTableDicePlan(
+  observation: BotObservation,
+  candidates: ReadonlyArray<{ bid: Bid; expectedValue: number; distribution: ReturnType<typeof evaluateBidDistribution>; quantityPenalty: number }>,
+  targetBidConfidence: number,
+): { bid: Bid; tableDiceIndices: number[]; expectedValue: number; score: number } | undefined {
+  if (!observation.legalActions.canPutDiceOnTable) return undefined
+  const player = observation.view.players.find((candidate) => candidate.id === observation.playerId)
+  const hand = player?.hand
+  if (!player || !hand || player.diceCount <= 2 || hand.length <= 2) return undefined
+  const publicTableDice = observation.view.players.flatMap((candidate) => candidate.tableDice)
+  if (publicTableDice.length >= 5) return undefined
+
+  return candidates.flatMap((candidate) => {
+    const qualifying = hand.flatMap((die, index) => die === candidate.bid.denomination || (!observation.view.paloFijo && candidate.bid.denomination !== 1 && die === 1) ? [index] : [])
+    if (!qualifying.length) return []
+    // One public die is enough for a conservative tell; keep the rest private.
+    const tableDiceIndices = [qualifying[0]]
+    const afterReroll = evaluateTableDiceDistribution(observation.view, observation.playerId, candidate.bid, tableDiceIndices)
+    const exposureCost = 0.045 + publicTableDice.length * 0.012
+    const confidenceDistance = Math.abs(afterReroll.atLeast - targetBidConfidence)
+    const expectedValue = expectedBidValue(afterReroll.atLeast, candidate.quantityPenalty, 0, confidenceDistance) - exposureCost
+    if (afterReroll.atLeast < Math.max(0.7, targetBidConfidence + 0.06)) return []
+    if (afterReroll.atLeast < candidate.distribution.atLeast + 0.08) return []
+    if (expectedValue < candidate.expectedValue + 0.025) return []
+    return [{ bid: candidate.bid, tableDiceIndices, expectedValue, score: expectedValue }]
+  }).sort((left, right) => right.expectedValue - left.expectedValue)[0]
 }
 
 export function isChoiceLegal(observation: BotObservation, choice: BotChoice): boolean {

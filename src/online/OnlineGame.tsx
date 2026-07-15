@@ -170,12 +170,13 @@ function OnlineHistory({ history }: { history: string[] }) {
   return <aside className="sidebar online-sidebar"><section className="side-card online-history"><div className="online-history-heading"><div><p className="turn-kicker">Live table</p><h2>Game feed</h2></div><span>{history.length}</span></div><ol className="log-list" ref={feed} aria-label="Game feed">{chronologicalHistory.length ? chronologicalHistory.map((entry, index) => <li className="log-item" key={`${entry}-${index}`}>{entry}</li>) : <li className="log-item">The room is ready.</li>}</ol></section><section className="side-card rules-note"><h2>At the table</h2><p>Every bid and challenge appears here for everyone to follow.</p></section></aside>;
 }
 
-function RoundReveal({ view, history, playerId, nextRound, onNext }: { view: PublicGameView; history: string[]; playerId?: string; nextRound?: NextRound; onNext: () => void }) {
+function RoundReveal({ view, playerId, nextRound, onNext }: { view: PublicGameView; playerId?: string; nextRound?: NextRound; onNext: () => void }) {
   const [showHands, setShowHands] = useState(false);
+  const [resultResolved, setResultResolved] = useState(false);
   const [clock, setClock] = useState(() => Date.now());
   const resolvedRoundRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    const timer = window.setTimeout(() => setShowHands(true), 2_300);
+    const timer = window.setTimeout(() => setShowHands(true), 3_300);
     return () => window.clearTimeout(timer);
   }, [view.round, view.resolution?.kind]);
   useEffect(() => {
@@ -191,6 +192,7 @@ function RoundReveal({ view, history, playerId, nextRound, onNext }: { view: Pub
     resolvedRoundRef.current = round;
     playSound("suspense");
     const timer = window.setTimeout(() => {
+      setResultResolved(true);
       playSound(resolution.correct ? "rightGuess" : "wrongGuess");
       if (resolution.diceChanges.some((change) => change.after === 0)) playSound("dead");
     }, 2_100);
@@ -205,10 +207,11 @@ function RoundReveal({ view, history, playerId, nextRound, onNext }: { view: Pub
   const result = `${caller} called ${callName} on ${bidder}'s ${resolution.bid.quantity} ${denominationNames[resolution.bid.denomination]} and got it ${resolution.correct ? "right" : "wrong"}.`;
   const consequence = change?.delta && change.delta > 0 ? `${changedPlayer} gains ${change.delta} die.` : `${changedPlayer} loses ${Math.abs(change?.delta ?? 0)} die.`;
   const highlight = (value: number) => value === resolution.bid.denomination || (!view.paloFijo && resolution.bid.denomination !== 1 && value === 1);
-  if (!showHands) return <div className={`round-result-overlay round-callout round-callout--${callName.toLowerCase()} round-callout--${resolution.correct ? "right" : "wrong"}`} role="status"><strong>{resolution.correct ? callName.toUpperCase() : [...callName.toUpperCase()].map((letter, index) => <i key={`${letter}-${index}`}>{letter}</i>)}</strong><span>{caller} calls it.</span></div>;
+  const resultState = resultResolved ? resolution.correct ? "right" : "wrong" : "pending";
+  if (!showHands) return <div className={`round-result-overlay round-callout round-callout--${callName.toLowerCase()} round-callout--${resultState}`} role="status"><strong>{resultResolved && resolution.correct ? callName.toUpperCase() : [...callName.toUpperCase()].map((letter, index) => <i key={`${letter}-${index}`}>{letter}</i>)}</strong><span>{caller} calls it.</span></div>;
   const nextReady = Boolean(playerId && nextRound?.readyPlayerIds.includes(playerId));
   const remaining = nextRound ? Math.max(0, Math.ceil((nextRound.deadlineAt - clock) / 1_000)) : 0;
-  return <div className="round-result-overlay" role="dialog" aria-modal="true" aria-label="Round result"><section className="reveal-panel round-result"><div className="result-banner"><p className="turn-kicker">All hands revealed · {resolution.actualCount} actual</p><h3>{result}</h3><p>{consequence}</p></div><div className="revealed-hands">{view.players.filter((player) => player.hand?.length).map((player) => <div className="revealed-hand" key={player.id}><strong>{player.name}</strong><DiceRow dice={player.hand!} small highlight={highlight} /></div>)}</div><ol className="reveal-history">{history.slice(0, 5).map((entry, index) => <li key={`${entry}-${index}`}>{entry}</li>)}</ol>{playerId && <div className="next-round-ready"><button className="button button--primary" disabled={nextReady} onClick={onNext}>{nextReady ? "Ready for next round" : "Next round"}</button><small>{nextRound ? `${nextRound.readyPlayerIds.length}/${view.players.filter((player) => !player.eliminated).length} ready · auto-starts in ${remaining}s` : "Preparing the next round…"}</small></div>}</section></div>;
+  return <div className="round-result-overlay" role="dialog" aria-modal="true" aria-label="Round result"><section className="reveal-panel round-result"><div className="result-banner"><p className="turn-kicker">All hands revealed · {resolution.actualCount} actual</p><h3>{result}</h3><p>{consequence}</p></div><div className="revealed-hands">{view.players.filter((player) => player.hand?.length).map((player) => <div className="revealed-hand" key={player.id}><strong>{player.name}</strong><DiceRow dice={player.hand!} small highlight={highlight} /></div>)}</div>{playerId && <div className="next-round-ready"><button className="button button--primary" disabled={nextReady} onClick={onNext}>{nextReady ? "Ready for next round" : "Next round"}</button><small>{nextRound ? `${nextRound.readyPlayerIds.length}/${view.players.filter((player) => !player.eliminated).length} ready · auto-starts in ${remaining}s` : "Preparing the next round…"}</small></div>}</section></div>;
 }
 
 function RoundShuffle({ view, playerId, shuffle, shaking, onShuffle }: { view: PublicGameView; playerId?: string; shuffle: NonNullable<Shuffle>; shaking: boolean; onShuffle: () => void }) {
@@ -241,6 +244,7 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
   const [soundLevels, setSoundLevelsState] = useState<SoundLevels>(getSoundLevels);
   const [tableDiceMode, setTableDiceMode] = useState(false);
   const [tableDiceIndices, setTableDiceIndices] = useState<number[]>([]);
+  const [quantityManuallyAdjusted, setQuantityManuallyAdjusted] = useState(false);
   const [clock, setClock] = useState(() => Date.now());
   const shuffleTimer = useRef<number | undefined>(undefined);
   const lastTurnRef = useRef<string | undefined>(undefined);
@@ -254,6 +258,7 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
   const clockSoundTurnRef = useRef<string | null>(null);
   const winnerRef = useRef<string | undefined>(undefined);
   const [retainedRoundBid, setRetainedRoundBid] = useState<{ round: number; bid: NonNullable<PublicGameView["currentBid"]>; bidderId: string | null } | undefined>();
+  const [roundBids, setRoundBids] = useState<{ round: number; bids: Record<string, NonNullable<PublicGameView["currentBid"]>> }>();
   const maxQuantity = useMemo(() => view.players.reduce((total, player) => total + player.diceCount, 0), [view]);
   const ownHand = view.players.find((player) => player.id === playerId)?.hand;
   const eliminated = view.players.find((player) => player.id === playerId)?.eliminated ?? false;
@@ -277,6 +282,7 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
   }, []);
   const bid = () => {
     stopClockSound();
+    if (tableDiceMode && tableDiceIndices.length) playSound("tableDice");
     lastPlayedDenominationRef.current = selectedDenomination;
     onAction({ type: "bid", playerId: "", bid: { quantity, denomination: selectedDenomination }, ...(tableDiceMode && tableDiceIndices.length ? { tableDiceIndices } : {}) });
   };
@@ -292,7 +298,7 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
     if (!minimum) return;
     playSound("denomination");
     setDenomination(die);
-    setQuantity(minimum.quantity);
+    if (!quantityManuallyAdjusted) setQuantity(minimum.quantity);
   };
   const shakeDice = () => {
     if (!ownHand) return onShuffle();
@@ -351,10 +357,23 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
     const fallback = legal.bids.reduce((minimumBid, candidate) => candidate.quantity < minimumBid.quantity ? candidate : minimumBid);
     setDenomination((minimum ?? fallback).denomination);
     setQuantity((minimum ?? fallback).quantity);
+    setQuantityManuallyAdjusted(false);
     setTableDiceMode(false);
     setTableDiceIndices([]);
     selectedTurnRef.current = turn;
   }, [isMyTurn, legal, minimumBidFor, view.currentBid, view.currentPlayerId, view.round]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setRoundBids((current) => {
+        if (current?.round !== view.round) return view.currentBid && view.lastBidderId ? { round: view.round, bids: { [view.lastBidderId]: view.currentBid } } : { round: view.round, bids: {} };
+        if (!view.currentBid || !view.lastBidderId) return current;
+        const prior = current.bids[view.lastBidderId];
+        if (prior?.quantity === view.currentBid.quantity && prior.denomination === view.currentBid.denomination) return current;
+        return { ...current, bids: { ...current.bids, [view.lastBidderId]: view.currentBid } };
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [view.currentBid, view.lastBidderId, view.round]);
   useEffect(() => {
     const roundOpen = view.phase === "playing" && (!shuffle || shuffle.round !== view.round || shuffle.readyPlayerIds.length >= view.players.filter((player) => !player.eliminated).length);
     if (!roundOpen || !view.currentPlayerId) return;
@@ -395,17 +414,17 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
   return <div className={`game-shell${reducedMotion ? " game-shell--reduced-motion" : ""}`}>
     <header className="game-header"><div className="wordmark">Cachito online</div><div className="game-header-actions"><div className="round-label">Room {roomCode} · Round {view.round}{view.paloFijo ? " · Palo fijo" : ""}</div><button className="settings-button" aria-expanded={settingsOpen} aria-label="Game settings" onClick={() => setSettingsOpen((open) => !open)}>⚙</button>{settingsOpen && <div className="settings-popover"><strong>Settings</strong><label><input type="checkbox" checked={reducedMotion} onChange={(event) => setReducedMotion(event.target.checked)} /> Reduce motion</label><label className="sound-slider">Sound FX <input type="range" min="0" max="1" step="0.05" value={soundLevels.effects} onChange={(event) => changeSoundLevel("effects", Number(event.target.value))} /><output>{Math.round(soundLevels.effects * 100)}%</output></label><label className="sound-slider">Music <input type="range" min="0" max="1" step="0.05" value={soundLevels.music} onChange={(event) => changeSoundLevel("music", Number(event.target.value))} /><output>{Math.round(soundLevels.music * 100)}%</output></label><button className="button button--ghost settings-exit" onClick={onExit}>Exit to menu</button></div>}</div></header>
     <div className="table-layout"><main className="table-main">
-      <section className="players-strip">{view.players.map((player) => <article className={`player-chip${player.id === current?.id ? " player-chip--active" : ""}${statusById.get(player.id) === false ? " player-chip--offline" : ""}`} key={player.id}>{announcement?.playerId === player.id && <div className="player-speech" role="status">{announcement.text}</div>}<div className="player-name">{player.name}</div><div className="dice-count">{player.eliminated ? "Out · spectating" : statusById.get(player.id) === false ? "Offline · bot cover in 2 min" : view.rules.diceAmountsVisible ? <span className="dice-squares" aria-label={`${player.diceCount} ${player.diceCount === 1 ? "die" : "dice"}`}>{Array.from({ length: player.diceCount }, (_, index) => <i key={index} aria-hidden="true" />)}</span> : <span>Dice hidden</span>}</div>{player.id === roundBidderId && roundBid && <div className="player-last-bid"><span>{roundBid.quantity}</span><span className="player-last-bid-die"><FaceMark value={roundBid.denomination} /></span></div>}</article>)}</section>
+      <section className="players-strip">{view.players.map((player) => { const playerBid = roundBids?.round === view.round ? roundBids.bids[player.id] : undefined; return <article className={`player-chip${player.id === current?.id ? " player-chip--active" : ""}${statusById.get(player.id) === false ? " player-chip--offline" : ""}`} key={player.id}>{announcement?.playerId === player.id && <div className="player-speech" role="status">{announcement.text}</div>}<div className="player-name">{player.name}</div><div className="dice-count">{player.eliminated ? "Out · spectating" : statusById.get(player.id) === false ? "Offline · bot cover in 2 min" : view.rules.diceAmountsVisible ? <span className="dice-squares" aria-label={`${player.diceCount} ${player.diceCount === 1 ? "die" : "dice"}`}>{Array.from({ length: player.diceCount }, (_, index) => <i className={index < player.tableDice.length ? "dice-square--table" : ""} key={index} aria-hidden="true" />)}</span> : <span>Dice hidden</span>}</div>{playerBid && <div className="player-last-bid"><span>{playerBid.quantity}</span><span className="player-last-bid-die"><FaceMark value={playerBid.denomination} /></span></div>}</article>; })}</section>
       {view.players.some((player) => player.tableDice.length) && <section className="table-dice-board" aria-label="Table dice"><p className="turn-kicker">Table dice</p><div>{view.players.filter((player) => player.tableDice.length).map((player) => <article key={player.id}><strong>{player.name}</strong><DiceRow dice={player.tableDice} small /></article>)}</div></section>}
       <section className={`felt-table${isMyTurn ? " felt-table--your-turn" : ""}`}>
-        {view.phase === "reveal" && <RoundReveal view={view} history={history} playerId={playerId} nextRound={nextRound} onNext={onReadyNextRound} />}
+        {view.phase === "reveal" && <RoundReveal key={`${view.round}:${view.resolution?.kind}:${view.resolution?.callerId}`} view={view} playerId={playerId} nextRound={nextRound} onNext={onReadyNextRound} />}
         {needsShuffle && !shufflingDice && <RoundShuffle view={view} playerId={playerId} shuffle={shuffle!} shaking={shufflingDice} onShuffle={shakeDice} />}
         {secondsLeft !== undefined && <div className={`turn-timer${secondsLeft <= 10 ? " turn-timer--urgent" : ""}`} aria-label={`${secondsLeft} seconds remaining`}><span>{String(Math.floor(secondsLeft / 60)).padStart(1, "0")}:{String(secondsLeft % 60).padStart(2, "0")}</span><small>{isMyTurn ? "your turn" : "turn timer"}</small></div>}
         <p className="turn-kicker">{eliminated ? "Spectating — you are out" : isMyTurn ? "Make a bid or call it" : playerId ? "Waiting for turn" : "Spectating until the next lobby"}</p>
         <h2 className="turn-name">{view.phase === "reveal" ? "Round result" : current?.name}</h2>
         {view.paloFijo && <div className="palo-fijo-alert"><strong>Palo fijo</strong><span>Aces are not wild this round.{view.rules.paloFijoBlindDice && (view.players.find((player) => player.id === playerId)?.diceCount ?? 0) > 1 ? " Your dice stay hidden until you have one." : ""}</span></div>}
         {roundBid ? <div className="current-bid bid-card"><span className="bid-quantity">{roundBid.quantity}</span><FaceMark value={roundBid.denomination} /><div className="bid-copy"><strong>{denominationNames[roundBid.denomination]}</strong><span>{view.players.find((player) => player.id === roundBidderId)?.name ?? "Unknown player"} made the current bid</span></div></div> : <div className="current-bid bid-empty">No bid yet.</div>}
-        {isMyTurn ? <section className="controls-card">{canPutDiceOnTable && <div className="table-dice-control">{tableDiceMode ? <><strong>Select dice for the table</strong><span>Choose at least one and keep one private. They will be public for this round; the rest reroll after your bid.</span><button className="button button--ghost" onClick={() => { setTableDiceMode(false); setTableDiceIndices([]); }}>Cancel table dice</button></> : <button className="button button--ghost" onClick={() => setTableDiceMode(true)}>Put dice on table</button>}</div>}<div className="bid-inputs"><div><span className="field-label">Quantity</span><div className="stepper"><button data-sound="number" onClick={() => { playSound("numDown"); setQuantity((value) => Math.max(1, value - 1)); }}>−</button><span>{quantity}</span><button data-sound="number" onClick={() => { playSound("numUp"); setQuantity((value) => Math.min(maxQuantity, value + 1)); }}>+</button></div></div><div><span className="field-label">Denomination</span><div className="denominations">{([1,2,3,4,5,6] as Die[]).map((die) => <button className="denom-button" data-sound="denomination" key={die} aria-pressed={selectedDenomination === die} onClick={() => chooseDenomination(die)} disabled={!minimumBidFor(die)}><FaceMark value={die} label /></button>)}</div></div></div><div className="action-row"><button className="challenge-button challenge-button--dudo" data-sound="challenge" disabled={!legal?.canDudo} onClick={() => call("dudo")}>Dudo</button><button className="challenge-button challenge-button--calzo" data-sound="challenge" disabled={!legal?.canCalzo} onClick={() => call("calzo")}>Calzo</button><button className="button button--primary" disabled={!chosen || tableDiceMode && !tableDiceIndices.length} onClick={bid}>{tableDiceMode ? `${view.currentBid ? "Raise" : "Make"} bid & put ${tableDiceIndices.length || "…"} on table` : view.currentBid ? "Raise bid" : "Make bid"}</button></div></section> : <section className="controls-card"><p className="rules-note">{eliminated ? "You are now a spectator for the rest of this game." : playerId ? "Your moves will appear here when it is your turn." : "You are spectating this game and will be seated when it returns to the lobby."}</p></section>}
+        {isMyTurn ? <section className="controls-card">{canPutDiceOnTable && <div className="table-dice-control">{tableDiceMode ? <><strong>Select dice for the table</strong><span>Choose at least one and keep one private. They will be public for this round; the rest reroll after your bid.</span><button className="button button--ghost" onClick={() => { setTableDiceMode(false); setTableDiceIndices([]); }}>Cancel table dice</button></> : <button className="button button--ghost" onClick={() => setTableDiceMode(true)}>Put dice on table</button>}</div>}<div className="bid-inputs"><div><span className="field-label">Quantity</span><div className="stepper"><button data-sound="number" onClick={() => { playSound("numDown"); setQuantity((value) => Math.max(1, value - 1)); setQuantityManuallyAdjusted(true); }}>−</button><span>{quantity}</span><button data-sound="number" onClick={() => { playSound("numUp"); setQuantity((value) => Math.min(maxQuantity, value + 1)); setQuantityManuallyAdjusted(true); }}>+</button></div></div><div><span className="field-label">Denomination</span><div className="denominations">{([1,2,3,4,5,6] as Die[]).map((die) => <button className="denom-button" data-sound="denomination" key={die} aria-pressed={selectedDenomination === die} onClick={() => chooseDenomination(die)} disabled={!minimumBidFor(die)}><FaceMark value={die} label /></button>)}</div></div></div><div className="action-row"><button className="challenge-button challenge-button--dudo" data-sound="challenge" disabled={!legal?.canDudo} onClick={() => call("dudo")}>Dudo</button><button className="challenge-button challenge-button--calzo" data-sound="challenge" disabled={!legal?.canCalzo} onClick={() => call("calzo")}>Calzo</button><button className="button button--primary" disabled={!chosen || tableDiceMode && !tableDiceIndices.length} onClick={bid}>{tableDiceMode ? `${view.currentBid ? "Raise" : "Make"} bid & put ${tableDiceIndices.length || "…"} on table` : view.currentBid ? "Raise bid" : "Make bid"}</button></div></section> : <section className="controls-card"><p className="rules-note">{eliminated ? "You are now a spectator for the rest of this game." : playerId ? "Your moves will appear here when it is your turn." : "You are spectating this game and will be seated when it returns to the lobby."}</p></section>}
         <section className={`hand-panel${needsShuffle || shufflingDice ? " hand-panel--shuffling" : ""}`}><p className="hand-label">Your dice{tableDiceMode ? " · select dice to put on table" : isMyTurn ? " · click a die to choose its face" : ""}</p>{ownHand ? <DiceRow dice={shufflingDice && shuffleFaces ? shuffleFaces : ownHand} className={shufflingDice ? "dice-row--shuffling" : ""} selectedIndices={tableDiceMode ? tableDiceIndices : undefined} onDieClick={isMyTurn ? (value, index) => tableDiceMode ? setTableDiceIndices((current) => current.includes(index) ? current.filter((entry) => entry !== index) : current.length < ownHand.length - 1 ? [...current, index] : current) : setDenomination(value as Die) : undefined} /> : <p className="rules-note">Hands are hidden.</p>}</section>
         {error && <p className="form-error">{error}</p>}
       </section>

@@ -1,4 +1,4 @@
-export { binomialAtLeast, binomialPmf, evaluateBidDistribution } from './probability'
+export { binomialAtLeast, binomialPmf, evaluateBidDistribution, evaluateTableDiceDistribution } from './probability'
 export { adjustSupportForOpponent, buildOpponentProfile } from './opponentModel'
 export { collectRunChampions, mergeChampionShelf } from './championArchive'
 export { chooseBotAction, createProbabilityPolicy, isChoiceLegal, randomLegalPolicy } from './policies'

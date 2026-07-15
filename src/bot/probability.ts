@@ -64,3 +64,23 @@ export function evaluateBidDistribution(view: PublicGameView, playerId: string, 
     exact: binomialPmf(unknownDice, unknownNeeded, probabilityPerUnknown),
   }
 }
+
+/** Estimates a bid after this player puts selected private dice on the table and rerolls the rest. */
+export function evaluateTableDiceDistribution(view: PublicGameView, playerId: string, bid: Bid, selectedIndices: readonly number[]): BidDistribution {
+  const player = view.players.find((candidate) => candidate.id === playerId)
+  if (!player?.hand) throw new Error(`Player ${playerId} has no visible private hand`)
+  const selected = selectedIndices.map((index) => player.hand![index]).filter((die): die is Die => die !== undefined)
+  const visibleDice = [...view.players.flatMap((candidate) => candidate.tableDice), ...selected]
+  const totalDice = view.players.reduce((sum, candidate) => sum + candidate.diceCount, 0)
+  const knownQualifiers = visibleDice.filter((die) => qualifies(die, bid.denomination, view.paloFijo)).length
+  const unknownDice = totalDice - visibleDice.length
+  const probabilityPerUnknown = view.paloFijo || bid.denomination === 1 ? 1 / 6 : 2 / 6
+  const unknownNeeded = bid.quantity - knownQualifiers
+  return {
+    knownQualifiers,
+    unknownDice,
+    probabilityPerUnknown,
+    atLeast: binomialAtLeast(unknownDice, unknownNeeded, probabilityPerUnknown),
+    exact: binomialPmf(unknownDice, unknownNeeded, probabilityPerUnknown),
+  }
+}

@@ -1,10 +1,10 @@
 import { useEffect } from "react";
 
-export type SoundName = "clock" | "numDown" | "numUp" | "shake" | "shakeStop" | "turnPass" | "suspense" | "click" | "denomination" | "nextRound" | "dead" | "rightGuess" | "wrongGuess" | "winner";
+export type SoundName = "clock" | "numDown" | "numUp" | "shake" | "shakeStop" | "turnPass" | "suspense" | "click" | "denomination" | "nextRound" | "tableDice" | "dead" | "rightGuess" | "wrongGuess" | "winner";
 export type SoundLevels = { effects: number; music: number };
 
 const SETTINGS_KEY = "cachito-sound-levels";
-const clips: Record<SoundName, string> = { clock: "clock_10s.wav", numDown: "num_down.wav", numUp: "num_up.wav", shake: "shake.wav", shakeStop: "shake_stop.wav", turnPass: "turn_pass.wav", suspense: "suspense.wav", click: "click_1.wav", denomination: "click_2.wav", nextRound: "accent_1.wav", dead: "dead.wav", rightGuess: "right_guess.wav", wrongGuess: "wrong_guess.wav", winner: "winner.wav" };
+const clips: Record<SoundName, string> = { clock: "clock_10s.wav", numDown: "num_down.wav", numUp: "num_up.wav", shake: "shake.wav", shakeStop: "shake_stop.wav", turnPass: "turn_pass.wav", suspense: "suspense.wav", click: "click_1.wav", denomination: "click_2.wav", nextRound: "accent_1.wav", tableDice: "accent_2.wav", dead: "dead.wav", rightGuess: "right_guess.wav", wrongGuess: "wrong_guess.wav", winner: "winner.wav" };
 const clipVolumes: Partial<Record<SoundName, number>> = { click: 0.42, dead: 0.56, rightGuess: 0.56, wrongGuess: 0.56 };
 const boosts: Partial<Record<SoundName, number>> = { shake: 1.65, shakeStop: 1.65, suspense: 2.25 };
 let levels: SoundLevels = readSoundLevels();
