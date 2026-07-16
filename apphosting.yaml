@@ -21,6 +21,10 @@ env:
     value: "https://cachito-rooms-ribcxidnzq-ez.a.run.app"
     availability:
       - BUILD
+  - variable: ONLINE_ALLOWED_ORIGINS
+    value: "https://cachito.web.app"
+    availability:
+      - RUNTIME
   #     - RUNTIME
 
   # Grant access to secrets in Cloud Secret Manager.

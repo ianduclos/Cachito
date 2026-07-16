@@ -14,7 +14,7 @@ The current app includes:
 - private per-player hands on a shared device;
 - a non-interactive normal spectator/public-table view and a clearly labeled admin testing view;
 - downloadable, versioned JSON game logs with bot decision diagnostics;
-- live private rooms with room codes, lobbies, reconnects, normal spectators, host bot management, and host kick controls;
+- live private rooms with room codes, lobbies, reconnects, normal spectators, host transfer, explicit leave behavior, host bot management, and host kick controls;
 - configurable online turns (one minute by default), a 20-second shake countdown, automatic readiness fallbacks, and paced bot actions;
 - sound effects, looping theme music, music/effects volume controls, and reduced-motion settings;
 - a live, worker-backed adversarial learning dashboard with evolutionary progress, rankings, and exportable results;
@@ -32,7 +32,14 @@ The local app includes a playable probability bot and an experimental parameter-
 5. Once all active cups are ready, every turn shows the room's configured timer (one minute by default). Bots act after a 3–8 second thinking pause, not a shortened visible timer.
 6. The first action of a round is a **Make bid**; later bids are **Raise bid**. Dudo and Calzo resolve the round, reveal hands, and let active players select **Next round**. The room advances when all active players are ready or after one minute.
 
-The final-ten-seconds clock cue stops immediately when a move resolves. Theme music ducks for longer effects, and the settings menu controls music and effects separately. A reconnect token stored in the browser restores an existing player after a connection loss when the room is still active; the Online menu includes a subtle **Reconnect to saved game** action when one is available.
+The final-ten-seconds clock cue stops immediately when a move resolves. Theme music ducks for longer effects, and the settings menu controls music and effects separately. A reconnect token stored in the browser restores an existing player after a connection loss when the room is still active; the Online menu includes a subtle **Reconnect to saved game** action when one is available. While reconnecting, the current lobby or table remains visible with a status banner, but all server-changing controls are disabled so moves are not silently discarded.
+
+### Room lifecycle
+
+- An explicit leave removes a player immediately in the lobby or after a completed match. During an active match, the seat remains disconnected for authoritative turn order and automatic cover, while its reconnect token is revoked.
+- If the host leaves or disconnects, ownership passes to another human player, preferring someone currently connected. This keeps lobby controls and completed-game return controls available.
+- A lobby or completed room closes when its last human leaves. Active matches retain departed seats and expire after 20 minutes without room activity; idle lobbies expire after 60 minutes.
+- Active-game recovery snapshots carry their own schema and last-activity timestamp. Expiry deletes the snapshot, and startup recovery rejects and deletes stale or incompatible snapshots instead of resurrecting an old room or reconnect token.
 
 ## Maintainer handoff — production reminders
 
@@ -48,10 +55,18 @@ Read this before changing or deploying online play.
   firebase deploy --only hosting --project ian-duclos
   ```
 
-- **Do not weaken the no-cache header** in `firebase.json`. `Cache-Control: no-store, max-age=0` is intentional: it prevents old game clients being left behind after a release. Verify it, and the live favicon, with `curl -I https://cachito.web.app/` after deployment.
+- **Preserve the split cache policy** in `firebase.json`. The app shell, SPA routes, favicon, and sounds use `Cache-Control: no-store, max-age=0`, while Vite's content-hashed `/assets/**` JavaScript and CSS use `public, max-age=31536000, immutable`. The asset rule must remain after the global rule because Hosting applies matching header rules in definition order. Verify both policies, plus the live favicon, after deployment:
+
+  ```sh
+  curl -I https://cachito.web.app/
+  curl -I https://cachito.web.app/assets/<current-hashed-file>.js
+  ```
+
+- **Keep the browser security policy and room endpoint aligned.** Hosting and the production Node server set CSP, `nosniff`, referrer, permissions, and frame protections. The CSP permits only this app, Google Fonts, the production room WebSocket, local media, and the app's worker; React's dynamic style attributes are the narrow inline-style exception. When the public origin or room endpoint changes, update both CSP definitions and `ONLINE_ALLOWED_ORIGINS` in the room service configuration.
 - **Keep the room server authoritative.** Never send an opponent's live hand, an admin view, or a bot's private observation to any browser. Generate `projectForPlayer` / `projectForSpectator` views on the server.
+- **Keep the abuse controls enabled.** The WebSocket server caps messages at 16 KiB, allows 40 messages per 10 seconds per connection, limits each network to eight room creations per 10 minutes, permits only one room association per socket, and validates browser origins. `ONLINE_ALLOWED_ORIGINS` is a comma-separated runtime allowlist for public browser origins; localhost remains available for development. These are beta safeguards, not a substitute for edge-level connection and IP rate limiting before public matchmaking.
 - **Current online pacing is intentional:** room rules set turns to 15, 30, 60, or 90 seconds (60 by default); a reveal advances once all active players select **Next round**, or automatically after one minute; the shake screen counts down from 20 seconds. Bots shake after 2–3 seconds, decide a turn after 3–8 seconds, and wait 4–6 seconds before next-round readiness. The final-ten-seconds clock cue must stop when a move resolves.
-- **Online room residency is deliberate:** the Cloud Run service has a service-level maximum of one instance because current room state is in-memory. Active-room snapshots are private, throttled/coalesced recovery records; do not raise the instance count without first moving the authoritative room state to shared storage.
+- **Online room residency is deliberate:** the Cloud Run service has a service-level maximum of one instance and concurrency 80 because current room state is in-memory. A WebSocket occupies concurrency for its lifetime, so this is roughly an 80-connection service ceiling across players and spectators, not 80 rooms. Deployments disconnect live sockets, which clients then recover through reconnect tokens and snapshots. Active-room snapshots are private, throttled/coalesced recovery records; do not raise the instance count without first moving authoritative room coordination to shared durable storage.
 - **Keep private match data private.** Production room snapshots go to the `ian-duclos-cachito-bot-logs` bucket; do not expose that bucket through Hosting or browser APIs. Local `logs/*.json` remains ignored by Git.
 - **Connection audit data is private.** Online snapshots record connection, reconnect, and disconnect events with a salted HMAC-SHA-256 IP fingerprint, IP version, forwarding-hop count, hashed user-agent, origin, primary language, and protocol. Never store raw IPs or raw user-agent strings. `IP_HASH_SALT` must be configured as a Cloud Run secret before enabling this audit trail.
 - **Favicon source:** `public/favicon.png`. Replace that file when changing the browser icon.
@@ -73,6 +88,8 @@ npm run test:watch
 npm run build
 npm run lint
 ```
+
+The automated suite includes authoritative online-room coverage for lifecycle, recovery expiry, host transfer, malformed/oversized traffic, rate limiting, and rejected-action timing; engine tests separately enforce player and spectator privacy projections. It also verifies production static routing, immutable-asset classification, missing-file behavior, and path containment. Keep these scenarios in the normal `npm test` gate when changing the protocol, room service, or production server.
 
 - `dev` starts the Vite development server.
 - `start` serves a built app and its realtime room server (run `npm run build` first).
@@ -136,7 +153,7 @@ Logs are intended for local inspection now and later batch analysis. Keep `schem
 
 ### Private online snapshots and recovery
 
-Production online snapshots are private, server-only records. Schema version 4 retains the unanimously approved game rules alongside the nickname and controller for every seat, every round's full dealt hands, nickname-labelled actions (including table dice and rerolled private dice), and a timing record for each completed turn (start, deadline, finish, elapsed/remaining time, and bid/Dudo/Calzo/timeout outcome). Recovery snapshots are rate-limited and coalesced to avoid object-storage mutation limits, preserve reconnect tokens and offline timing state, and are never sent to players or spectators.
+Production online snapshots are private, server-only records. Schema version 4 retains the unanimously approved game rules alongside the nickname and controller for every seat, every round's full dealt hands, nickname-labelled actions (including table dice and rerolled private dice), and a timing record for each completed turn (start, deadline, finish, elapsed/remaining time, and bid/Dudo/Calzo/timeout outcome). Active recovery records have a separate versioned shape, are rate-limited and coalesced to avoid object-storage mutation limits, preserve reconnect tokens and offline timing state, and are never sent to players or spectators. A recovery record is deleted when its room expires; stale or incompatible records are rejected and removed during recovery.
 
 ### Analyze a logs folder
 
@@ -202,7 +219,7 @@ The first 3,000-game learning experiment found a well-calibrated 2/4-player spec
 
 ### 4. Realtime multiplayer
 
-Realtime multiplayer is live through **Play online**. The server validates every action and sends each player or spectator a separately sanitized projection; the local admin view is never exposed online. The production service intentionally runs one Cloud Run instance while rooms remain in-memory, with private active-room snapshots for restart recovery. Deployments must verify the Cloud Run revision, single-instance setting, Firebase Hosting release, and the no-cache response before inviting players.
+Realtime multiplayer is live through **Play online**. The server validates every action and sends each player or spectator a separately sanitized projection; the local admin view is never exposed online. The production service intentionally runs one Cloud Run instance while rooms remain in-memory, with private active-room snapshots for restart recovery. Deployments must verify the Cloud Run revision, single-instance setting, allowed browser origins, Firebase Hosting release, the no-store app shell, and immutable fingerprinted assets before inviting players.
 
 ### 5. Later possibilities
 
