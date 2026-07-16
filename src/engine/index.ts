@@ -1,5 +1,5 @@
 export { applyAction, createGame, GameRuleError } from './engine'
-export { DEFAULT_GAME_RULES } from './types'
+export { DEFAULT_GAME_RULES, MAX_PLAYERS, MIN_PLAYERS } from './types'
 export type { GameRuleErrorCode } from './engine'
 export { createSeededRandom, rollDie, rollHand } from './random'
 export { countBid, getLegalActions, isHigherBid, isValidOpeningBid } from './rules'

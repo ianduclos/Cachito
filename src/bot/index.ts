@@ -1,4 +1,5 @@
 export { binomialAtLeast, binomialPmf, evaluateBidDistribution, evaluateTableDiceDistribution } from './probability'
+export { BOT_NAMES } from './names'
 export { adjustSupportForOpponent, buildOpponentProfile } from './opponentModel'
 export { collectRunChampions, mergeChampionShelf } from './championArchive'
 export { chooseBotAction, createProbabilityPolicy, isChoiceLegal, randomLegalPolicy } from './policies'

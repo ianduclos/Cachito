@@ -40,9 +40,11 @@ function playing(
 }
 
 describe('game creation and turns', () => {
-  it('creates deterministic games for 2-6 unique players', () => {
+  it('creates deterministic games for 2-8 unique players', () => {
     const players = [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }]
     expect(createGame(players, createSeededRandom(42))).toEqual(createGame(players, createSeededRandom(42)))
+    expect(createGame(Array.from({ length: 8 }, (_, index) => ({ id: `p${index}`, name: `Player ${index}` })))).toHaveProperty('players.length', 8)
+    expect(() => createGame(Array.from({ length: 9 }, (_, index) => ({ id: `p${index}`, name: `Player ${index}` })))).toThrow(GameRuleError)
     expect(() => createGame([{ id: 'a', name: 'A' }])).toThrow(GameRuleError)
     expect(() => createGame([...players, { id: 'a', name: 'Again' }])).toThrow(GameRuleError)
   })

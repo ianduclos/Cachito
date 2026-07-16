@@ -1,16 +1,18 @@
 import { useState } from "react";
+import { MAX_PLAYERS, MIN_PLAYERS } from "../engine";
 import { release } from "../release";
 import { GameSettings } from "./GameSettings";
 
 type Props = {
   onStart: (seats: LocalSeatSetup[]) => void;
   onOpenOnline?: () => void;
+  onOpenTablePrototype?: () => void;
 };
 
 export type LocalSeatSetup = { name: string; isBot: boolean };
 const makeHumanSeat = (number: number): LocalSeatSetup => ({ name: `Player ${number}`, isBot: false });
 
-export function SetupScreen({ onStart, onOpenOnline }: Props) {
+export function SetupScreen({ onStart, onOpenOnline, onOpenTablePrototype }: Props) {
   const [screen, setScreen] = useState<"home" | "local">("home");
   const [seats, setSeats] = useState<LocalSeatSetup[]>([makeHumanSeat(1), makeHumanSeat(2), makeHumanSeat(3)]);
   const valid = seats.every((seat) => seat.name.trim().length > 0) && new Set(seats.map((seat) => seat.name.trim().toLocaleLowerCase())).size === seats.length;
@@ -23,6 +25,7 @@ export function SetupScreen({ onStart, onOpenOnline }: Props) {
         <div className="brand-mark" aria-hidden="true"><span>●</span><span>●</span></div>
         <h1>Cachito</h1>
         {onOpenOnline ? <button className="button button--primary start-online-button" type="button" onClick={onOpenOnline}>Play online</button> : <p className="rules-note">Rooms are being set up.</p>}
+        {onOpenTablePrototype && <button className="button button--ghost setup-learning-button" type="button" onClick={onOpenTablePrototype}>Preview table concept</button>}
         <span className="release-stamp">{release}</span>
       </section>
     </main>
@@ -35,7 +38,7 @@ export function SetupScreen({ onStart, onOpenOnline }: Props) {
         <button className="button button--ghost back-button" type="button" onClick={() => setScreen("home")}>← Back</button>
         <h1>Local game</h1>
         <p className="intro">Set up the people and bots sharing this device.</p>
-        <div className="setup-heading"><div><h2>Players</h2><p>Add 2–6 players.</p></div><span className="player-count">{seats.length}/6</span></div>
+        <div className="setup-heading"><div><h2>Players</h2><p>Add {MIN_PLAYERS}–{MAX_PLAYERS} players.</p></div><span className="player-count">{seats.length}/{MAX_PLAYERS}</span></div>
         <div className="name-list">
           {seats.map((seat, index) => <div className="name-field" key={index}>
             <span className="seat-number">{index + 1}</span>
@@ -49,7 +52,7 @@ export function SetupScreen({ onStart, onOpenOnline }: Props) {
           </div>)}
         </div>
         {!valid && <p className="form-error" role="alert">Every player needs a unique name.</p>}
-        <div className="setup-actions"><button className="button button--ghost" type="button" onClick={() => setSeats((current) => current.length < 6 ? [...current, makeHumanSeat(current.length + 1)] : current)} disabled={seats.length >= 6}>+ Add player</button><button className="button button--primary" type="button" disabled={!valid} onClick={() => onStart(seats.map((seat) => ({ ...seat, name: seat.name.trim() })))}>Start game</button></div>
+        <div className="setup-actions"><button className="button button--ghost" type="button" onClick={() => setSeats((current) => current.length < MAX_PLAYERS ? [...current, makeHumanSeat(current.length + 1)] : current)} disabled={seats.length >= MAX_PLAYERS}>+ Add player</button><button className="button button--primary" type="button" disabled={!valid} onClick={() => onStart(seats.map((seat) => ({ ...seat, name: seat.name.trim() })))}>Start game</button></div>
       </section>
       <p className="setup-note">Pass the device only when the dice are covered.</p>
     </main>

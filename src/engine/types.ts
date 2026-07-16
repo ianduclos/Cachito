@@ -1,5 +1,8 @@
 export type Die = 1 | 2 | 3 | 4 | 5 | 6
 
+export const MIN_PLAYERS = 2
+export const MAX_PLAYERS = 8
+
 export interface PlayerSetup {
   id: string
   name: string

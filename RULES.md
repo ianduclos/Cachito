@@ -4,7 +4,7 @@ This document is the rules contract for the game engine. It describes the agreed
 
 ## Goal and setup
 
-- The game supports 2–6 players.
+- The game supports 2–8 players.
 - Players sit in a fixed turn order. Play passes to the player on the right, skipping eliminated players.
 - Every player starts with five standard six-sided dice and a cup.
 - At the start of a round, each active player rolls all of their remaining dice.

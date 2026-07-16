@@ -1,5 +1,6 @@
 import { runAdversarialTournament } from './adversarial'
 import { createProbabilityPolicy } from './policies'
+import { MAX_PLAYERS } from '../engine'
 
 /** The complete, JSON-serializable parameter set evolved by the learner. */
 export interface PolicyGenome {
@@ -118,8 +119,8 @@ export function validateLearningConfig(config: LearningConfig): void {
   if (!Array.isArray(config.playerCounts) || config.playerCounts.length === 0) {
     throw new RangeError('playerCounts must be a non-empty array')
   }
-  if (config.playerCounts.some((count) => !Number.isInteger(count) || count < 2 || count > 6)) {
-    throw new RangeError('playerCounts must contain only integers from 2 to 6')
+  if (config.playerCounts.some((count) => !Number.isInteger(count) || count < 2 || count > MAX_PLAYERS)) {
+    throw new RangeError(`playerCounts must contain only integers from 2 to ${MAX_PLAYERS}`)
   }
   if (new Set(config.playerCounts).size !== config.playerCounts.length) {
     throw new RangeError('playerCounts must not contain duplicates')

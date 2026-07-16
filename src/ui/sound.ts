@@ -45,7 +45,8 @@ function animateMusic(target: number, duration: number, easing: (value: number) 
 export function startBackgroundMusic() {
   if (!music) { music = new Audio("/sounds/theme.mp3"); music.loop = true; }
   updateMusicVolume();
-  void music.play().catch(() => undefined);
+  const playback = music.play();
+  void playback?.catch(() => undefined);
 }
 function duckMusic(effect: HTMLAudioElement) {
   const begin = () => {
@@ -83,7 +84,8 @@ export function playSound(name: SoundName) {
   audio.volume = (clipVolumes[name] ?? 1) * levels.effects;
   amplify(audio, boosts[name] ?? 1);
   duckMusic(audio);
-  void audio.play().catch(() => undefined);
+  const playback = audio.play();
+  void playback?.catch(() => undefined);
   return audio;
 }
 /** Gives ordinary buttons a quiet, consistent click without overriding purpose-specific sounds. */

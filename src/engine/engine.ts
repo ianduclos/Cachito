@@ -1,6 +1,6 @@
 import { rollHand } from './random'
 import { countBid, isHigherBid, isValidOpeningBid } from './rules'
-import { DEFAULT_GAME_RULES } from './types'
+import { DEFAULT_GAME_RULES, MAX_PLAYERS, MIN_PLAYERS } from './types'
 import type {
   Bid,
   DiceChange,
@@ -31,8 +31,8 @@ export class GameRuleError extends Error {
 }
 
 export function createGame(playerSetups: PlayerSetup[], random: RandomSource = Math.random, rules: GameRules = DEFAULT_GAME_RULES): PlayingState {
-  if (playerSetups.length < 2 || playerSetups.length > 6) {
-    throw new GameRuleError('INVALID_PLAYERS', 'Cachito requires 2 to 6 players')
+  if (playerSetups.length < MIN_PLAYERS || playerSetups.length > MAX_PLAYERS) {
+    throw new GameRuleError('INVALID_PLAYERS', `Cachito requires ${MIN_PLAYERS} to ${MAX_PLAYERS} players`)
   }
   if (new Set(playerSetups.map((player) => player.id)).size !== playerSetups.length) {
     throw new GameRuleError('DUPLICATE_PLAYER', 'Player IDs must be unique')
