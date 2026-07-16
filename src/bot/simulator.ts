@@ -3,6 +3,7 @@ import {
   createGame,
   createSeededRandom,
   getLegalActions,
+  MAX_PLAYERS,
   projectForPlayer,
   type GameAction,
   type GameState,
@@ -47,7 +48,7 @@ function toGameAction(playerId: string, choice: BotChoice): GameAction {
 }
 
 export function runBotMatch(seats: readonly BotSeat[], options: MatchOptions): MatchResult {
-  if (seats.length < 2 || seats.length > 6) throw new RangeError('Bot matches require 2 to 6 seats')
+  if (seats.length < 2 || seats.length > MAX_PLAYERS) throw new RangeError(`Bot matches require 2 to ${MAX_PLAYERS} seats`)
   const diceRandom = createSeededRandom(mixSeed(options.seed, 0))
   const policyRandom = new Map<string, RandomSource>(seats.map((seat, index) => [
     seat.id,

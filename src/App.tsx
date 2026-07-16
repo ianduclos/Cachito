@@ -31,6 +31,7 @@ import {
 } from "./analytics";
 import { DiceRow, Die as DieFace } from "./ui/Dice";
 import { SetupScreen, type LocalSeatSetup } from "./ui/SetupScreen";
+import { TablePrototype } from "./ui/TablePrototype";
 import { playSound, useGenericButtonSounds } from "./ui/sound";
 import { OnlineGame } from "./online/OnlineGame";
 import "./styles.css";
@@ -65,6 +66,7 @@ function backgroundSaveLabel(state: BackgroundSaveState): string {
 export default function App() {
   const [game, setGame] = useState<GameState | null>(null);
   const [showOnlineGame, setShowOnlineGame] = useState(() => /^\/join\/[A-Z0-9]{5}\/?$/i.test(window.location.pathname));
+  const [showTablePrototype, setShowTablePrototype] = useState(() => /^\/table-prototype\/?$/i.test(window.location.pathname));
   const [viewMode, setViewMode] = useState<ViewMode>("player");
   const [handRevealed, setHandRevealed] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -240,9 +242,11 @@ export default function App() {
   }, [addLog, enqueueBackgroundSave, game, botPlayerIds]);
 
   if (!game) {
-    return showOnlineGame
+    return showTablePrototype
+      ? <TablePrototype onExit={() => { window.history.replaceState({}, "", "/"); setShowTablePrototype(false); }} />
+      : showOnlineGame
       ? <OnlineGame onExit={() => { window.history.replaceState({}, "", "/"); setShowOnlineGame(false); }} />
-      : <SetupScreen onStart={startGame} onOpenOnline={onlineEnabled ? () => setShowOnlineGame(true) : undefined} />;
+      : <SetupScreen onStart={startGame} onOpenOnline={onlineEnabled ? () => setShowOnlineGame(true) : undefined} onOpenTablePrototype={() => { window.history.replaceState({}, "", "/table-prototype"); setShowTablePrototype(true); }} />;
   }
 
   const activePlayerId = game.phase === "playing" ? game.currentPlayerId : null;

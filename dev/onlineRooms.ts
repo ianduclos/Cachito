@@ -3,8 +3,9 @@ import { createHmac, randomInt, randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 import { WebSocketServer, type WebSocket } from "ws";
 import { Storage } from "@google-cloud/storage";
-import { applyAction, createGame, DEFAULT_GAME_RULES, getLegalActions, projectForPlayer, projectForSpectator, type Die, type GameAction, type GameRules, type GameState, type PlayerSetup } from "../src/engine";
+import { applyAction, createGame, DEFAULT_GAME_RULES, getLegalActions, MAX_PLAYERS, projectForPlayer, projectForSpectator, type Die, type GameAction, type GameRules, type GameState, type PlayerSetup } from "../src/engine";
 import { chooseBotAction, createProbabilityPolicy, isChoiceLegal, type BotObservation, type PublicActionEntry } from "../src/bot";
+import { BOT_NAMES } from "../src/bot/names";
 import type { OnlineClientMessage, OnlineServerMessage } from "../src/online/protocol";
 
 type RoomPlayer = { id: string; name: string; isBot: boolean; token?: string; socket?: WebSocket; disconnectedAt?: number };
@@ -20,27 +21,6 @@ type PauseState = { pausedById: string; pausedAt: number; turnRemainingMs?: numb
 type Room = { code: string; hostPlayerId: string; players: RoomPlayer[]; spectators: Map<WebSocket, Spectator>; connectionEvents: ConnectionEvent[]; rules: GameRules; pendingRules?: RoomRuleProposal; roundDeals: RoundDeal[]; turnTimings: TurnTiming[]; activeTurn?: TurnTiming; game?: GameState; history: string[]; botHistory: PublicActionEntry[]; announcement?: { text: string; playerId?: string }; shuffleReadyPlayerIds?: Set<string>; nextRoundReadyPlayerIds?: Set<string>; nextRoundDeadlineAt?: number; shuffleDeadlineAt?: number; paused?: PauseState; actions: LoggedAction[]; startedAt?: string; lastActivityAt: number; nextGameStarterId?: string; turnDeadlineAt?: number; turnTimer?: ReturnType<typeof setTimeout>; shuffleTimer?: ReturnType<typeof setTimeout>; nextRoundTimer?: ReturnType<typeof setTimeout>; offlineCoverTimer?: ReturnType<typeof setTimeout>; snapshotTimer?: ReturnType<typeof setTimeout>; snapshotPersisting?: boolean; snapshotQueued?: boolean; snapshotDeleteQueued?: boolean; expired?: boolean; lastSnapshotAt?: number; botShuffleTimers?: Array<ReturnType<typeof setTimeout>>; botNextRoundTimers?: Array<ReturnType<typeof setTimeout>> };
 const rooms = new Map<string, Room>();
 const connectionContexts = new WeakMap<WebSocket, ConnectionContext>();
-const botNames = [
-  "Khaleesi",
-  "Calculator",
-  "Berioska",
-  "Miss Blanquita",
-  "Pichulín",
-  "Monkoky",
-  "Matt Millan",
-  "Gonchi",
-  "El Gordo",
-  "Asleigh Costley",
-  "Min-chi Park",
-  "Henry Sarria",
-  "Fogey Baxter",
-  "Poeta Dalmacia",
-  "Balú Johnson",
-  "McDonald Lewis",
-  "Luciano Torres",
-  "La Del Burro",
-  "Tachi Cabrera",
-];
 const logBucket = process.env.MATCH_LOG_BUCKET;
 const storage = logBucket ? new Storage() : undefined;
 const GAME_IDLE_MS = 20 * 60_000;
@@ -183,7 +163,7 @@ function finishTurnTiming(room: Room, outcome: NonNullable<TurnTiming["outcome"]
   room.activeTurn = undefined;
 }
 function nextBotName(room: Room) {
-  const unused = botNames.filter((name) => !room.players.some((player) => player.name === name));
+  const unused = BOT_NAMES.filter((name) => !room.players.some((player) => player.name === name));
   return unused[Math.floor(Math.random() * unused.length)] ?? `Bot ${room.players.filter((player) => player.isBot).length + 1}`;
 }
 function onlineBotPolicy(player: RoomPlayer) {
@@ -263,7 +243,7 @@ function scheduleOfflineCoverCheck(room: Room) {
 }
 function promoteQueuedSpectators(room: Room) {
   for (const [socket, spectator] of room.spectators) {
-    if (!spectator.queuedPlayer || room.players.length >= 6) continue;
+    if (!spectator.queuedPlayer || room.players.length >= MAX_PLAYERS) continue;
     room.players.push(spectator.queuedPlayer);
     room.spectators.delete(socket);
     send(socket, { type: "joined", roomCode: room.code, playerId: spectator.queuedPlayer.id, reconnectToken: spectator.queuedPlayer.token, hostPlayerId: room.hostPlayerId });
@@ -661,7 +641,7 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
                 association = "bound";
                 return;
               }
-              if (room.players.length >= 6) throw new Error("This room cannot accept another player.");
+              if (room.players.length >= MAX_PLAYERS) throw new Error("This room cannot accept another player.");
               const name = message.name?.trim().slice(0, 24) ?? "";
               if (!name || room.players.some((entry) => entry.name.toLocaleLowerCase() === name.toLocaleLowerCase())) throw new Error("Choose a unique name.");
               player = { id: `player-${crypto.randomUUID()}`, name, isBot: false, token: token(), socket }; room.players.push(player);
@@ -722,7 +702,7 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           }
         } else if (message.type === "add-bot") {
           if (!player || player.id !== room.hostPlayerId || room.game) throw new Error("Only the host can change bots before the game starts.");
-          if (room.players.length >= 6) throw new Error("This room already has six players.");
+          if (room.players.length >= MAX_PLAYERS) throw new Error(`This room already has ${MAX_PLAYERS} players.`);
           room.players.push({ id: `bot-${crypto.randomUUID()}`, name: nextBotName(room), isBot: true }); settleRuleProposal(room); touch(room); publish(room);
         } else if (message.type === "remove-bot") {
           if (!player || player.id !== room.hostPlayerId || room.game) throw new Error("Only the host can change bots before the game starts.");

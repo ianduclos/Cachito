@@ -1,6 +1,6 @@
 # Cachito
 
-Cachito is a browser implementation of the hidden-dice game also known as Dudo, Liar's Dice, or Perudo. It supports 2–6 player local games and live, server-authoritative private online rooms.
+Cachito is a browser implementation of the hidden-dice game also known as Dudo, Liar's Dice, or Perudo. It supports 2–8 player local games and live, server-authoritative private online rooms.
 
 See [RULES.md](./RULES.md) for the game rules, denomination names, bid examples, Palo Fijo behavior, and privacy rules. See [MACHINE_PLAYER.md](./MACHINE_PLAYER.md) for the staged bot plan.
 
@@ -8,7 +8,7 @@ See [RULES.md](./RULES.md) for the game rules, denomination names, bid examples,
 
 The current app includes:
 
-- 2–6 local players, each starting with five dice;
+- 2–8 local or online players, each starting with five dice;
 - a Human/Bot switch for every seat during setup, allowing mixed or all-bot local games;
 - complete bidding, Dudo, Calzo, elimination, and Palo Fijo flows;
 - private per-player hands on a shared device;
@@ -79,6 +79,8 @@ Install dependencies, then use the project scripts:
 npm install
 npm run dev
 ```
+
+The separate table-layout prototype is available at `http://localhost:5173/table-prototype`. It does not replace the current beta interface. It runs the real engine offline with the saved online display name, a fixed human dashboard, and up to seven randomly named autonomous bot seats. Every round retains the manual cup shake, 2–3 second bot shakes, 3–8 second bot thinking time, the full 60-second turn clock with 10-second audio warning and timeout bot cover, staged Dudo/Calzo suspense and success/failure animation, highlighted result reveal, table-dice rerolls, turn sounds, audio ducking, and grouped lost-dice tracking. The bid controls also preserve the beta’s pip-face selectors, clickable hand-dice shortcuts, remembered denomination, and automatic minimum-legal-quantity behavior.
 
 Other available checks:
 
@@ -199,7 +201,7 @@ As online play is introduced, server-authoritative room code should live outside
 - Generate legal actions from state instead of duplicating legality in controls.
 - Create sanitized player, normal spectator, and admin testing views.
 - Cover denomination naming, bid transitions, wild Aces, Dudo, Calzo, elimination, Palo Fijo activation, and Palo Fijo hand visibility with tests.
-- Complete a full 2–6 player game through the pass-and-play interface.
+- Complete a full 2–8 player game through the pass-and-play interface.
 
 ### 2. Hardening
 

@@ -181,7 +181,7 @@ export function LearningLab({ onExit }: { onExit: () => void }) {
           </div>
           <fieldset className="learning-player-counts" disabled={locked}>
             <legend>Table sizes</legend>
-            {[2, 4, 6].map((count) => (
+            {[2, 4, 6, 8].map((count) => (
               <label key={count}>
                 <input type="checkbox" checked={config.playerCounts.includes(count)} onChange={(event) => {
                   setConfig((current) => ({
@@ -359,7 +359,7 @@ function RankingTable({ snapshot }: { snapshot?: LearningGenerationSnapshot }) {
 }
 
 function ChampionPanel({ champion }: { champion?: LearningGenerationSnapshot['champion'] }) {
-  const playerCounts = [2, 4, 6]
+  const playerCounts = [2, 4, 6, 8]
   return (
     <section className="learning-card learning-champion" aria-labelledby="champion-title">
       <div className="learning-card-heading"><div><h2 id="champion-title">Current champion</h2><p>{champion?.name ?? 'Not selected yet'}</p></div></div>

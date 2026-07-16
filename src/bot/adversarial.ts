@@ -1,4 +1,4 @@
-import type { Bid, Die } from '../engine'
+import { MAX_PLAYERS, type Bid, type Die } from '../engine'
 import type { GameLog, LoggedRoundResolution } from '../analytics'
 import { createProbabilityPolicy } from './policies'
 import { runBotMatch, type BotSeat } from './simulator'
@@ -97,8 +97,8 @@ export function runAdversarialTournament(options: AdversarialTournamentOptions):
   if (!Number.isInteger(options.games) || options.games < 1) throw new RangeError('games must be positive')
   const seed = options.seed ?? 0xca71_2026
   const playerCounts = [...(options.playerCounts ?? [2, 4, 6])]
-  if (playerCounts.length === 0 || playerCounts.some((count) => !Number.isInteger(count) || count < 2 || count > 6)) {
-    throw new RangeError('playerCounts must contain values from 2 to 6')
+  if (playerCounts.length === 0 || playerCounts.some((count) => !Number.isInteger(count) || count < 2 || count > MAX_PLAYERS)) {
+    throw new RangeError(`playerCounts must contain values from 2 to ${MAX_PLAYERS}`)
   }
   const policies = [...(options.policies ?? createAdversarialPolicyLeague())]
   if (policies.length < Math.max(...playerCounts)) throw new RangeError('Not enough distinct policies for the largest table')
@@ -291,4 +291,3 @@ function finalizePolicy(value: PolicyAccumulator): PolicyTournamentStats {
     }])),
   }
 }
-
