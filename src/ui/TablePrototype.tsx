@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   applyAction,
   createGame,
@@ -123,7 +123,7 @@ function PlayerSeat({ player, position, revealDistribution, currentTurn, latestB
         <div><strong>{player.name}</strong><small>Bot</small></div>
         {revealDistribution && player.diceCount > 0 ? <span className="tp-seat-dice-squares" aria-label={`${player.diceCount} dice`} >{Array.from({ length: player.diceCount }, (_, index) => <i className={index < player.tableDice.length ? "tp-seat-die--public" : ""} key={index} />)}</span> : <span>{status}</span>}
       </div>
-      {latestBid && <div className="tp-seat-bid"><span>Latest bid</span><strong>{latestBid.quantity} × {dieGlyphs[latestBid.denomination]}</strong></div>}
+      {latestBid && <div className="tp-seat-bid"><span>Latest bid</span><strong><span>{latestBid.quantity} ×</span><b aria-label={denominationNames[latestBid.denomination]}>{dieGlyphs[latestBid.denomination]}</b></strong></div>}
       {!latestBid && player.tableDice.length > 0 && <small className="tp-seat-note">{player.tableDice.length} dice on the table</small>}
     </article>
   );
@@ -174,6 +174,7 @@ function RoundRollOverlay({ state, players, userName, onShake }: { state: RoundR
 function RoundResult({ state, onNext }: { state: RevealState; onNext: () => void }) {
   const resolution = state.resolution;
   const caller = state.players.find((player) => player.id === resolution.callerId)?.name ?? "Caller";
+  const bidder = state.players.find((player) => player.id === resolution.bidderId)?.name ?? "the bidder";
   const changed = state.players.find((player) => player.id === resolution.diceChanges[0]?.playerId)?.name ?? "Player";
   const change = resolution.diceChanges[0];
   const qualifying = (value: number) => value === resolution.bid.denomination || (!state.paloFijo && resolution.bid.denomination !== 1 && value === 1);
@@ -183,13 +184,22 @@ function RoundResult({ state, onNext }: { state: RevealState; onNext: () => void
     : `${changed} loses ${amount} ${amount === 1 ? "die" : "dice"}.`;
   return (
     <section className={`tp-round-result tp-round-result--${resolution.correct ? "correct" : "wrong"}`} role="dialog" aria-label="Round result">
-      <div className="tp-result-heading"><p>{resolution.kind === "dudo" ? "Dudo" : "Calzo"} · {caller}</p><h2>{resolution.bid.quantity} × {denominationNames[resolution.bid.denomination]} · {resolution.actualCount} there</h2><strong>{resolution.correct ? "Correct call." : "Wrong call."} {consequence}</strong><span>Highlighted dice counted toward the bid.</span></div>
+      <div className="tp-result-heading"><p>{caller} said {resolution.kind === "dudo" ? "Dudo" : "Calzo"} to {bidder}’s bid.</p><h2>{resolution.bid.quantity} × {denominationNames[resolution.bid.denomination]} · {resolution.actualCount} there</h2><div className="tp-result-verdict"><strong>{resolution.correct ? "Correct call." : "Wrong call."}</strong><span>{consequence}</span></div><small>Highlighted dice counted toward the bid.</small></div>
       <div className="tp-revealed-hands">
         {state.players.filter((player) => player.hand.length || player.tableDice.length).map((player) => <div key={player.id}><strong>{player.name}</strong><DiceRow dice={[...player.hand, ...player.tableDice]} small highlight={qualifying} /></div>)}
       </div>
       <button type="button" onClick={onNext}>Next round</button>
     </section>
   );
+}
+
+export function PrototypeGameOver({ winnerName, round, onRestart }: { winnerName: string; round: number; onRestart: () => void }) {
+  const confetti = Array.from({ length: 132 }, (_, index) => {
+    const angle = index * 137.508 * Math.PI / 180;
+    const distance = 18 + index % 11 * 7;
+    return <i key={index} style={{ "--burst-x": `${Math.cos(angle) * distance}vw`, "--burst-y": `${Math.sin(angle) * distance * .62}vh`, "--drift": `${index * 19 % 27 - 13}vw`, "--spin": `${540 + index % 8 * 135}deg`, "--delay": `${index % 24 * .028}s`, "--duration": `${2.9 + index % 6 * .17}s`, width: `${5 + index % 6}px`, height: `${7 + index % 8}px` } as CSSProperties} />;
+  });
+  return <><div className="tp-confetti" aria-hidden="true">{confetti}</div><section className="tp-game-over" role="dialog" aria-label="Game winner"><span className="tp-winner-crown" aria-hidden="true">♛</span><p>Game complete · {round} {round === 1 ? "round" : "rounds"}</p><h2>{winnerName} wins!</h2><strong>The table is theirs.</strong><button type="button" onClick={onRestart}>Play again</button></section></>;
 }
 
 export function TablePrototype({ onExit }: { onExit: () => void }) {
@@ -654,7 +664,7 @@ export function TablePrototype({ onExit }: { onExit: () => void }) {
             {tableSeats.map(({ player, position }) => <PlayerSeat key={player.id} player={player} position={position} revealDistribution={revealDistribution} currentTurn={rollComplete && game.phase === "playing" && game.currentPlayerId === player.id} latestBid={roundBids[player.id]} rolling={!rollComplete && game.phase === "playing"} rollReady={roundRoll.readyIds.includes(player.id)} />)}
             {previewAlert && <div className="tp-table-alert" role="status"><span>Dudo called</span><strong>The full call sequence pauses before the reveal</strong><button type="button" aria-label="Dismiss Dudo alert" onClick={() => setPreviewAlert(false)}>×</button></div>}
 
-            {game.phase === "reveal" ? callPresentation && !callPresentation.showHands ? <PrototypeCallout kind={callPresentation.kind} name={callPresentation.name} correct={callPresentation.correct} resolved={callPresentation.resolved} /> : <RoundResult state={game} onNext={nextRound} /> : game.phase === "gameOver" ? <section className="tp-game-over"><p>Game complete</p><h2>{game.players.find((player) => player.id === game.winnerId)?.name ?? "Player"} wins</h2><button type="button" onClick={() => restartGame()}>Play again</button></section> : <>
+            {game.phase === "reveal" ? callPresentation && !callPresentation.showHands ? <PrototypeCallout kind={callPresentation.kind} name={callPresentation.name} correct={callPresentation.correct} resolved={callPresentation.resolved} /> : <RoundResult state={game} onNext={nextRound} /> : game.phase === "gameOver" ? <PrototypeGameOver winnerName={game.players.find((player) => player.id === game.winnerId)?.name ?? "Player"} round={game.round} onRestart={() => restartGame()} /> : <>
               {!rollComplete && <RoundRollOverlay state={roundRoll} players={game.players} userName={user.name} onShake={shakeDice} />}
               <div className="tp-table-center">
                 <DiceInventory inPlay={totalDice} startingTotal={startingTotal} />

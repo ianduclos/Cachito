@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BOT_NAMES } from "../bot";
-import { PrototypeCallout, TablePrototype } from "./TablePrototype";
+import { PrototypeCallout, PrototypeGameOver, TablePrototype } from "./TablePrototype";
 
 beforeEach(() => localStorage.setItem("cachito-display-name", "Ian"));
 
@@ -28,6 +28,13 @@ describe("TablePrototype", () => {
     rerender(<PrototypeCallout kind="dudo" name="Ian" correct={false} resolved />);
     expect(screen.getByRole("status", { name: "DUDO call, wrong" })).toHaveClass("tp-callout--wrong");
     expect(container.querySelectorAll(".tp-callout strong i")).toHaveLength(4);
+  });
+
+  it("restores the final winner card and full confetti burst", () => {
+    const { container } = render(<PrototypeGameOver winnerName="Min-chi Park" round={9} onRestart={vi.fn()} />);
+    expect(screen.getByRole("dialog", { name: "Game winner" })).toHaveTextContent("Min-chi Park wins!");
+    expect(screen.getByText("Game complete · 9 rounds")).toBeInTheDocument();
+    expect(container.querySelectorAll(".tp-confetti i")).toHaveLength(132);
   });
 
   it("uses the saved username, established bot names, and full player-card information", () => {
@@ -171,7 +178,9 @@ describe("TablePrototype", () => {
     expect(screen.queryByRole("dialog", { name: "Round result" })).not.toBeInTheDocument();
     await act(async () => vi.advanceTimersByTime(1_200));
     expect(screen.getByRole("dialog", { name: "Round result" })).toBeInTheDocument();
-    expect(screen.getByText(/^(Correct|Wrong) call\. .+ (gains|loses) \d+ (die|dice)\.$/)).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`Ian said Dudo to ${botName}’s bid\\.`))).toBeInTheDocument();
+    expect(document.querySelector(".tp-result-verdict strong")).toHaveTextContent(/^(Correct|Wrong) call\.$/);
+    expect(document.querySelector(".tp-result-verdict span")).toHaveTextContent(/(gains|loses) \d+ (die|dice)\.$/);
     expect(screen.queryByText(/qualifying dice/i)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Next round" }));

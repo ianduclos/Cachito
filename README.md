@@ -2,7 +2,7 @@
 
 Cachito is a browser implementation of the hidden-dice game also known as Dudo, Liar's Dice, or Perudo. It supports 2–8 player local games and live, server-authoritative private online rooms.
 
-See [RULES.md](./RULES.md) for the game rules, denomination names, bid examples, Palo Fijo behavior, and privacy rules. See [MACHINE_PLAYER.md](./MACHINE_PLAYER.md) for the staged bot plan.
+See [RULES.md](./RULES.md) for the game rules, denomination names, bid examples, Palo Fijo behavior, and privacy rules. See [MACHINE_PLAYER.md](./MACHINE_PLAYER.md) for the staged bot plan. Agents and maintainers changing the separate table experience must also read [docs/TABLE_PROTOTYPE.md](./docs/TABLE_PROTOTYPE.md).
 
 ## Current scope
 
