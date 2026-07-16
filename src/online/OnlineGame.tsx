@@ -1,4 +1,4 @@
-import { Component, type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, type CSSProperties, type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Die, GameAction, GameRules, LegalActions, PublicGameView } from "../engine";
 import { DiceRow } from "../ui/Dice";
 import { GameSettings } from "../ui/GameSettings";
@@ -40,6 +40,41 @@ function send(socket: WebSocket | null, message: OnlineClientMessage) {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
 }
 
+function ConnectionNotice({ connected, context }: { connected: boolean; context: "lobby" | "game" }) {
+  if (connected) return null;
+  return <div className="online-connection-notice" role="status" aria-live="polite"><strong>Reconnecting…</strong><span>{context === "game" ? "The table is read-only until your connection returns." : "Room controls will return when you’re connected."}</span></div>;
+}
+
+function useModalFocus(container: RefObject<HTMLElement | null>, active = true) {
+  useEffect(() => {
+    if (!active) return;
+    const dialog = container.current;
+    if (!dialog) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const selector = 'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])';
+    const backgroundControls = Array.from(dialog.closest(".game-shell")?.querySelectorAll<HTMLElement>(selector) ?? []).filter((element) => !dialog.contains(element));
+    const previouslyInert = backgroundControls.filter((element) => element.inert);
+    backgroundControls.forEach((element) => { element.inert = true; });
+    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(selector));
+    (focusable[0] ?? dialog).focus();
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      const available = Array.from(dialog.querySelectorAll<HTMLElement>(selector));
+      if (!available.length) { event.preventDefault(); dialog.focus(); return; }
+      const first = available[0];
+      const last = available[available.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    dialog.addEventListener("keydown", trapFocus);
+    return () => {
+      dialog.removeEventListener("keydown", trapFocus);
+      backgroundControls.forEach((element) => { element.inert = previouslyInert.includes(element); });
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, [active, container]);
+}
+
 function onlineSocketUrl() {
   const configured = import.meta.env.VITE_ONLINE_ENDPOINT?.replace(/\/$/, "");
   if (configured) return `${configured.replace(/^http:/, "ws:").replace(/^https:/, "wss:")}/online`;
@@ -63,6 +98,8 @@ export function OnlineGame({ onExit }: { onExit: () => void }) {
 
 function OnlineGameContent({ onExit, onReconnect, restoreSavedSession = false }: { onExit: () => void; onReconnect: () => void; restoreSavedSession?: boolean }) {
   const socket = useRef<WebSocket | null>(null);
+  const activeRoomCode = useRef("");
+  const spectating = useRef(false);
   const [connected, setConnected] = useState(false);
   const [name, setName] = useState(() => localStorage.getItem("cachito-display-name") ?? "");
   const [roomCode, setRoomCode] = useState(inviteRoomFromPath);
@@ -91,10 +128,12 @@ function OnlineGameContent({ onExit, onReconnect, restoreSavedSession = false }:
       socket.current = connection;
       connection.onopen = () => {
         if (socket.current !== connection) return;
-        setConnected(true);
+        const saved = shouldRestore ? savedSession() : undefined;
+        const restoring = shouldRestore && Boolean(saved || activeRoomCode.current && spectating.current);
+        setConnected(!restoring);
         if (shouldRestore) {
-          const saved = savedSession();
           if (saved) send(connection, { type: "join-room", roomCode: saved.roomCode, name: localStorage.getItem("cachito-display-name") ?? "", reconnectToken: saved.reconnectToken });
+          else if (activeRoomCode.current && spectating.current) send(connection, { type: "join-room", roomCode: activeRoomCode.current, spectator: true });
         }
       };
       connection.onerror = () => { if (socket.current === connection) connection.close(); };
@@ -110,14 +149,15 @@ function OnlineGameContent({ onExit, onReconnect, restoreSavedSession = false }:
         const message = JSON.parse(event.data) as OnlineServerMessage;
         if (message.type === "error") {
           setError(message.message);
-          if (/room does not exist|idle room expired/i.test(message.message)) { localStorage.removeItem(storageKey); setView(null); setLobby(null); setLegal(undefined); setShuffle(undefined); setNextRound(undefined); setPaused(undefined); }
+          if (/room does not exist|idle room expired/i.test(message.message)) { activeRoomCode.current = ""; spectating.current = false; localStorage.removeItem(storageKey); setConnected(connection.readyState === WebSocket.OPEN); setView(null); setLobby(null); setLegal(undefined); setShuffle(undefined); setNextRound(undefined); setPaused(undefined); }
         }
         if (message.type === "joined") {
-          setRoomCode(message.roomCode); setPlayerId(message.playerId); setHostPlayerId(message.hostPlayerId); setError(null);
+          activeRoomCode.current = message.roomCode; spectating.current = !message.playerId;
+          setConnected(true); setRoomCode(message.roomCode); setPlayerId(message.playerId); setHostPlayerId(message.hostPlayerId); setError(null);
           if (message.playerId && message.reconnectToken) localStorage.setItem(storageKey, JSON.stringify({ roomCode: message.roomCode, reconnectToken: message.reconnectToken }));
         }
         if (message.type === "lobby") { setLobby(message); setHostPlayerId(message.hostPlayerId); setView(null); setLegal(undefined); setAnnouncement(undefined); setShuffle(undefined); setNextRound(undefined); setPaused(undefined); setPlayerStatuses([]); setTurnDeadlineAt(undefined); }
-        if (message.type === "state") { setView(message.view); setLobby(null); setLegal(message.legalActions); setHistory(message.history); setAnnouncement(message.announcement); setShuffle(message.shuffle); setNextRound(message.nextRound); setPaused(message.paused); setPlayerStatuses(message.playerStatuses); setTurnDeadlineAt(message.turnDeadlineAt); }
+        if (message.type === "state") { setHostPlayerId(message.hostPlayerId); setView(message.view); setLobby(null); setLegal(message.legalActions); setHistory(message.history); setAnnouncement(message.announcement); setShuffle(message.shuffle); setNextRound(message.nextRound); setPaused(message.paused); setPlayerStatuses(message.playerStatuses); setTurnDeadlineAt(message.turnDeadlineAt); }
       };
     };
     connect();
@@ -136,13 +176,22 @@ function OnlineGameContent({ onExit, onReconnect, restoreSavedSession = false }:
   };
   const join = (spectator = false) => {
     const saved = !spectator ? savedSession() : undefined;
+    activeRoomCode.current = roomCode.toUpperCase();
+    spectating.current = spectator;
     if (!spectator) localStorage.setItem("cachito-display-name", name.trim());
     send(socket.current, { type: "join-room", roomCode, name, spectator, ...(saved?.roomCode === roomCode.toUpperCase() ? { reconnectToken: saved.reconnectToken } : {}) });
   };
+  const leaveRoom = () => {
+    if (!connected) return;
+    send(socket.current, { type: "leave-room" });
+    activeRoomCode.current = "";
+    localStorage.removeItem(storageKey);
+    onExit();
+  };
 
   if (!lobby && !view) return <><OnlineEntry mode={entryMode} name={name} roomCode={roomCode} connected={connected} error={error} onExit={onExit} onReconnect={onReconnect} onChoose={setEntryMode} onName={setName} onRoomCode={setRoomCode} onCreate={create} onJoin={() => join(false)} onWatch={() => join(true)} /><div className="menu-settings"><GameSettings /></div></>;
-  if (lobby) return <><LobbyScreen lobby={lobby} playerId={playerId} error={error} onStart={() => send(socket.current, { type: "start-game" })} onAddBot={() => send(socket.current, { type: "add-bot" })} onRemoveBot={(botId) => send(socket.current, { type: "remove-bot", playerId: botId })} onKickPlayer={(targetId) => send(socket.current, { type: "kick-player", playerId: targetId })} onRename={(nextName) => { localStorage.setItem("cachito-display-name", nextName); send(socket.current, { type: "rename-player", name: nextName }); }} onProposeRules={(rules) => send(socket.current, { type: "propose-rules", rules })} onApproveRules={() => send(socket.current, { type: "approve-rules" })} onExit={onExit} /><div className="menu-settings"><GameSettings /></div></>;
-  return <OnlineTable view={view!} roomCode={roomCode} history={history} legal={legal} playerId={playerId} playerStatuses={playerStatuses} turnDeadlineAt={turnDeadlineAt} error={error} isHost={playerId === hostPlayerId} announcement={announcement} shuffle={shuffle} nextRound={nextRound} paused={paused} onExit={onExit} onPause={() => send(socket.current, { type: "toggle-pause" })} onShuffle={() => send(socket.current, { type: "shuffle-dice" })} onReadyNextRound={() => send(socket.current, { type: "ready-next-round" })} onAction={(action) => send(socket.current, { type: "action", action })} onReturnToLobby={() => send(socket.current, { type: "return-to-lobby" })} />;
+  if (lobby) return <><LobbyScreen lobby={lobby} playerId={playerId} connected={connected} error={error} onStart={() => send(socket.current, { type: "start-game" })} onAddBot={() => send(socket.current, { type: "add-bot" })} onRemoveBot={(botId) => send(socket.current, { type: "remove-bot", playerId: botId })} onKickPlayer={(targetId) => send(socket.current, { type: "kick-player", playerId: targetId })} onRename={(nextName) => { localStorage.setItem("cachito-display-name", nextName); send(socket.current, { type: "rename-player", name: nextName }); }} onProposeRules={(rules) => send(socket.current, { type: "propose-rules", rules })} onApproveRules={() => send(socket.current, { type: "approve-rules" })} onExit={leaveRoom} /><div className="menu-settings"><GameSettings /></div></>;
+  return <OnlineTable view={view!} roomCode={roomCode} history={history} legal={legal} playerId={playerId} playerStatuses={playerStatuses} turnDeadlineAt={turnDeadlineAt} connected={connected} error={error} isHost={playerId === hostPlayerId} announcement={announcement} shuffle={shuffle} nextRound={nextRound} paused={paused} onExit={leaveRoom} onPause={() => send(socket.current, { type: "toggle-pause" })} onShuffle={() => send(socket.current, { type: "shuffle-dice" })} onReadyNextRound={() => send(socket.current, { type: "ready-next-round" })} onAction={(action) => send(socket.current, { type: "action", action })} onReturnToLobby={() => send(socket.current, { type: "return-to-lobby" })} />;
 }
 
 function OnlineEntry({ mode, name, roomCode, connected, error, onExit, onReconnect, onChoose, onName, onRoomCode, onCreate, onJoin, onWatch }: { mode: EntryMode; name: string; roomCode: string; connected: boolean; error: string | null; onExit: () => void; onReconnect: () => void; onChoose: (mode: EntryMode) => void; onName: (name: string) => void; onRoomCode: (code: string) => void; onCreate: () => void; onJoin: () => void; onWatch: () => void }) {
@@ -151,7 +200,7 @@ function OnlineEntry({ mode, name, roomCode, connected, error, onExit, onReconne
   return <main className="setup-shell"><section className="setup-card online-entry-card"><button className="button button--ghost back-button" onClick={() => onChoose("choose")}>← Back</button><h1>{mode === "create" ? "Create a room" : spectator ? "Watch a game" : "Join a room"}</h1><p className="intro">{mode === "create" ? "Your name will appear as the host in the lobby." : spectator ? "Room codes let you follow the public table without joining it." : "Enter your name and the room code shared by the host."}</p>{!spectator && <><label className="field-label" htmlFor="online-name">Your name</label><input id="online-name" value={name} maxLength={24} onChange={(event) => onName(event.target.value)} placeholder="Your name" /></>}{mode !== "create" && <><label className="field-label" htmlFor="room-code">Room code</label><input id="room-code" value={roomCode} maxLength={5} onChange={(event) => onRoomCode(event.target.value.toUpperCase())} placeholder="ABCDE" /></>}<button className="button button--primary online-entry-action" disabled={!connected || (spectator ? !roomCode.trim() : !name.trim() || (mode !== "create" && !roomCode.trim()))} onClick={mode === "create" ? onCreate : spectator ? onWatch : onJoin}>{mode === "create" ? "Create room" : spectator ? "Watch game" : "Join room"}</button>{error && <p className="form-error" role="alert">{error}</p>}</section></main>;
 }
 
-function LobbyScreen({ lobby, playerId, error, onStart, onAddBot, onRemoveBot, onKickPlayer, onRename, onProposeRules, onApproveRules, onExit }: { lobby: Lobby; playerId?: string; error: string | null; onStart: () => void; onAddBot: () => void; onRemoveBot: (botId: string) => void; onKickPlayer: (playerId: string) => void; onRename: (name: string) => void; onProposeRules: (rules: GameRules) => void; onApproveRules: () => void; onExit: () => void }) {
+function LobbyScreen({ lobby, playerId, connected, error, onStart, onAddBot, onRemoveBot, onKickPlayer, onRename, onProposeRules, onApproveRules, onExit }: { lobby: Lobby; playerId?: string; connected: boolean; error: string | null; onStart: () => void; onAddBot: () => void; onRemoveBot: (botId: string) => void; onKickPlayer: (playerId: string) => void; onRename: (name: string) => void; onProposeRules: (rules: GameRules) => void; onApproveRules: () => void; onExit: () => void }) {
   const [copied, setCopied] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const ownPlayer = lobby.players.find((player) => player.id === playerId);
@@ -160,8 +209,8 @@ function LobbyScreen({ lobby, playerId, error, onStart, onAddBot, onRemoveBot, o
     try { await navigator.clipboard?.writeText(new URL(`/join/${lobby.roomCode}`, location.origin).toString()); setCopied(true); } catch { setCopied(false); }
   };
   const host = playerId === lobby.hostPlayerId;
-  if (rulesOpen) return <LobbyRulesScreen key={JSON.stringify(lobby.pendingRules?.rules ?? lobby.rules)} lobby={lobby} playerId={playerId} onBack={() => setRulesOpen(false)} onPropose={onProposeRules} onApprove={onApproveRules} />;
-  return <main className="setup-shell"><section className="setup-card lobby-card"><button className="button button--ghost back-button" onClick={onExit}>← Leave room</button><p className="eyebrow">Private room</p><h1>{lobby.roomCode}</h1><p className="intro">Send one link and friends land straight at this room. {lobby.spectatorCount} watching.</p><button className="button button--ghost copy-code" onClick={() => void copyInvite()}>{copied ? "Invite copied" : "Copy invite link"}</button>{ownPlayer && <form className="lobby-rename" onSubmit={(event) => { event.preventDefault(); const nextName = rename.trim(); if (nextName && nextName !== ownPlayer.name) onRename(nextName); setRename(""); }}><label htmlFor="rename-player">Your name</label><input id="rename-player" value={rename || ownPlayer.name} maxLength={24} onChange={(event) => setRename(event.target.value)} /><button className="button button--ghost" type="submit">Rename</button></form>}<div className="lobby-rules-strip"><div><strong>Game rules</strong><span>{lobby.pendingRules ? "Approval needed" : "All set"}</span></div><button className="button button--ghost" onClick={() => setRulesOpen(true)}>{host ? "Edit rules" : "View rules"}</button></div><div className="setup-heading"><div><h2>Players</h2><p>{lobby.players.length}/6 seated</p></div>{host && <button className="button button--ghost lobby-add-bot" disabled={lobby.players.length >= 6} onClick={onAddBot}>+ Add bot</button>}</div><div className="name-list lobby-players">{lobby.players.map((player) => <div className="lobby-player" key={player.id}><span className="seat-number">{player.isBot ? "◆" : player.connected ? "●" : "○"}</span><span><strong>{player.name}</strong>{player.id === lobby.hostPlayerId && <small>Host</small>}{player.isBot && <small>Bot</small>}</span>{host && player.isBot ? <button className="lobby-remove-bot" onClick={() => onRemoveBot(player.id)} aria-label={`Remove ${player.name}`}>Remove</button> : host && player.id !== playerId ? <button className="lobby-remove-bot" onClick={() => onKickPlayer(player.id)} aria-label={`Kick ${player.name}`}>Kick</button> : <em>{player.connected ? "Ready" : "Offline"}</em>}</div>)}</div>{host && <button className="button button--primary online-entry-action" disabled={lobby.players.length < 2 || Boolean(lobby.pendingRules)} onClick={onStart}>{lobby.pendingRules ? "Waiting for rule approval" : "Start game"}</button>}{!host && <p className="rules-note">{lobby.pendingRules ? "Open Game rules to approve the host's proposal." : "Waiting for the host to start the game."}</p>}{error && <p className="form-error">{error}</p>}</section></main>;
+  if (rulesOpen) return <LobbyRulesScreen key={JSON.stringify(lobby.pendingRules?.rules ?? lobby.rules)} lobby={lobby} playerId={playerId} connected={connected} onBack={() => setRulesOpen(false)} onPropose={onProposeRules} onApprove={onApproveRules} />;
+  return <main className="setup-shell"><section className="setup-card lobby-card"><button className="button button--ghost back-button" disabled={!connected} onClick={onExit}>← Leave room</button><ConnectionNotice connected={connected} context="lobby" /><p className="eyebrow">Private room</p><h1>{lobby.roomCode}</h1><p className="intro">Send one link and friends land straight at this room. {lobby.spectatorCount} watching.</p><button className="button button--ghost copy-code" onClick={() => void copyInvite()}>{copied ? "Invite copied" : "Copy invite link"}</button>{ownPlayer && <form className="lobby-rename" onSubmit={(event) => { event.preventDefault(); if (!connected) return; const nextName = rename.trim(); if (nextName && nextName !== ownPlayer.name) onRename(nextName); setRename(""); }}><label htmlFor="rename-player">Your name</label><input id="rename-player" value={rename || ownPlayer.name} maxLength={24} onChange={(event) => setRename(event.target.value)} /><button className="button button--ghost" type="submit" disabled={!connected}>Rename</button></form>}<div className="lobby-rules-strip"><div><strong>Game rules</strong><span>{lobby.pendingRules ? "Approval needed" : "All set"}</span></div><button className="button button--ghost" onClick={() => setRulesOpen(true)}>{host ? "Edit rules" : "View rules"}</button></div><div className="setup-heading"><div><h2>Players</h2><p>{lobby.players.length}/6 seated</p></div>{host && <button className="button button--ghost lobby-add-bot" disabled={!connected || lobby.players.length >= 6} onClick={onAddBot}>+ Add bot</button>}</div><div className="name-list lobby-players">{lobby.players.map((player) => <div className="lobby-player" key={player.id}><span className="seat-number">{player.isBot ? "◆" : player.connected ? "●" : "○"}</span><span><strong>{player.name}</strong>{player.id === lobby.hostPlayerId && <small>Host</small>}{player.isBot && <small>Bot</small>}</span>{host && player.isBot ? <button className="lobby-remove-bot" disabled={!connected} onClick={() => onRemoveBot(player.id)} aria-label={`Remove ${player.name}`}>Remove</button> : host && player.id !== playerId ? <button className="lobby-remove-bot" disabled={!connected} onClick={() => onKickPlayer(player.id)} aria-label={`Kick ${player.name}`}>Kick</button> : <em>{player.connected ? "Ready" : "Offline"}</em>}</div>)}</div>{host && <button className="button button--primary online-entry-action" disabled={!connected || lobby.players.length < 2 || Boolean(lobby.pendingRules)} onClick={onStart}>{lobby.pendingRules ? "Waiting for rule approval" : "Start game"}</button>}{!host && <p className="rules-note">{lobby.pendingRules ? "Open Game rules to approve the host's proposal." : "Waiting for the host to start the game."}</p>}{error && <p className="form-error" role="alert">{error}</p>}</section></main>;
 }
 
 function ruleSummary(rules: GameRules) {
@@ -175,14 +224,14 @@ function ruleSummary(rules: GameRules) {
   ];
 }
 
-function LobbyRulesScreen({ lobby, playerId, onBack, onPropose, onApprove }: { lobby: Lobby; playerId?: string; onBack: () => void; onPropose: (rules: GameRules) => void; onApprove: () => void }) {
+function LobbyRulesScreen({ lobby, playerId, connected, onBack, onPropose, onApprove }: { lobby: Lobby; playerId?: string; connected: boolean; onBack: () => void; onPropose: (rules: GameRules) => void; onApprove: () => void }) {
   const host = playerId === lobby.hostPlayerId;
   const proposal = lobby.pendingRules;
   const [draft, setDraft] = useState<GameRules>(proposal?.rules ?? lobby.rules);
   const approved = Boolean(playerId && proposal?.approvalPlayerIds.includes(playerId));
   const proposer = lobby.players.find((player) => player.id === proposal?.proposedById)?.name ?? "The host";
   const selected = <div className="lobby-rule-summary">{ruleSummary(lobby.rules).map((rule) => <span key={rule}>{rule}</span>)}</div>;
-  return <main className="setup-shell"><section className="setup-card lobby-card rules-page"><button className="button button--ghost back-button" onClick={onBack}>← Back to room</button><p className="eyebrow">Room rules</p><h1>Game Rules</h1><p className="intro">The host can propose changes; every seated player must approve before they apply. Bots approve automatically.</p><section className="rules-section"><div className="rules-section-heading"><p className="turn-kicker">In play</p><h2>Current Rules</h2></div>{selected}</section>{host && <section className="rules-section rule-editor"><div className="rules-section-heading"><p className="turn-kicker">Host controls</p><h2>Propose Changes</h2></div><div className="rule-fields"><label><span>Time Per Play</span><select value={draft.turnTimeSeconds} onChange={(event) => setDraft({ ...draft, turnTimeSeconds: Number(event.target.value) as GameRules["turnTimeSeconds"] })}><option value={15}>15 seconds</option><option value={30}>30 seconds</option><option value={60}>1 minute</option><option value={90}>1 minute 30 seconds</option></select></label><label><span>Aces Conversion</span><select value={draft.acesConversion} onChange={(event) => setDraft({ ...draft, acesConversion: event.target.value as GameRules["acesConversion"] })}><option value="half">Half</option><option value="halfPlusOne">Half + 1</option></select></label><label><span>Palo Fijo Starts At</span><select value={draft.paloFijoTrigger} onChange={(event) => setDraft({ ...draft, paloFijoTrigger: event.target.value as GameRules["paloFijoTrigger"] })}><option value="oneDie">1 die</option><option value="twoDice">2 dice</option></select></label><label><span>Blind Dice in Palo Fijo</span><select value={String(draft.paloFijoBlindDice)} onChange={(event) => setDraft({ ...draft, paloFijoBlindDice: event.target.value === "true" })}><option value="true">Yes</option><option value="false">No</option></select></label><label><span>Show Dice Amounts</span><select value={String(draft.diceAmountsVisible)} onChange={(event) => setDraft({ ...draft, diceAmountsVisible: event.target.value === "true" })}><option value="true">Yes</option><option value="false">No</option></select></label><label><span>Allow Table Dice</span><select value={String(draft.tableDiceEnabled)} onChange={(event) => setDraft({ ...draft, tableDiceEnabled: event.target.value === "true" })}><option value="true">Yes</option><option value="false">No</option></select></label></div><button className="button button--primary rule-propose-button" onClick={() => onPropose(draft)}>{proposal ? "Replace Proposal" : "Propose Rule Changes"}</button></section>}{proposal && <section className="rule-proposal"><p className="turn-kicker">Awaiting unanimous approval</p><h2>{proposer}'s Proposal</h2><div className="lobby-rule-summary">{ruleSummary(proposal.rules).map((rule) => <span key={rule}>{rule}</span>)}</div><p>{proposal.approvalPlayerIds.length}/{lobby.players.length} players approved</p><div className="rule-approvals">{lobby.players.map((player) => <span className={proposal.approvalPlayerIds.includes(player.id) ? "approved" : "pending"} key={player.id}>{proposal.approvalPlayerIds.includes(player.id) ? "✓" : "○"} {player.name}</span>)}</div>{playerId && !approved && <button className="button button--primary" onClick={onApprove}>Approve These Rules</button>}{approved && <p className="rules-note">You approved this proposal.</p>}</section>}</section></main>;
+  return <main className="setup-shell"><section className="setup-card lobby-card rules-page"><button className="button button--ghost back-button" onClick={onBack}>← Back to room</button><ConnectionNotice connected={connected} context="lobby" /><p className="eyebrow">Room rules</p><h1>Game Rules</h1><p className="intro">The host can propose changes; every seated player must approve before they apply. Bots approve automatically.</p><section className="rules-section"><div className="rules-section-heading"><p className="turn-kicker">In play</p><h2>Current Rules</h2></div>{selected}</section>{host && <section className="rules-section rule-editor"><div className="rules-section-heading"><p className="turn-kicker">Host controls</p><h2>Propose Changes</h2></div><div className="rule-fields"><label><span>Time Per Play</span><select value={draft.turnTimeSeconds} onChange={(event) => setDraft({ ...draft, turnTimeSeconds: Number(event.target.value) as GameRules["turnTimeSeconds"] })}><option value={15}>15 seconds</option><option value={30}>30 seconds</option><option value={60}>1 minute</option><option value={90}>1 minute 30 seconds</option></select></label><label><span>Aces Conversion</span><select value={draft.acesConversion} onChange={(event) => setDraft({ ...draft, acesConversion: event.target.value as GameRules["acesConversion"] })}><option value="half">Half</option><option value="halfPlusOne">Half + 1</option></select></label><label><span>Palo Fijo Starts At</span><select value={draft.paloFijoTrigger} onChange={(event) => setDraft({ ...draft, paloFijoTrigger: event.target.value as GameRules["paloFijoTrigger"] })}><option value="oneDie">1 die</option><option value="twoDice">2 dice</option></select></label><label><span>Blind Dice in Palo Fijo</span><select value={String(draft.paloFijoBlindDice)} onChange={(event) => setDraft({ ...draft, paloFijoBlindDice: event.target.value === "true" })}><option value="true">Yes</option><option value="false">No</option></select></label><label><span>Show Dice Amounts</span><select value={String(draft.diceAmountsVisible)} onChange={(event) => setDraft({ ...draft, diceAmountsVisible: event.target.value === "true" })}><option value="true">Yes</option><option value="false">No</option></select></label><label><span>Allow Table Dice</span><select value={String(draft.tableDiceEnabled)} onChange={(event) => setDraft({ ...draft, tableDiceEnabled: event.target.value === "true" })}><option value="true">Yes</option><option value="false">No</option></select></label></div><button className="button button--primary rule-propose-button" disabled={!connected} onClick={() => onPropose(draft)}>{proposal ? "Replace Proposal" : "Propose Rule Changes"}</button></section>}{proposal && <section className="rule-proposal"><p className="turn-kicker">Awaiting unanimous approval</p><h2>{proposer}'s Proposal</h2><div className="lobby-rule-summary">{ruleSummary(proposal.rules).map((rule) => <span key={rule}>{rule}</span>)}</div><p>{proposal.approvalPlayerIds.length}/{lobby.players.length} players approved</p><div className="rule-approvals">{lobby.players.map((player) => <span className={proposal.approvalPlayerIds.includes(player.id) ? "approved" : "pending"} key={player.id}>{proposal.approvalPlayerIds.includes(player.id) ? "✓" : "○"} {player.name}</span>)}</div>{playerId && !approved && <button className="button button--primary" disabled={!connected} onClick={onApprove}>Approve These Rules</button>}{approved && <p className="rules-note">You approved this proposal.</p>}</section>}</section></main>;
 }
 
 function FaceMark({ value, label = false }: { value: Die; label?: boolean }) {
@@ -197,11 +246,13 @@ function OnlineHistory({ history }: { history: string[] }) {
   return <aside className="sidebar online-sidebar"><section className="side-card online-history"><div className="online-history-heading"><div><p className="turn-kicker">Live table</p><h2>Game feed</h2></div><span>{history.length}</span></div><ol className="log-list" ref={feed} aria-label="Game feed">{chronologicalHistory.length ? chronologicalHistory.map((entry, index) => <li className="log-item" key={`${entry}-${index}`}>{entry}</li>) : <li className="log-item">The room is ready.</li>}</ol></section><section className="side-card rules-note"><h2>At the table</h2><p>Every bid and challenge appears here for everyone to follow.</p></section></aside>;
 }
 
-function RoundReveal({ view, playerId, nextRound, onNext }: { view: PublicGameView; playerId?: string; nextRound?: NextRound; onNext: () => void }) {
+function RoundReveal({ view, playerId, connected, nextRound, onNext }: { view: PublicGameView; playerId?: string; connected: boolean; nextRound?: NextRound; onNext: () => void }) {
   const [showHands, setShowHands] = useState(false);
   const [resultResolved, setResultResolved] = useState(false);
   const [clock, setClock] = useState(() => Date.now());
   const resolvedRoundRef = useRef<string | undefined>(undefined);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalFocus(dialogRef, showHands);
   useEffect(() => {
     const timer = window.setTimeout(() => setShowHands(true), 3_300);
     return () => window.clearTimeout(timer);
@@ -238,21 +289,23 @@ function RoundReveal({ view, playerId, nextRound, onNext }: { view: PublicGameVi
   const nextReady = Boolean(playerId && nextRound?.readyPlayerIds.includes(playerId));
   const remaining = nextRound ? Math.max(0, Math.ceil((nextRound.deadlineAt - clock) / 1_000)) : 0;
   const missingPlayers = view.players.filter((player) => !player.eliminated && !nextRound?.readyPlayerIds.includes(player.id)).map((player) => player.name);
-  return <div className="round-result-overlay" role="dialog" aria-modal="true" aria-label="Round result"><section className="reveal-panel round-result"><div className="result-banner"><p className="turn-kicker">{callName} · {caller} → {bidder}</p><h3>{resolution.bid.quantity} × {denominationNames[resolution.bid.denomination]} · {resolution.actualCount} there</h3><p>{resolution.correct ? "Correct call." : "Wrong call."} {consequence}</p></div><div className="revealed-hands">{view.players.filter((player) => player.hand?.length).map((player) => <div className="revealed-hand" key={player.id}><strong>{player.name}</strong><DiceRow dice={player.hand!} small highlight={highlight} /></div>)}</div>{playerId && <div className="next-round-ready"><button className="button button--primary" disabled={nextReady} onClick={onNext}>{nextReady ? "Ready for next round" : "Next round"}</button><small>{nextRound ? missingPlayers.length ? `Waiting for ${missingPlayers.join(", ")} · auto-starts in ${remaining}s` : `Everyone is ready · auto-starts in ${remaining}s` : "Preparing the next round…"}</small></div>}</section></div>;
+  return <div className="round-result-overlay" role="dialog" aria-modal="true" aria-label="Round result" tabIndex={-1} ref={dialogRef}><section className="reveal-panel round-result"><div className="result-banner"><p className="turn-kicker">{callName} · {caller} → {bidder}</p><h3>{resolution.bid.quantity} × {denominationNames[resolution.bid.denomination]} · {resolution.actualCount} there</h3><p>{resolution.correct ? "Correct call." : "Wrong call."} {consequence}</p></div><div className="revealed-hands">{view.players.filter((player) => player.hand?.length).map((player) => <div className="revealed-hand" key={player.id}><strong>{player.name}</strong><DiceRow dice={player.hand!} small highlight={highlight} /></div>)}</div>{playerId && <div className="next-round-ready"><button className="button button--primary" disabled={!connected || nextReady} onClick={onNext}>{nextReady ? "Ready for next round" : "Next round"}</button><small>{nextRound ? missingPlayers.length ? `Waiting for ${missingPlayers.join(", ")} · auto-starts in ${remaining}s` : `Everyone is ready · auto-starts in ${remaining}s` : "Preparing the next round…"}</small></div>}</section></div>;
 }
 
-function RoundShuffle({ view, playerId, shuffle, shaking, clock, onShuffle }: { view: PublicGameView; playerId?: string; shuffle: NonNullable<Shuffle>; shaking: boolean; clock: number; onShuffle: () => void }) {
+function RoundShuffle({ view, playerId, connected, shuffle, shaking, clock, onShuffle }: { view: PublicGameView; playerId?: string; connected: boolean; shuffle: NonNullable<Shuffle>; shaking: boolean; clock: number; onShuffle: () => void }) {
   const activePlayers = view.players.filter((player) => !player.eliminated);
   const ready = new Set(shuffle.readyPlayerIds);
   const myReady = Boolean(playerId && ready.has(playerId));
   const remaining = Math.max(0, Math.ceil((shuffle.deadlineAt - clock) / 1_000));
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalFocus(dialogRef);
   useEffect(() => {
     if (view.round > 1) playSound("nextRound");
   }, [shuffle.round, view.round]);
-  return <div className="round-shuffle-overlay" role="dialog" aria-modal="true" aria-label="Shuffle dice"><section className="round-shuffle-card"><p className="turn-kicker">Round {view.round} · First bid waits for everyone</p><h2>Shake your cup</h2><p className="round-shuffle-copy">Your dice below will tumble, then settle into this round’s hand.</p><strong className="shuffle-countdown">{remaining}s</strong><div className="round-shuffle-players">{activePlayers.map((player) => <div className={`round-shuffle-player${ready.has(player.id) ? " round-shuffle-player--ready" : ""}`} key={player.id}><strong>{player.name}</strong><small>{ready.has(player.id) ? "Dice shuffled" : "Waiting"}</small></div>)}</div>{playerId ? <button className="button button--primary round-shuffle-button" data-sound="shake" disabled={shaking || myReady} onClick={onShuffle}>{myReady ? "Dice shuffled" : shaking ? "Shuffling…" : "Shake my dice"}</button> : <p className="rules-note">Waiting for the players to shake their dice.</p>}</section></div>;
+  return <div className="round-shuffle-overlay" role="dialog" aria-modal="true" aria-label="Shuffle dice" tabIndex={-1} ref={dialogRef}><section className="round-shuffle-card"><p className="turn-kicker">Round {view.round} · First bid waits for everyone</p><h2>Shake your cup</h2><p className="round-shuffle-copy">Your dice below will tumble, then settle into this round’s hand.</p><strong className="shuffle-countdown">{remaining}s</strong><div className="round-shuffle-players">{activePlayers.map((player) => <div className={`round-shuffle-player${ready.has(player.id) ? " round-shuffle-player--ready" : ""}`} key={player.id}><strong>{player.name}</strong><small>{ready.has(player.id) ? "Dice shuffled" : "Waiting"}</small></div>)}</div>{playerId ? <button className="button button--primary round-shuffle-button" data-sound="shake" disabled={!connected || shaking || myReady} onClick={onShuffle}>{myReady ? "Dice shuffled" : shaking ? "Shuffling…" : "Shake my dice"}</button> : <p className="rules-note">Waiting for the players to shake their dice.</p>}</section></div>;
 }
 
-function GameSummary({ view, history, isHost, onReturnToLobby, onExit }: { view: PublicGameView; history: string[]; isHost: boolean; onReturnToLobby: () => void; onExit: () => void }) {
+function GameSummary({ view, history, connected, isHost, onReturnToLobby, onExit }: { view: PublicGameView; history: string[]; connected: boolean; isHost: boolean; onReturnToLobby: () => void; onExit: () => void }) {
   const winner = view.players.find((player) => player.id === view.winnerId);
   const standings = [...view.players].sort((left, right) => Number(right.id === view.winnerId) - Number(left.id === view.winnerId) || right.diceCount - left.diceCount || left.name.localeCompare(right.name));
   const lastCall = history.find((entry) => !entry.endsWith("wins the match.")) ?? history[0];
@@ -261,18 +314,20 @@ function GameSummary({ view, history, isHost, onReturnToLobby, onExit }: { view:
     const distance = 18 + (index % 11) * 7;
     return <i key={index} style={{ "--burst-x": `${Math.cos(angle) * distance}vw`, "--burst-y": `${Math.sin(angle) * distance * .62}vh`, "--drift": `${((index * 19) % 27) - 13}vw`, "--spin": `${540 + (index % 8) * 135}deg`, "--delay": `${(index % 24) * .028}s`, "--duration": `${2.9 + (index % 6) * .17}s`, width: `${5 + (index % 6)}px`, height: `${7 + (index % 8)}px` } as CSSProperties} />;
   });
-  return <main className="game-over"><div className="confetti" aria-hidden="true">{confetti}</div><section className="game-summary-card"><p className="winner-crown" aria-hidden="true">♛</p><p className="eyebrow">Game complete</p><h1>{winner?.name} wins!</h1><p>After {view.round} {view.round === 1 ? "round" : "rounds"}, here is how the table finished.</p><ol className="summary-standings">{standings.map((player, index) => <li key={player.id}><span>{index + 1}</span><strong>{player.name}</strong><em>{player.id === view.winnerId ? "Winner" : player.diceCount ? `${player.diceCount} dice left` : "Out"}</em></li>)}</ol>{lastCall && <p className="summary-last-call">Last call: {lastCall}</p>}<div className="game-over-actions">{isHost && <button className="button button--primary" onClick={onReturnToLobby}>Return to lobby</button>}<button className="button button--ghost" onClick={onExit}>Leave game</button></div></section></main>;
+  return <main className="game-over"><div className="confetti" aria-hidden="true">{confetti}</div><section className="game-summary-card"><ConnectionNotice connected={connected} context="game" /><p className="winner-crown" aria-hidden="true">♛</p><p className="eyebrow">Game complete</p><h1>{winner?.name} wins!</h1><p>After {view.round} {view.round === 1 ? "round" : "rounds"}, here is how the table finished.</p><ol className="summary-standings">{standings.map((player, index) => <li key={player.id}><span>{index + 1}</span><strong>{player.name}</strong><em>{player.id === view.winnerId ? "Winner" : player.diceCount ? `${player.diceCount} dice left` : "Out"}</em></li>)}</ol>{lastCall && <p className="summary-last-call">Last call: {lastCall}</p>}<div className="game-over-actions">{isHost && <button className="button button--primary" disabled={!connected} onClick={onReturnToLobby}>Return to lobby</button>}<button className="button button--ghost" disabled={!connected} onClick={onExit}>Leave game</button></div></section></main>;
 }
 
-function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses, turnDeadlineAt, error, isHost, announcement, shuffle, nextRound, paused, onPause, onShuffle, onReadyNextRound, onAction, onReturnToLobby, onExit }: { view: PublicGameView; roomCode: string; history: string[]; legal?: LegalActions; playerId?: string; playerStatuses: Array<{ id: string; connected: boolean; covered: boolean }>; turnDeadlineAt?: number; error: string | null; isHost: boolean; announcement?: { text: string; playerId?: string }; shuffle?: Shuffle; nextRound?: NextRound; paused?: Pause; onPause: () => void; onShuffle: () => void; onReadyNextRound: () => void; onAction: (action: GameAction) => void; onReturnToLobby: () => void; onExit: () => void }) {
+function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses, turnDeadlineAt, connected, error, isHost, announcement, shuffle, nextRound, paused, onPause, onShuffle, onReadyNextRound, onAction, onReturnToLobby, onExit }: { view: PublicGameView; roomCode: string; history: string[]; legal?: LegalActions; playerId?: string; playerStatuses: Array<{ id: string; connected: boolean; covered: boolean }>; turnDeadlineAt?: number; connected: boolean; error: string | null; isHost: boolean; announcement?: { text: string; playerId?: string }; shuffle?: Shuffle; nextRound?: NextRound; paused?: Pause; onPause: () => void; onShuffle: () => void; onReadyNextRound: () => void; onAction: (action: GameAction) => void; onReturnToLobby: () => void; onExit: () => void }) {
   const current = view.players.find((player) => player.id === view.currentPlayerId);
-  const isMyTurn = !paused && view.phase === "playing" && view.currentPlayerId === playerId;
+  const isMyTurn = connected && !paused && view.phase === "playing" && view.currentPlayerId === playerId;
   const first = legal?.bids[0];
   const [quantity, setQuantity] = useState(first?.quantity ?? 1);
   const [denomination, setDenomination] = useState<Die>(first?.denomination ?? 2);
   const [shufflingDice, setShufflingDice] = useState(false);
   const [shuffleFaces, setShuffleFaces] = useState<Die[] | undefined>();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const settingsPopoverRef = useRef<HTMLDivElement>(null);
   const [reducedMotion, setReducedMotion] = useState(() => localStorage.getItem("cachito-reduced-motion") === "true");
   const [soundLevels, setSoundLevelsState] = useState<SoundLevels>(getSoundLevels);
   const [tableDiceMode, setTableDiceMode] = useState(false);
@@ -316,6 +371,7 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
     clockSoundTurnRef.current = null;
   }, []);
   const bid = () => {
+    if (!connected) return;
     stopClockSound();
     const tableReroll = tableDiceMode && tableDiceIndices.length > 0;
     if (tableReroll) { playSound("tableDice"); setTableRerolling(true); window.setTimeout(() => setTableRerolling(false), 520); }
@@ -325,6 +381,7 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
     setTableDiceIndices([]);
   };
   const call = (type: "dudo" | "calzo") => {
+    if (!connected) return;
     stopClockSound();
     onAction({ type, playerId: "" });
   };
@@ -339,6 +396,7 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
     if (!quantityManuallyAdjusted) setQuantity(minimum.quantity);
   };
   const shakeDice = () => {
+    if (!connected) return;
     if (!ownHand) return onShuffle();
     playSound("shake");
     setShufflingDice(true);
@@ -438,6 +496,27 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
     localStorage.setItem("cachito-reduced-motion", String(reducedMotion));
   }, [reducedMotion]);
   useEffect(() => {
+    if (!settingsOpen) return;
+    const popover = settingsPopoverRef.current;
+    const button = settingsButtonRef.current;
+    if (!popover || !button) return;
+    popover.querySelector<HTMLElement>("input, button")?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setSettingsOpen(false);
+      button.focus();
+    };
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (event.target instanceof Node && !popover.contains(event.target) && !button.contains(event.target)) setSettingsOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+    };
+  }, [settingsOpen]);
+  useEffect(() => {
     if (view.phase !== "gameOver" || !view.winnerId || winnerRef.current === view.winnerId) return;
     winnerRef.current = view.winnerId;
     playSound("winner");
@@ -447,25 +526,26 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
     setSoundLevelsState(next);
     setSoundLevels(next);
   };
-  if (view.phase === "gameOver") return <GameSummary view={view} history={history} isHost={isHost} onReturnToLobby={onReturnToLobby} onExit={onExit} />;
+  if (view.phase === "gameOver") return <GameSummary view={view} history={history} connected={connected} isHost={isHost} onReturnToLobby={onReturnToLobby} onExit={onExit} />;
   const needsShuffle = !eliminated && view.phase === "playing" && shuffle?.round === view.round && shuffle.readyPlayerIds.length < view.players.filter((player) => !player.eliminated).length;
   return <div className={`game-shell${reducedMotion ? " game-shell--reduced-motion" : ""}`}>
-    <header className="game-header"><div className="wordmark">Cachito online</div><div className="game-header-actions"><div className="round-label">Room {roomCode} · Round {view.round}{view.paloFijo ? " · Palo fijo" : ""}</div><button className="settings-button" aria-expanded={settingsOpen} aria-label="Game settings" onClick={() => setSettingsOpen((open) => !open)}>⚙</button>{settingsOpen && <div className="settings-popover"><strong>Settings</strong><label><input type="checkbox" checked={reducedMotion} onChange={(event) => setReducedMotion(event.target.checked)} /> Reduce motion</label><label className="sound-slider">Sound FX <input type="range" min="0" max="1" step="0.05" value={soundLevels.effects} onChange={(event) => changeSoundLevel("effects", Number(event.target.value))} /><output>{Math.round(soundLevels.effects * 100)}%</output></label><label className="sound-slider">Music <input type="range" min="0" max="1" step="0.05" value={soundLevels.music} onChange={(event) => changeSoundLevel("music", Number(event.target.value))} /><output>{Math.round(soundLevels.music * 100)}%</output></label>{playerId && <button className="button button--ghost settings-pause" onClick={onPause}>{paused ? "Resume game" : "Pause game"}</button>}<button className="button button--ghost settings-exit" onClick={onExit}>Exit to menu</button></div>}</div></header>
+    <header className="game-header"><div className="wordmark">Cachito online</div><div className="game-header-actions"><div className="round-label">Room {roomCode} · Round {view.round}{view.paloFijo ? " · Palo fijo" : ""}</div><button className="settings-button" ref={settingsButtonRef} aria-expanded={settingsOpen} aria-controls="online-game-settings" aria-label="Game settings" onClick={() => setSettingsOpen((open) => !open)}>⚙</button>{settingsOpen && <div className="settings-popover" id="online-game-settings" ref={settingsPopoverRef} role="dialog" aria-label="Game settings" tabIndex={-1}><strong>Settings</strong><label><input type="checkbox" checked={reducedMotion} onChange={(event) => setReducedMotion(event.target.checked)} /> Reduce motion</label><label className="sound-slider">Sound FX <input type="range" min="0" max="1" step="0.05" value={soundLevels.effects} onChange={(event) => changeSoundLevel("effects", Number(event.target.value))} /><output>{Math.round(soundLevels.effects * 100)}%</output></label><label className="sound-slider">Music <input type="range" min="0" max="1" step="0.05" value={soundLevels.music} onChange={(event) => changeSoundLevel("music", Number(event.target.value))} /><output>{Math.round(soundLevels.music * 100)}%</output></label>{playerId && <button className="button button--ghost settings-pause" disabled={!connected} onClick={onPause}>{paused ? "Resume game" : "Pause game"}</button>}<button className="button button--ghost settings-exit" disabled={!connected} onClick={onExit}>Exit to menu</button></div>}</div></header>
+    <ConnectionNotice connected={connected} context="game" />
     <div className="table-layout"><main className="table-main">
       <section className="players-strip">{view.players.map((player) => { const playerBid = roundBids?.round === view.round ? roundBids.bids[player.id] : undefined; return <article className={`player-chip${player.id === current?.id ? " player-chip--active" : ""}${statusById.get(player.id) === false ? " player-chip--offline" : ""}`} key={player.id}>{announcement?.playerId === player.id && <div className="player-speech" role="status">{announcement.text}</div>}<div className="player-name">{player.name}</div><div className="dice-count">{player.eliminated ? "Out · spectating" : statusById.get(player.id) === false ? offlineCoverById.get(player.id) ? "Offline · bot cover active" : "Offline · bot cover in 2 min" : view.rules.diceAmountsVisible ? <span className="dice-squares" aria-label={`${player.diceCount} ${player.diceCount === 1 ? "die" : "dice"}`}>{Array.from({ length: player.diceCount }, (_, index) => <i className={index < player.tableDice.length ? "dice-square--table" : ""} key={index} aria-hidden="true" />)}</span> : <span>Dice hidden</span>}</div>{playerBid && <div className="player-last-bid"><span>{playerBid.quantity} ×</span><span className="player-last-bid-die"><FaceMark value={playerBid.denomination} /></span></div>}</article>; })}</section>
       {view.players.some((player) => player.tableDice.length) && <section className="table-dice-board" aria-label="Table dice"><p className="turn-kicker">Table dice</p><div>{view.players.filter((player) => player.tableDice.length).map((player) => <article key={player.id}><strong>{player.name}</strong><DiceRow dice={player.tableDice} small /></article>)}</div></section>}
       <section className={`felt-table${isMyTurn ? " felt-table--your-turn" : ""}`}>
         {paused && <div className="game-paused-overlay" role="status"><strong>Game paused</strong><span>{paused.pausedByName} paused the table. Any player can resume it from Settings.</span></div>}
-        {view.phase === "reveal" && <RoundReveal key={`${view.round}:${view.resolution?.kind}:${view.resolution?.callerId}`} view={view} playerId={playerId} nextRound={nextRound} onNext={onReadyNextRound} />}
-        {needsShuffle && !shufflingDice && <RoundShuffle view={view} playerId={playerId} shuffle={shuffle!} shaking={shufflingDice} clock={clock} onShuffle={shakeDice} />}
+        {view.phase === "reveal" && <RoundReveal key={`${view.round}:${view.resolution?.kind}:${view.resolution?.callerId}`} view={view} playerId={playerId} connected={connected} nextRound={nextRound} onNext={onReadyNextRound} />}
+        {needsShuffle && !shufflingDice && <RoundShuffle view={view} playerId={playerId} connected={connected} shuffle={shuffle!} shaking={shufflingDice} clock={clock} onShuffle={shakeDice} />}
         {secondsLeft !== undefined && <div className={`turn-timer${secondsLeft <= 10 ? " turn-timer--urgent" : ""}`} aria-label={`${secondsLeft} seconds remaining`}><span>{String(Math.floor(secondsLeft / 60)).padStart(1, "0")}:{String(secondsLeft % 60).padStart(2, "0")}</span><small>{isMyTurn ? "your turn" : "turn timer"}</small></div>}
         <p className="turn-kicker">{eliminated ? "Spectating — you are out" : isMyTurn ? "Make a bid or call it" : playerId ? "Waiting for turn" : "Spectating until the next lobby"}</p>
         <h2 className="turn-name">{view.phase === "reveal" ? "Round result" : current?.name}</h2>
         {view.paloFijo && <div className="palo-fijo-alert"><strong>Palo fijo</strong><span>Aces are not wild this round.{view.rules.paloFijoBlindDice && (view.players.find((player) => player.id === playerId)?.diceCount ?? 0) > 1 ? " Your dice stay hidden until you have one." : ""}</span></div>}
         {roundBid ? <div className="current-bid bid-card"><span className="bid-quantity">{roundBid.quantity}</span><FaceMark value={roundBid.denomination} /><div className="bid-copy"><strong>{denominationNames[roundBid.denomination]}</strong><span>{view.players.find((player) => player.id === roundBidderId)?.name ?? "Unknown player"} made the current bid</span></div></div> : <div className="current-bid bid-empty">No bid yet.</div>}
-        {isMyTurn ? <section className="controls-card">{canPutDiceOnTable && <div className="table-dice-control">{tableDiceMode ? <><strong>Select dice for the table</strong><span>Choose at least one and keep one private. They will be public for this round; the rest reroll after your bid.</span><button className="button button--ghost" onClick={() => { setTableDiceMode(false); setTableDiceIndices([]); }}>Cancel table dice</button></> : <button className="button button--ghost" onClick={() => setTableDiceMode(true)}>Put dice on table</button>}</div>}<div className="bid-inputs"><div><span className="field-label">Quantity</span><div className="stepper"><button data-sound="number" onClick={() => { playSound("numDown"); setQuantity((value) => Math.max(1, value - 1)); setQuantityManuallyAdjusted(true); }}>−</button><span>{quantity}</span><button data-sound="number" onClick={() => { playSound("numUp"); setQuantity((value) => Math.min(maxQuantity, value + 1)); setQuantityManuallyAdjusted(true); }}>+</button></div></div><div><span className="field-label">Denomination</span><div className="denominations">{([1,2,3,4,5,6] as Die[]).map((die) => <button className="denom-button" data-sound="denomination" key={die} aria-pressed={selectedDenomination === die} onClick={() => chooseDenomination(die)} disabled={!minimumBidFor(die)}><FaceMark value={die} label /></button>)}</div></div></div><div className="action-row"><button className="challenge-button challenge-button--dudo" data-sound="challenge" disabled={!legal?.canDudo} onClick={() => call("dudo")}>Dudo</button><button className="challenge-button challenge-button--calzo" data-sound="challenge" disabled={!legal?.canCalzo} onClick={() => call("calzo")}>Calzo</button><button className="button button--primary" disabled={!chosen || tableDiceMode && !tableDiceIndices.length} onClick={bid}>{tableDiceMode ? `${view.currentBid ? "Raise" : "Make"} bid & put ${tableDiceIndices.length || "…"} on table` : view.currentBid ? "Raise bid" : "Make bid"}</button></div></section> : <section className="controls-card"><p className="rules-note">{eliminated ? "You are now a spectator for the rest of this game." : playerId ? "Your moves will appear here when it is your turn." : "You are spectating this game and will be seated when it returns to the lobby."}</p></section>}
+        {isMyTurn ? <section className="controls-card">{canPutDiceOnTable && <div className="table-dice-control">{tableDiceMode ? <><strong>Select dice for the table</strong><span>Choose at least one and keep one private. They will be public for this round; the rest reroll after your bid.</span><button className="button button--ghost" onClick={() => { setTableDiceMode(false); setTableDiceIndices([]); }}>Cancel table dice</button></> : <button className="button button--ghost" onClick={() => setTableDiceMode(true)}>Put dice on table</button>}</div>}<div className="bid-inputs"><div><span className="field-label">Quantity</span><div className="stepper"><button data-sound="number" aria-label="Decrease bid quantity" onClick={() => { playSound("numDown"); setQuantity((value) => Math.max(1, value - 1)); setQuantityManuallyAdjusted(true); }}>−</button><span aria-live="polite">{quantity}</span><button data-sound="number" aria-label="Increase bid quantity" onClick={() => { playSound("numUp"); setQuantity((value) => Math.min(maxQuantity, value + 1)); setQuantityManuallyAdjusted(true); }}>+</button></div></div><div><span className="field-label">Denomination</span><div className="denominations">{([1,2,3,4,5,6] as Die[]).map((die) => <button className="denom-button" data-sound="denomination" key={die} aria-label={`Choose ${denominationNames[die]}`} aria-pressed={selectedDenomination === die} onClick={() => chooseDenomination(die)} disabled={!minimumBidFor(die)}><FaceMark value={die} label /></button>)}</div></div></div><div className="action-row"><button className="challenge-button challenge-button--dudo" data-sound="challenge" disabled={!legal?.canDudo} onClick={() => call("dudo")}>Dudo</button><button className="challenge-button challenge-button--calzo" data-sound="challenge" disabled={!legal?.canCalzo} onClick={() => call("calzo")}>Calzo</button><button className="button button--primary" disabled={!chosen || tableDiceMode && !tableDiceIndices.length} onClick={bid}>{tableDiceMode ? `${view.currentBid ? "Raise" : "Make"} bid & put ${tableDiceIndices.length || "…"} on table` : view.currentBid ? "Raise bid" : "Make bid"}</button></div></section> : <section className="controls-card"><p className="rules-note">{!connected ? "Reconnecting before you can make another move." : eliminated ? "You are now a spectator for the rest of this game." : playerId ? "Your moves will appear here when it is your turn." : "You are spectating this game and will be seated when it returns to the lobby."}</p></section>}
         <section className={`hand-panel${needsShuffle || shufflingDice ? " hand-panel--shuffling" : ""}`}><p className="hand-label">Your dice{tableDiceMode ? " · select dice to put on table" : isMyTurn ? " · click a die to choose its face" : ""}</p>{ownHand ? <DiceRow dice={shufflingDice && shuffleFaces ? shuffleFaces : ownHand} className={`${shufflingDice ? "dice-row--shuffling" : ""}${tableRerolling ? " dice-row--table-reroll" : ""}`} selectedIndices={tableDiceMode ? tableDiceIndices : undefined} onDieClick={isMyTurn ? (value, index) => tableDiceMode ? setTableDiceIndices((current) => current.includes(index) ? current.filter((entry) => entry !== index) : current.length < ownHand.length - 1 ? [...current, index] : current) : setDenomination(value as Die) : undefined} /> : <p className="rules-note">Hands are hidden.</p>}</section>
-        {error && <p className="form-error">{error}</p>}
+        {error && <p className="form-error" role="alert">{error}</p>}
       </section>
     </main><OnlineHistory history={history} /></div>
   </div>;

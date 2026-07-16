@@ -30,10 +30,13 @@ export function Die({ value, hidden = false, small = false, highlighted = false,
   );
 }
 
-export function DiceRow({ dice, hidden = false, small = false, className = "", onDieClick, highlight, selectedIndices }: { dice: number[]; hidden?: boolean; small?: boolean; className?: string; onDieClick?: (value: number, index: number) => void; highlight?: (value: number) => boolean; selectedIndices?: readonly number[] }) {
+export function DiceRow({ dice, hidden = false, small = false, className = "", onDieClick, getDieButtonLabel, highlight, selectedIndices }: { dice: number[]; hidden?: boolean; small?: boolean; className?: string; onDieClick?: (value: number, index: number) => void; getDieButtonLabel?: (value: number, index: number, selected: boolean) => string; highlight?: (value: number) => boolean; selectedIndices?: readonly number[] }) {
   return (
     <div className={`dice-row ${className}`.trim()}>
-      {dice.map((value, index) => onDieClick ? <button className="die-button" type="button" key={`${value}-${index}`} onClick={() => onDieClick(value, index)}><Die value={value} hidden={hidden} small={small} highlighted={highlight?.(value)} selected={selectedIndices?.includes(index)} /></button> : <Die key={`${value}-${index}`} value={value} hidden={hidden} small={small} highlighted={highlight?.(value)} selected={selectedIndices?.includes(index)} />)}
+      {dice.map((value, index) => {
+        const selected = selectedIndices?.includes(index) ?? false;
+        return onDieClick ? <button className="die-button" type="button" key={`${value}-${index}`} aria-label={getDieButtonLabel?.(value, index, selected) ?? `Choose die showing ${value}`} aria-pressed={selectedIndices ? selected : undefined} onClick={() => onDieClick(value, index)}><Die value={value} hidden={hidden} small={small} highlighted={highlight?.(value)} selected={selected} /></button> : <Die key={`${value}-${index}`} value={value} hidden={hidden} small={small} highlighted={highlight?.(value)} selected={selected} />;
+      })}
     </div>
   );
 }

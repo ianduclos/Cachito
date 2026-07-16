@@ -162,6 +162,11 @@ h1 { font: 800 clamp(3.2rem, 9vw, 5rem)/.95 "Fraunces", Georgia, serif; text-ali
 .seat-type-toggle button:focus-visible { outline: 2px solid var(--cream); outline-offset: 2px; }
 .icon-button { border: 0; background: transparent; color: var(--muted); font-size: 1.45rem; }
 .form-error { margin: 10px 0 0 38px; color: #ff9d8b; font-size: .83rem; }
+.online-connection-notice { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0 0 18px; padding: 10px 13px; border: 1px solid #f2bd5a66; border-radius: 12px; background: #5a401df2; color: var(--cream); font-size: .78rem; text-align: center; box-shadow: 0 8px 22px #0004; }
+.online-connection-notice strong { color: var(--gold); }
+.online-connection-notice span { color: #f0e2c4; }
+.game-shell > .online-connection-notice { position: fixed; z-index: 12; top: 74px; left: 50%; width: min(calc(100% - 28px), 560px); margin: 0; transform: translateX(-50%); }
+.game-over .online-connection-notice { margin-bottom: 20px; }
 .setup-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 12px; margin-top: 25px; }
 .setup-learning-button { width: 100%; margin-top: 10px; }
 .button { min-height: 48px; border-radius: 13px; border: 1px solid transparent; padding: 11px 18px; font-weight: 700; color: var(--cream); }
