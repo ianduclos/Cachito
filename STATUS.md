@@ -5,7 +5,9 @@ updated: 2026-07-17
 machine: mac
 summary: Research lab founded inside the project (nested repo lab/) and produced two bot generations that beat the production baseline plus two published visualizations; product side is separately maintained by Codex.
 next:
-  - Gen 3 bot, within-round search on belief posteriors with equity leaf values (exp-005) — unblocked by exp-009 (Dudo worry was an exp-004 spot-check polarity bug; belief posteriors verified well-calibrated)
+  - exp-010 intent/playstyle estimation (in flight) — Gen 5 bluffing groundwork, pulled forward per Ian; Gen 4 endgame skipped
+  - game replay viewer (in flight) — win-prob graph + per-decision bot beliefs for any logged game
+  - table-dice execution in the headless sim runner (queued infra; needed for dice-on-table playstyle work)
   - build the game replay viewer (any logged game, win-prob graph + bot beliefs per turn)
   - get bulk room-log access from the GCS bucket (Ian) to start human-style analysis
   - write up Codex asks — log schema v5, champion promotion format, seeded online bot randomness
