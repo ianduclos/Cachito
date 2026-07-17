@@ -7,6 +7,7 @@ import {
   DEFAULT_GAME_RULES,
   GameRuleError,
   getLegalActions,
+  forfeitPlayer,
   projectForAdminSpectator,
   projectForPlayer,
   projectForSpectator,
@@ -63,6 +64,18 @@ describe('game creation and turns', () => {
 
     expect(() => applyAction(afterBid, { type: 'dudo', playerId: 'a' })).toThrowError(/not this player's turn/i)
     expect(() => applyAction(afterBid, { type: 'calzo', playerId: 'c' })).toThrowError(/not this player's turn/i)
+  })
+
+  it('eliminates a forfeiting player and cleanly advances or ends the game', () => {
+    const state = playing({ a: [2, 2], b: [3, 3], c: [4, 4] })
+    const continued = forfeitPlayer(state, 'b', () => 0)
+    expect(continued.phase).toBe('playing')
+    expect(continued.players.find((player) => player.id === 'b')?.diceCount).toBe(0)
+    expect(continued.phase === 'playing' && continued.currentPlayerId).toBe('c')
+    expect(continued.phase === 'playing' && continued.currentBid).toBeNull()
+
+    const final = forfeitPlayer(playing({ a: [2, 2], b: [3, 3] }), 'a')
+    expect(final.phase === 'gameOver' && final.winnerId).toBe('b')
   })
 })
 

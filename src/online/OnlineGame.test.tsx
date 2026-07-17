@@ -196,7 +196,7 @@ describe("OnlineGame connection lifecycle", () => {
   });
 
   it("turns the winner ceremony into the dominant final screen", () => {
-    render(<OnlineGame onExit={vi.fn()} />);
+    const { container } = render(<OnlineGame onExit={vi.fn()} />);
     enterWinner();
 
     const winner = screen.getByRole("dialog", { name: "Game winner" });
@@ -204,6 +204,20 @@ describe("OnlineGame connection lifecycle", () => {
     expect(winner).toHaveTextContent("Champion of the table");
     expect(winner).toHaveTextContent("Ana María wins!");
     expect(winner).toHaveTextContent("9 rounds");
+    expect(container.querySelectorAll(".tp-confetti i")).toHaveLength(132);
     expect(screen.queryByLabelText("Your hand and turn controls")).not.toBeInTheDocument();
+  });
+
+  it("requires confirmation before sending a forfeit", () => {
+    render(<OnlineGame onExit={vi.fn()} />);
+    enterTable();
+
+    fireEvent.click(screen.getByRole("button", { name: "Game settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Forfeit game" }));
+    expect(socket().sent.map((message) => JSON.parse(message))).not.toContainEqual({ type: "forfeit-game" });
+    expect(screen.getByText("You’ll be out and continue as a spectator.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm forfeit" }));
+    expect(socket().sent.map((message) => JSON.parse(message))).toContainEqual({ type: "forfeit-game" });
   });
 });

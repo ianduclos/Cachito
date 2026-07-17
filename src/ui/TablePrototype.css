@@ -82,7 +82,7 @@
 .tp-callout--right span { color: #b6ffc9; }
 .tp-callout--wrong strong { gap: .03em; }
 .tp-callout--wrong span { color: #ffb3a4; }
-.tp-roll-overlay { position: absolute; top: 49%; left: 50%; z-index: 13; width: min(78%, 880px); max-height: 64%; display: grid; align-content: center; justify-items: center; gap: 7px; overflow: auto; padding: 22px clamp(20px, 4vw, 44px); border: 1px solid #d7b36a66; border-radius: 14px; background: #08251ff2; box-shadow: 0 22px 55px #0009; text-align: center; transform: translate(-50%, -50%); }
+.tp-roll-overlay { position: absolute; top: 49%; left: 50%; z-index: 13; width: min(78%, 880px); max-height: 64%; display: grid; align-content: center; justify-items: center; gap: 7px; overflow: auto; padding: 22px clamp(20px, 4vw, 44px); border: 1px solid #d7b36a66; border-radius: 14px; background: #08251f; box-shadow: 0 22px 55px #0009; text-align: center; transform: translate(-50%, -50%); }
 .tp-roll-overlay > p { margin: 0; color: #d7b36a; font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .tp-roll-overlay > h2 { margin: 0; font: 850 clamp(1.8rem, 3.6vw, 2.8rem) "Fraunces", Georgia, serif; }
 .tp-roll-overlay > span { color: #a9c0b6; font-size: .68rem; }
@@ -132,7 +132,7 @@
 .tp-exposed-dice .die { width: 36px; height: 36px; }
 .tp-exposed-dice--empty { align-self: stretch; align-content: center; }
 
-.tp-round-result, .tp-game-over { position: absolute; top: 49%; left: 50%; z-index: 5; width: min(82%, 980px); max-height: 66%; overflow: auto; padding: 22px; border: 1px solid #d7b36a66; border-radius: 14px; background: #08251ff2; box-shadow: 0 22px 55px #0009; transform: translate(-50%, -50%); }
+.tp-round-result, .tp-game-over { position: absolute; top: 49%; left: 50%; z-index: 5; width: min(82%, 980px); max-height: 66%; overflow: auto; padding: 22px; border: 1px solid #d7b36a66; border-radius: 14px; background: #08251f; box-shadow: 0 22px 55px #0009; transform: translate(-50%, -50%); }
 .tp-result-heading { text-align: center; }
 .tp-result-heading p, .tp-game-over p { margin: 0; color: #d7b36a; font-size: .74rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .tp-result-heading h2, .tp-game-over h2 { margin: 5px 0; font: 800 clamp(1.8rem, 3vw, 2.5rem) "Fraunces", Georgia, serif; }

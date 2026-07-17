@@ -185,7 +185,7 @@ h1 { font: 800 clamp(3.2rem, 9vw, 5rem)/.95 "Fraunces", Georgia, serif; text-ali
 .settings-button:hover { color: var(--cream); border-color: #f2bd5a88; }
 .settings-control { position: relative; }
 .setup-card > .settings-control, .menu-settings { position: fixed; top: 18px; right: 18px; z-index: 20; }
-.settings-popover { position: absolute; top: 40px; right: 0; z-index: 10; display: grid; gap: 10px; width: 205px; padding: 13px; border: 1px solid #ffffff24; border-radius: 12px; background: #082b25f5; box-shadow: 0 15px 34px #0007; color: var(--cream); font-size: .78rem; }
+.settings-popover { position: absolute; top: 40px; right: 0; z-index: 10; display: grid; gap: 10px; width: 205px; padding: 13px; border: 1px solid #ffffff24; border-radius: 12px; background: #082b25; box-shadow: 0 15px 34px #0007; color: var(--cream); font-size: .78rem; }
 .settings-popover label { display: flex; align-items: center; gap: 8px; color: #d7e5df; }
 .settings-popover small { color: var(--muted); line-height: 1.35; }
 .settings-popover .sound-slider { display: grid; grid-template-columns: auto 1fr auto; gap: 7px; }

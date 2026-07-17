@@ -31,7 +31,7 @@
 .online-palo-banner span { font-size: .52rem; }
 
 .online-live-table .round-shuffle-overlay { z-index: 13; inset: 0; align-items: center; padding: 0; border-radius: inherit; background: transparent; backdrop-filter: none; }
-.online-live-table .round-shuffle-card { width: min(78%, 880px); max-height: 64%; overflow: auto; padding: 22px clamp(20px, 4vw, 44px); border-radius: 14px; background: #08251ff2; }
+.online-live-table .round-shuffle-card { width: min(78%, 880px); max-height: 64%; overflow: auto; padding: 22px clamp(20px, 4vw, 44px); border-radius: 14px; background: #08251f; }
 .online-live-table .round-shuffle-card h2 { margin-bottom: 6px; font-size: clamp(1.8rem, 3.6vw, 2.8rem); }
 .online-live-table .round-shuffle-copy { margin-bottom: 8px; font-size: .68rem; }
 .online-live-table .round-shuffle-players { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 8px 0 10px; }
@@ -42,7 +42,7 @@
 .online-live-table .shuffle-countdown { min-width: 54px; height: 30px; font-size: .75rem; }
 
 .online-live-table .round-result-overlay { z-index: 14; inset: 0; align-items: center; padding: 0; border-radius: inherit; background: transparent; }
-.online-live-table .round-result-overlay .round-result { width: min(82%, 980px); max-height: 66%; padding: 22px; border-radius: 14px; background: #08251ff2; }
+.online-live-table .round-result-overlay .round-result { width: min(82%, 980px); max-height: 66%; padding: 22px; border-radius: 14px; background: #08251f; }
 .online-live-table .round-callout { background: transparent; }
 .online-live-table .round-callout strong { font-size: clamp(6.5rem, 18vw, 12rem); }
 .online-live-table .result-banner { margin-bottom: 12px; text-align: center; }
@@ -62,7 +62,7 @@
 .online-live-table .next-round-ready { margin-top: 8px; }
 .online-live-table .next-round-ready .button { min-height: 38px; padding: 7px 18px; }
 
-.online-live-table .game-paused-overlay { inset: auto; top: 49%; left: 50%; width: min(64%, 520px); min-height: 190px; border: 1px solid #d7b36a66; border-radius: 14px; background: #08251ff5; backdrop-filter: none; box-shadow: 0 22px 55px #0009; transform: translate(-50%, -50%); }
+.online-live-table .game-paused-overlay { inset: auto; top: 49%; left: 50%; width: min(64%, 520px); min-height: 190px; border: 1px solid #d7b36a66; border-radius: 14px; background: #08251f; backdrop-filter: none; box-shadow: 0 22px 55px #0009; transform: translate(-50%, -50%); }
 .online-game-over-card { position: fixed; z-index: 101; inset: 0; top: 0; left: 0; width: 100vw; height: 100svh; max-height: none; align-content: center; gap: 8px; overflow: hidden; padding: clamp(24px, 5vh, 58px) clamp(20px, 7vw, 110px); border: 0; border-radius: 0; background: radial-gradient(circle at 50% 40%, #356e54 0, #0c372c 27%, #041c17 63%, #020d0b 100%); box-shadow: inset 0 0 120px #000c; transform: none; }
 .online-game-over-card::before, .online-game-over-card::after { content: ""; position: absolute; z-index: 0; left: 50%; top: 43%; width: min(96vmin, 940px); aspect-ratio: 1; border: 2px solid #e8bf6650; border-radius: 50%; box-shadow: 0 0 0 24px #e8bf6608, 0 0 0 80px #e8bf6606, 0 0 140px #e8bf663d; transform: translate(-50%, -50%); pointer-events: none; }
 .online-game-over-card::after { width: min(68vmin, 680px); border-style: double; border-width: 7px; opacity: .7; }
@@ -76,7 +76,11 @@
 .online-game-over-card .summary-last-call { max-width: 850px; margin: 2px 0 8px !important; color: #c9d9d1; font-size: .72rem; text-transform: none; letter-spacing: 0; }
 .online-game-over-card .game-over-actions { width: min(620px, 90vw); }
 .online-game-over-card .game-over-actions .button { min-height: 48px; padding: 10px 18px; font-size: .75rem; }
-.online-live-table .tp-confetti { position: fixed; z-index: 100; inset: 0; }
+.online-live-table .tp-confetti { position: fixed; z-index: 102; inset: 0; }
+.online-settings-anchor .settings-forfeit { border-color: #df725e70; color: #ffab9d; }
+.settings-forfeit-confirm { display: grid; gap: 6px; padding: 8px; border: 1px solid #df725e66; border-radius: 9px; background: #261410; }
+.settings-forfeit-confirm small { color: #f2c2b8; }
+.settings-forfeit-danger { border: 0; background: #c85f4e; color: #fff8ed; }
 .online-live-table .tp-spectator-actions { grid-column: auto; grid-template-columns: 1fr; }
 
 @media (max-width: 1100px) {
