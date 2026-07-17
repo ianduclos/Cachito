@@ -1,0 +1,11 @@
+.gcloudignore
+.git
+.gitignore
+.firebase
+node_modules
+dist
+logs
+reports
+lab
+firebase-debug.log
+*.docx

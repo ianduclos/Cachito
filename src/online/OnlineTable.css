@@ -1,0 +1,101 @@
+.online-live-table { isolation: isolate; }
+.online-table-header { position: relative; z-index: 24; }
+.online-table-header h1 { color: #f6edda; }
+.online-settings-anchor { position: relative; }
+.online-settings-anchor .settings-popover { top: 41px; }
+.online-connection-pill, .online-round-pill { min-height: 35px; display: inline-flex; align-items: center; padding: 7px 11px; border: 1px solid #ffffff20; border-radius: 999px; background: #ffffff09; color: #a9c7bb; font-size: .58rem; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.online-connection-pill::before { content: ""; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #70c49f; box-shadow: 0 0 0 4px #70c49f16; }
+.online-connection-pill--offline { color: #f2cf8a; }
+.online-connection-pill--offline::before { background: #e4a950; box-shadow: 0 0 0 4px #e4a95016; }
+.online-round-pill { color: #e8d8b9; }
+.online-live-table > .online-connection-notice { position: fixed; z-index: 30; top: 70px; left: 50%; width: min(calc(100% - 28px), 560px); margin: 0; transform: translateX(-50%); }
+
+.online-seat-announcement { position: absolute; bottom: calc(100% + 8px); left: 50%; width: max-content; max-width: 210px; padding: 7px 10px; border: 1px solid #d7b36a66; border-radius: 9px; background: #08251ff5; color: #f5e5c5; box-shadow: 0 8px 20px #0008; font-size: .58rem; font-weight: 800; line-height: 1.3; text-align: center; transform: translateX(-50%); }
+.online-live-table .tp-turn-flag { min-width: 58px; text-align: center; }
+.online-live-table .tp-seat--bottom { top: 82%; }
+
+.online-denom-face { width: 29px; height: 41px; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr) 11px; place-items: center; }
+.online-denom-pip { width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+.online-denom-pip--empty { opacity: 0; }
+.online-denom-face small { grid-column: 1 / -1; align-self: end; font-size: .44rem; font-weight: 850; line-height: 1; letter-spacing: -.02em; }
+.online-hidden-hand { margin: 7px 0 0; padding: 12px; border: 1px dashed #d7b36a42; border-radius: 10px; color: #c7b993; font-size: .65rem; font-weight: 750; text-align: center; }
+
+.online-table-feed-list { min-height: 0; flex: 1; list-style: none; display: flex; flex-direction: column; overflow-y: auto; margin: 0; padding: 5px 13px; }
+.online-table-feed-list li { position: relative; display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 8px; padding: 10px 1px; border-bottom: 1px solid #ffffff0e; color: #d5ddd8; font-size: .64rem; line-height: 1.35; }
+.online-table-feed-list li i { width: 7px; height: 7px; margin-top: 4px; border-radius: 50%; background: #698b80; box-shadow: 0 0 0 4px #698b8014; }
+.online-table-feed-list li:last-child { color: #f3e7cd; }
+.online-table-feed-list li:last-child i { background: #d7b36a; }
+
+.online-palo-banner { position: absolute; z-index: 4; top: 22%; left: 50%; display: grid; justify-items: center; gap: 2px; padding: 7px 12px; border: 1px solid #d7b36a66; border-radius: 10px; background: #382a17d9; color: #f3e2bd; box-shadow: 0 8px 20px #0005; transform: translateX(-50%); }
+.online-palo-banner strong { color: #eac873; font: 850 .72rem "Fraunces", Georgia, serif; letter-spacing: .08em; text-transform: uppercase; }
+.online-palo-banner span { font-size: .52rem; }
+
+.online-live-table .round-shuffle-overlay { z-index: 13; inset: 0; align-items: center; padding: 0; border-radius: inherit; background: transparent; backdrop-filter: none; }
+.online-live-table .round-shuffle-card { width: min(78%, 880px); max-height: 64%; overflow: auto; padding: 22px clamp(20px, 4vw, 44px); border-radius: 14px; background: #08251ff2; }
+.online-live-table .round-shuffle-card h2 { margin-bottom: 6px; font-size: clamp(1.8rem, 3.6vw, 2.8rem); }
+.online-live-table .round-shuffle-copy { margin-bottom: 8px; font-size: .68rem; }
+.online-live-table .round-shuffle-players { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 8px 0 10px; }
+.online-live-table .round-shuffle-player { padding: 7px; border-radius: 10px; }
+.online-live-table .round-shuffle-player strong { overflow: hidden; max-width: 100%; font-size: .62rem; text-overflow: ellipsis; white-space: nowrap; }
+.online-live-table .round-shuffle-player small { font-size: .51rem; }
+.online-live-table .round-shuffle-button { min-height: 46px; background: linear-gradient(135deg, #e0b963, #bc873f); color: #18352c; }
+.online-live-table .shuffle-countdown { min-width: 54px; height: 30px; font-size: .75rem; }
+
+.online-live-table .round-result-overlay { z-index: 14; inset: 0; align-items: center; padding: 0; border-radius: inherit; background: transparent; }
+.online-live-table .round-result-overlay .round-result { width: min(82%, 980px); max-height: 66%; padding: 22px; border-radius: 14px; background: #08251ff2; }
+.online-live-table .round-callout { background: transparent; }
+.online-live-table .round-callout strong { font-size: clamp(6.5rem, 18vw, 12rem); }
+.online-live-table .result-banner { margin-bottom: 12px; text-align: center; }
+.online-live-table .result-banner > p { margin: 0; color: #d7b36a; font-size: .74rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.online-live-table .result-banner h3 { margin: 5px 0; font: 800 clamp(1.8rem, 3vw, 2.5rem) "Fraunces", Georgia, serif; }
+.online-result-verdict { display: flex; align-items: baseline; justify-content: center; flex-wrap: wrap; gap: 5px 8px; margin: 8px auto 6px; }
+.online-result-verdict strong { font: 900 clamp(1.15rem, 2vw, 1.55rem) "Fraunces", Georgia, serif; text-shadow: 0 5px 16px currentColor; }
+.online-result-verdict span { color: #f1e6ce; font-size: .9rem; font-weight: 800; }
+.round-result--correct .online-result-verdict strong { color: #83e2a7; }
+.round-result--wrong .online-result-verdict strong { color: #ff8e7b; }
+.online-live-table .result-banner > small { color: #a8beb5; font-size: .68rem; }
+.online-live-table .revealed-hands { grid-template-columns: repeat(var(--online-hand-columns, 4), minmax(0, 1fr)); flex: none; gap: 8px; margin: 13px 0; overflow: visible; }
+.online-live-table .revealed-hand { min-width: 0; display: grid; justify-items: center; gap: 5px; padding: 7px; border-radius: 10px; }
+.online-live-table .revealed-hand strong { overflow: hidden; max-width: 100%; color: #dce6e1; font-size: .67rem; text-overflow: ellipsis; white-space: nowrap; }
+.online-live-table .revealed-hand .dice-row { flex-wrap: nowrap; gap: 3px; }
+.online-live-table .revealed-hand .die { width: clamp(24px, 2vw, 31px); height: clamp(24px, 2vw, 31px); padding: 3px; }
+.online-live-table .next-round-ready { margin-top: 8px; }
+.online-live-table .next-round-ready .button { min-height: 38px; padding: 7px 18px; }
+
+.online-live-table .game-paused-overlay { inset: auto; top: 49%; left: 50%; width: min(64%, 520px); min-height: 190px; border: 1px solid #d7b36a66; border-radius: 14px; background: #08251ff5; backdrop-filter: none; box-shadow: 0 22px 55px #0009; transform: translate(-50%, -50%); }
+.online-game-over-card { z-index: 17; width: min(82%, 860px); max-height: 70%; overflow: auto; }
+.online-game-over-card .summary-standings { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 9px 0; }
+.online-game-over-card .summary-standings li { padding: 7px 9px; }
+.online-game-over-card .summary-last-call { margin: 2px 0 8px !important; }
+.online-game-over-card .game-over-actions { width: 100%; }
+.online-game-over-card .game-over-actions .button { min-height: 38px; padding: 7px 13px; }
+.online-live-table .tp-confetti { z-index: 16; }
+.online-live-table .tp-spectator-actions { grid-column: auto; grid-template-columns: 1fr; }
+
+@media (max-width: 1100px) {
+  .online-round-pill { display: none; }
+  .online-live-table .tp-spectator-dock { grid-template-columns: minmax(230px, .8fr) minmax(410px, 1.6fr) 130px; }
+}
+
+@media (max-width: 650px) {
+  .online-connection-pill { display: none; }
+  .online-live-table .tp-seat--bottom { top: 72%; }
+  .online-live-table .tp-spectator-actions { grid-template-columns: 1fr; }
+  .online-live-table .round-shuffle-card { width: 86%; max-height: 52%; padding: 16px 12px; }
+  .online-live-table .round-shuffle-players { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .online-live-table .round-result-overlay .round-result { width: 86%; max-height: 53%; padding: 12px; }
+  .online-live-table .result-banner h3 { font-size: 1.25rem; }
+  .online-live-table .revealed-hands { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+  .online-live-table .revealed-hand { padding: 4px; }
+  .online-live-table .revealed-hand .die { width: 19px; height: 19px; padding: 2px; }
+  .online-live-table .round-callout strong { font-size: clamp(4.8rem, 22vw, 7rem); }
+  .online-game-over-card { width: 88%; max-height: 62%; padding: 13px; }
+  .online-game-over-card .summary-standings { grid-template-columns: 1fr; }
+}
+
+@media (max-height: 740px) and (min-width: 651px) {
+  .online-live-table .round-result-overlay .round-result, .online-live-table .round-shuffle-card { max-height: 68%; }
+  .online-live-table .round-shuffle-card { padding-top: 14px; padding-bottom: 14px; }
+  .online-live-table .round-shuffle-players { margin: 5px 0 7px; }
+  .online-game-over-card { max-height: 72%; }
+}

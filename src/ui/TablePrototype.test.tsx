@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BOT_NAMES } from "../bot";
 import type { EnginePlayer } from "../engine";
 import { PrototypeCallout, PrototypeGameOver, PrototypePlayerSeat, TablePrototype } from "./TablePrototype";
-import { seatLayoutFor } from "./tablePrototypeSeats";
+import { seatLayoutFor, spectatorSeatLayoutFor } from "./tablePrototypeSeats";
 
 beforeEach(() => localStorage.setItem("cachito-display-name", "Ian"));
 
@@ -30,6 +30,8 @@ describe("TablePrototype", () => {
     expect(seatLayoutFor(6)).toEqual(["left-top", "left-bottom", "top", "right-top", "right-bottom"]);
     expect(seatLayoutFor(7)).toEqual(["left-top", "left-middle", "left-bottom", "right-top", "right-middle", "right-bottom"]);
     expect(seatLayoutFor(8)).toEqual(["left-bottom", "left-middle", "left-top", "top", "right-top", "right-middle", "right-bottom"]);
+    expect(spectatorSeatLayoutFor(2)).toEqual(["left-middle", "right-middle"]);
+    expect(spectatorSeatLayoutFor(8)).toEqual(["left-bottom", "left-middle", "left-top", "top", "right-top", "right-middle", "right-bottom", "bottom"]);
   });
 
   it("keeps eliminated players visibly seated as spectators", () => {
