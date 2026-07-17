@@ -43,6 +43,18 @@ Asks that make bot integration better (previously flagged, still open):
    think-time "tell" is a designed future feature (room-configurable,
    never default), not something to improvise.
 
+**🐛 Bug report (found 2026-07-17, verified):** `src/bot/simulator.ts`'s
+private `toGameAction` (line ~45) drops `BotChoice.tableDiceIndices` when
+building the engine bid action — so in `runBotMatch` (headless matches),
+bots that choose the table-dice mechanic never actually execute it (their
+`traceReason: 'table_dice_pressure'` fires, but the engine always receives
+`tableDiceIndices: []`). Live online rooms are unaffected
+(`dev/onlineRooms.ts` forwards the field). One-line fix: include
+`tableDiceIndices: choice.tableDiceIndices` in the bid branch. The lab
+works around it with its own wrapper (`lab/tools/tableDiceMatch.ts`) and
+measured the mechanic at ~4.8% of rounds once restored; fixing upstream
+matters for anything else that uses `runBotMatch` (tests, dev tools).
+
 ## 2. The replay visualizer
 
 The lab has a working match-replay pipeline (built 2026-07-17):

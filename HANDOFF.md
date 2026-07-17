@@ -1,8 +1,13 @@
 ---
 project: Cachito
 updated: 2026-07-17
-entries: 2
+entries: 3
 ---
+
+### Codex: bug — runBotMatch drops table-dice actions — opened 2026-07-17, owner: codex
+- done: root-caused and verified by the lab; details + one-line fix in [docs/lab-handoff-bots-and-replay.md](docs/lab-handoff-bots-and-replay.md) § bug report. Live rooms unaffected; headless bot matches never execute the mechanic.
+- next: Codex applies the upstream fix (and ideally a regression test); lab already has its own wrapper so nothing blocks lab work
+- context: src/bot/simulator.ts toGameAction; found during lab table-dice infra work
 
 ### Codex: bot + replay-visualizer integration write-up — opened 2026-07-17, owner: codex
 - done: full handoff doc at [docs/lab-handoff-bots-and-replay.md](docs/lab-handoff-bots-and-replay.md) — which bot to promote (Gen 2), data dependencies, difficulty tiers, privacy invariant, replay-page integration options, and the standing asks (seeded bot randomness, log schema v5)
