@@ -5,8 +5,7 @@ updated: 2026-07-17
 machine: mac
 summary: Research lab founded inside the project (nested repo lab/) and produced two bot generations that beat the production baseline plus two published visualizations; product side is separately maintained by Codex.
 next:
-  - investigate why Belief Equity wins via Calzo/bidding while its Dudo accuracy dropped (blocks Gen 3)
-  - Gen 3 bot, within-round search on belief posteriors with equity leaf values (exp-005)
+  - Gen 3 bot, within-round search on belief posteriors with equity leaf values (exp-005) — unblocked by exp-009 (Dudo worry was an exp-004 spot-check polarity bug; belief posteriors verified well-calibrated)
   - build the game replay viewer (any logged game, win-prob graph + bot beliefs per turn)
   - get bulk room-log access from the GCS bucket (Ian) to start human-style analysis
   - write up Codex asks — log schema v5, champion promotion format, seeded online bot randomness
