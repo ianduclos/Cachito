@@ -1,6 +1,7 @@
 node_modules/
 dist/
 coverage/
+lab/
 
 # Local configuration and secrets
 .env

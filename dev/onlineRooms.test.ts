@@ -198,6 +198,13 @@ describe("authoritative online rooms", () => {
       appHosting.once("error", reject);
     });
     appHosting.terminate();
+
+    const customDomain = new WebSocket(url, { origin: "https://cachito.ianduclos.com" });
+    await new Promise<void>((resolve, reject) => {
+      customDomain.once("open", resolve);
+      customDomain.once("error", reject);
+    });
+    customDomain.terminate();
   });
 
   it("closes a connection that exceeds the per-socket request budget", async () => {
