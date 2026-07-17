@@ -1,5 +1,5 @@
 import { Component, type CSSProperties, type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MAX_PLAYERS, type Bid, type Die, type GameAction, type GameRules, type LegalActions, type PublicGameView, type PublicPlayer } from "../engine";
+import { isHigherBid, MAX_PLAYERS, type Bid, type Die, type GameAction, type GameRules, type LegalActions, type PublicGameView, type PublicPlayer } from "../engine";
 import { DiceRow } from "../ui/Dice";
 import { GameSettings } from "../ui/GameSettings";
 import { getSoundLevels, playSound, setSoundLevels, type SoundLevels } from "../ui/sound";
@@ -255,9 +255,25 @@ function OnlineDiceInventory({ inPlay, startingTotal }: { inPlay: number; starti
   return <section className="tp-inventory" aria-label={`${inPlay} dice in play; ${lost} ${lost === 1 ? "die" : "dice"} lost`}><div className="tp-inventory-heading"><span>Dice in play</span><strong>{inPlay}</strong></div><div className="tp-lost-heading"><span>Lost dice</span><small>Grouped in fives</small></div>{groups.length ? <div className="tp-dice-groups" aria-hidden="true">{groups.map((count, groupIndex) => <span className="tp-dice-group" key={`${count}-${groupIndex}`}><DiceRow dice={Array.from({ length: count }, () => 1 as Die)} small /></span>)}</div> : <p className="tp-no-lost-dice">No dice lost yet</p>}</section>;
 }
 
+function preparatoryBids(view: PublicGameView, playerId?: string): Bid[] {
+  if (!playerId || view.phase !== "playing") return [];
+  const player = view.players.find((candidate) => candidate.id === playerId);
+  if (!player || player.eliminated) return [];
+  const totalDice = view.players.reduce((total, candidate) => total + candidate.diceCount, 0);
+  const bids: Bid[] = [];
+  for (let quantity = 1; quantity <= totalDice; quantity += 1) {
+    for (let denomination = 1; denomination <= 6; denomination += 1) {
+      const bid = { quantity, denomination: denomination as Die };
+      if (!view.currentBid || isHigherBid(view.currentBid, bid, view.paloFijo, player.diceCount === 1, view.rules.acesConversion)) bids.push(bid);
+    }
+  }
+  return bids;
+}
+
 function OnlineSeat({ player, position, currentTurn, latestBid, diceAmountsVisible, connected, covered, announcement }: { player: PublicPlayer; position: SeatPosition; currentTurn: boolean; latestBid?: Bid; diceAmountsVisible: boolean; connected: boolean; covered: boolean; announcement?: string }) {
   const status = player.eliminated ? "Out · spectating" : !connected ? covered ? "Offline · bot cover" : "Offline · reconnecting" : player.tableDice.length ? `${player.tableDice.length} public · rest hidden` : "Dice hidden";
-  return <article className={`tp-seat tp-seat--${position}${player.eliminated ? " tp-seat--out" : ""}${currentTurn ? " tp-seat--active" : ""}`} aria-label={`${player.name}${player.eliminated ? ", out and spectating" : ""}${currentTurn ? ", current turn" : ""}`}>{announcement && <div className="online-seat-announcement" role="status">{announcement}</div>}{currentTurn && <span className="tp-turn-flag">Turn</span>}{player.eliminated && <span className="tp-out-flag">Out</span>}<div className="tp-avatar" aria-hidden="true">{initials(player.name)}</div><div className="tp-seat-copy"><div><strong>{player.name}</strong><small>{!connected ? covered ? "Covered" : "Offline" : "Online"}</small></div>{diceAmountsVisible && !player.eliminated ? <span className="tp-seat-dice-squares" aria-label={`${player.diceCount} ${player.diceCount === 1 ? "die" : "dice"}`}>{Array.from({ length: player.diceCount }, (_, index) => <i className={index < player.tableDice.length ? "tp-seat-die--public" : ""} key={index} />)}</span> : <span>{status}</span>}</div>{latestBid && <div className="tp-seat-bid"><span>Latest bid</span><strong><span>{latestBid.quantity} ×</span><b aria-label={denominationNames[latestBid.denomination]}>{dieGlyphs[latestBid.denomination]}</b></strong></div>}{!latestBid && player.tableDice.length > 0 && <small className="tp-seat-note">{player.tableDice.length} dice on the table</small>}</article>;
+  const connectionState = connected ? "online" : covered ? "covered" : "offline";
+  return <article className={`tp-seat tp-seat--${position}${player.eliminated ? " tp-seat--out" : ""}${currentTurn ? " tp-seat--active" : ""}`} aria-label={`${player.name}${player.eliminated ? ", out and spectating" : ""}${currentTurn ? ", current turn" : ""}`}>{announcement && <div className="online-seat-announcement" role="status">{announcement}</div>}{currentTurn && <span className="tp-turn-flag">Turn</span>}{player.eliminated && <span className="tp-out-flag">Out</span>}<div className="tp-avatar" aria-hidden="true">{initials(player.name)}</div><div className="tp-seat-copy"><div><strong>{player.name}</strong><small className={`online-seat-status online-seat-status--${connectionState}`}>{!connected ? covered ? "Covered" : "Offline" : "Online"}</small></div>{diceAmountsVisible && !player.eliminated ? <span className="tp-seat-dice-squares" aria-label={`${player.diceCount} ${player.diceCount === 1 ? "die" : "dice"}`}>{Array.from({ length: player.diceCount }, (_, index) => <i className={index < player.tableDice.length ? "tp-seat-die--public" : ""} key={index} />)}</span> : <span>{status}</span>}</div>{latestBid && <div className="tp-seat-bid"><span>Latest bid</span><strong><span>{latestBid.quantity} ×</span><b aria-label={denominationNames[latestBid.denomination]}>{dieGlyphs[latestBid.denomination]}</b></strong></div>}{!latestBid && player.tableDice.length > 0 && <small className="tp-seat-note">{player.tableDice.length} dice on the table</small>}</article>;
 }
 
 function OnlineSpectatorDock({ roomCode, player, currentPlayerName, currentBid, round, totalDice, formattedTime, onActivity }: { roomCode: string; player?: PublicPlayer; currentPlayerName: string; currentBid: Bid | null; round: number; totalDice: number; formattedTime?: string; onActivity: () => void }) {
@@ -378,17 +394,22 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
   const [retainedRoundBid, setRetainedRoundBid] = useState<{ round: number; bid: NonNullable<PublicGameView["currentBid"]>; bidderId: string | null } | undefined>();
   const [roundBids, setRoundBids] = useState<{ round: number; bids: Record<string, NonNullable<PublicGameView["currentBid"]>> }>();
   const maxQuantity = useMemo(() => view.players.reduce((total, player) => total + player.diceCount, 0), [view]);
+  const advanceBids = useMemo(() => preparatoryBids(view, playerId), [playerId, view]);
   const ownPlayer = view.players.find((player) => player.id === playerId);
   const ownHand = ownPlayer?.hand;
   const eliminated = ownPlayer?.eliminated ?? false;
   const statusById = new Map(playerStatuses.map((status) => [status.id, status.connected]));
   const offlineCoverById = new Map(playerStatuses.map((status) => [status.id, status.covered]));
   const secondsLeft = turnDeadlineAt ? Math.min(view.rules.turnTimeSeconds, Math.max(0, Math.ceil((turnDeadlineAt - clock) / 1_000))) : undefined;
-  const paloDefault = view.paloFijo && !legal?.bids.some((bid) => bid.quantity === quantity && bid.denomination === denomination)
-    ? legal?.bids.find((bid) => bid.quantity === quantity)?.denomination
+  const activePlayers = view.players.filter((player) => !player.eliminated);
+  const roundShuffling = view.phase === "playing" && shuffle?.round === view.round && shuffle.readyPlayerIds.length < activePlayers.length;
+  const isMyActionTurn = isMyTurn && !roundShuffling;
+  const availableBids = isMyActionTurn ? (legal?.bids ?? advanceBids) : advanceBids;
+  const paloDefault = view.paloFijo && !availableBids.some((bid) => bid.quantity === quantity && bid.denomination === denomination)
+    ? availableBids.find((bid) => bid.quantity === quantity)?.denomination
     : undefined;
   const selectedDenomination = paloDefault ?? denomination;
-  const chosen = legal?.bids.some((bid) => bid.quantity === quantity && bid.denomination === selectedDenomination) ?? false;
+  const chosen = availableBids.some((bid) => bid.quantity === quantity && bid.denomination === selectedDenomination);
   const canPutDiceOnTable = Boolean(legal?.canPutDiceOnTable && ownHand);
   const roundBid = view.currentBid ?? (retainedRoundBid?.round === view.round ? retainedRoundBid.bid : null);
   const roundBidderId = view.lastBidderId ?? (retainedRoundBid?.round === view.round ? retainedRoundBid.bidderId : null);
@@ -398,10 +419,9 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
   const tablePlayers = playerId ? view.players.filter((player) => player.id !== playerId) : view.players;
   const tablePositions = playerId ? seatLayoutFor(view.players.length) : spectatorSeatLayoutFor(view.players.length);
   const formattedTime = secondsLeft === undefined ? undefined : `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}`;
-  const activePlayers = view.players.filter((player) => !player.eliminated);
-  const roundShuffling = view.phase === "playing" && shuffle?.round === view.round && shuffle.readyPlayerIds.length < activePlayers.length;
   const canShake = Boolean(playerId && !eliminated);
-  const isMyActionTurn = isMyTurn && !roundShuffling;
+  const canPrepareBid = Boolean(connected && !paused && view.phase === "playing" && !roundShuffling && ownPlayer && !eliminated);
+  const builderDisabled = !canPrepareBid;
   const controlsDisabled = !isMyActionTurn || !connected;
   const stopClockSound = useCallback(() => {
     const clockSound = clockSoundRef.current;
@@ -426,7 +446,7 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
     stopClockSound();
     onAction({ type, playerId: "" });
   };
-  const minimumBidFor = useCallback((die: Die) => legal?.bids.filter((candidate) => candidate.denomination === die).reduce<Bid | undefined>((minimum, candidate) => !minimum || candidate.quantity < minimum.quantity ? candidate : minimum, undefined), [legal]);
+  const minimumBidFor = useCallback((die: Die) => availableBids.filter((candidate) => candidate.denomination === die).reduce<Bid | undefined>((minimum, candidate) => !minimum || candidate.quantity < minimum.quantity ? candidate : minimum, undefined), [availableBids]);
   const chooseDenomination = (die: Die) => {
     const minimum = minimumBidFor(die);
     if (!minimum) return;
@@ -484,19 +504,24 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
     return () => window.clearInterval(timer);
   }, [turnDeadlineAt]);
   useEffect(() => {
-    if (!isMyTurn || !legal?.bids.length || !view.currentPlayerId) return;
+    if (!availableBids.length || !view.currentPlayerId) return;
     const turn = `${view.round}:${view.currentPlayerId}:${view.currentBid?.quantity ?? 0}:${view.currentBid?.denomination ?? 0}`;
     if (selectedTurnRef.current === turn) return;
+    if (availableBids.some((bid) => bid.quantity === quantity && bid.denomination === selectedDenomination)) {
+      selectedTurnRef.current = turn;
+      return;
+    }
     const preferred = lastPlayedDenominationRef.current;
     const minimum = preferred ? minimumBidFor(preferred) : undefined;
-    const fallback = legal.bids.reduce((minimumBid, candidate) => candidate.quantity < minimumBid.quantity ? candidate : minimumBid);
-    setDenomination((minimum ?? fallback).denomination);
-    setQuantity((minimum ?? fallback).quantity);
+    const sameFace = minimumBidFor(selectedDenomination);
+    const fallback = availableBids.reduce((minimumBid, candidate) => candidate.quantity < minimumBid.quantity ? candidate : minimumBid);
+    setDenomination((sameFace ?? minimum ?? fallback).denomination);
+    setQuantity((sameFace ?? minimum ?? fallback).quantity);
     setQuantityManuallyAdjusted(false);
     setTableDiceMode(false);
     setTableDiceIndices([]);
     selectedTurnRef.current = turn;
-  }, [isMyTurn, legal, minimumBidFor, view.currentBid, view.currentPlayerId, view.round]);
+  }, [availableBids, minimumBidFor, quantity, selectedDenomination, view.currentBid, view.currentPlayerId, view.round]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setRoundBids((current) => {
@@ -572,7 +597,6 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
       <section className="tp-stage" aria-label={`${view.players.length}-player online table`}>
         <div className={`tp-table${shufflingDice ? " tp-table--shuffling" : ""}`}>
           <div className="tp-table-grain" aria-hidden="true" />
-          <div className="tp-round-meta"><span>Room {roomCode}</span><strong>Round {view.round}</strong><span>{view.paloFijo ? "Palo fijo" : "Normal play"}</span></div>
           {tablePlayers.map((player, index) => <OnlineSeat key={player.id} player={player} position={tablePositions[index]} currentTurn={!roundShuffling && view.phase === "playing" && view.currentPlayerId === player.id} latestBid={roundBids?.round === view.round ? roundBids.bids[player.id] : undefined} diceAmountsVisible={view.rules.diceAmountsVisible} connected={statusById.get(player.id) !== false} covered={offlineCoverById.get(player.id) === true} announcement={announcement?.playerId === player.id ? announcement.text : undefined} />)}
           <div className="tp-table-center">
             <OnlineDiceInventory inPlay={totalDice} startingTotal={view.players.length * 5} />
@@ -586,7 +610,7 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
           {view.phase === "gameOver" && <GameSummary view={view} history={history} connected={connected} isHost={isHost} onReturnToLobby={onReturnToLobby} onExit={onExit} />}
           {error && <p className="tp-engine-error" role="alert">{error}</p>}
         </div>
-        {view.phase !== "gameOver" && (ownPlayer && !eliminated ? <section className={`tp-action-dock${isMyActionTurn ? " tp-action-dock--your-turn" : ""}`} aria-label="Your hand and turn controls"><div className="tp-player-hud"><div className="tp-hud-owner"><div className="tp-avatar" aria-hidden="true">{initials(ownPlayer.name)}</div><div><strong>{ownPlayer.name}</strong><small>Your seat</small><span>{!connected ? "Reconnecting" : roundShuffling ? "Waiting for cups" : isMyActionTurn ? "Your turn · make a move" : `Waiting for ${current?.name ?? "the table"}`}</span></div></div><div className="tp-hand"><div><p>{ownPlayer.name}’s hand</p></div>{ownHand ? <DiceRow dice={shufflingDice && shuffleFaces ? shuffleFaces : ownHand} className={`${shufflingDice ? "dice-row--shuffling" : ""}${tableRerolling ? " dice-row--table-reroll" : ""}`.trim()} selectedIndices={tableDiceMode ? tableDiceIndices : undefined} onDieClick={isMyActionTurn ? (value, index) => tableDiceMode ? setTableDiceIndices((selected) => selected.includes(index) ? selected.filter((entry) => entry !== index) : selected.length < ownHand.length - 1 ? [...selected, index] : selected) : chooseDenomination(value as Die) : undefined} getDieButtonLabel={(value, index, selected) => tableDiceMode ? `${selected ? "Remove" : "Choose"} die ${index + 1} for the table` : `Choose ${denominationNames[value as Die]} from die ${index + 1}`} /> : <p className="online-hidden-hand">Hand hidden this Palo Fijo round.</p>}{tableDiceMode && <small className="tp-table-selection-help">Select up to {Math.max(1, (ownHand?.length ?? 1) - 1)} dice; one must stay private.</small>}</div></div><div className="tp-bid-builder"><div className="tp-quantity"><span>Quantity</span><div><button type="button" aria-label="Decrease quantity" disabled={controlsDisabled || quantity <= 1} onClick={() => { playSound("numDown"); setQuantity((value) => Math.max(1, value - 1)); setQuantityManuallyAdjusted(true); }}>−</button><strong>{quantity}</strong><button type="button" aria-label="Increase quantity" disabled={controlsDisabled || quantity >= maxQuantity} onClick={() => { playSound("numUp"); setQuantity((value) => Math.min(maxQuantity, value + 1)); setQuantityManuallyAdjusted(true); }}>+</button></div></div><div className="tp-denominations" aria-label="Choose denomination">{([1, 2, 3, 4, 5, 6] as Die[]).map((die) => <button type="button" key={die} aria-label={`Choose ${denominationNames[die]}`} aria-pressed={selectedDenomination === die} disabled={controlsDisabled || !minimumBidFor(die)} onClick={() => chooseDenomination(die)}><OnlineDenominationFace value={die} /></button>)}</div></div><div className="tp-actions"><button className="tp-call tp-call--dudo" type="button" disabled={controlsDisabled || !legal?.canDudo} onClick={() => call("dudo")}>Dudo</button><button className="tp-call tp-call--calzo" type="button" disabled={controlsDisabled || !legal?.canCalzo} onClick={() => call("calzo")}>Calzo</button><button className="tp-table-dice-action" type="button" aria-pressed={tableDiceMode} disabled={controlsDisabled || (!canPutDiceOnTable && !tableDiceMode)} onClick={() => { setTableDiceMode((active) => !active); setTableDiceIndices([]); playSound("tableDice"); }}>{tableDiceMode ? "Cancel table dice" : view.rules.tableDiceEnabled ? "Put dice on table" : "Table dice off"}</button><button className="tp-raise" type="button" disabled={controlsDisabled || !chosen || (tableDiceMode && !tableDiceIndices.length)} onClick={bid}>{tableDiceMode ? `Bid & put ${tableDiceIndices.length || "…"} on table` : roundBid ? `Raise to ${quantity} ${denominationNames[selectedDenomination]}` : `Bid ${quantity} ${denominationNames[selectedDenomination]}`}</button></div></section> : <OnlineSpectatorDock roomCode={roomCode} player={ownPlayer} currentPlayerName={current?.name ?? (view.phase === "reveal" ? "Round result" : "Table")} currentBid={roundBid} round={view.round} totalDice={totalDice} formattedTime={formattedTime} onActivity={() => setFeedOpen(true)} />)}
+        {view.phase !== "gameOver" && (ownPlayer && !eliminated ? <section className={`tp-action-dock${isMyActionTurn ? " tp-action-dock--your-turn" : ""}`} aria-label="Your hand and turn controls"><div className="tp-player-hud"><div className="tp-hud-owner"><div className="tp-avatar" aria-hidden="true">{initials(ownPlayer.name)}</div><div><strong>{ownPlayer.name}</strong><small>Your seat</small><span>{!connected ? "Reconnecting" : roundShuffling ? "Waiting for cups" : isMyActionTurn ? "Your turn · make a move" : `Prepare your bid · waiting for ${current?.name ?? "the table"}`}</span></div></div><div className="tp-hand"><div><p>{ownPlayer.name}’s hand</p></div>{ownHand ? <DiceRow dice={shufflingDice && shuffleFaces ? shuffleFaces : ownHand} className={`${shufflingDice ? "dice-row--shuffling" : ""}${tableRerolling ? " dice-row--table-reroll" : ""}`.trim()} selectedIndices={tableDiceMode ? tableDiceIndices : undefined} onDieClick={canPrepareBid ? (value, index) => tableDiceMode ? setTableDiceIndices((selected) => selected.includes(index) ? selected.filter((entry) => entry !== index) : selected.length < ownHand.length - 1 ? [...selected, index] : selected) : chooseDenomination(value as Die) : undefined} getDieButtonLabel={(value, index, selected) => tableDiceMode ? `${selected ? "Remove" : "Choose"} die ${index + 1} for the table` : `Choose ${denominationNames[value as Die]} from die ${index + 1}`} /> : <p className="online-hidden-hand">Hand hidden this Palo Fijo round.</p>}{tableDiceMode && <small className="tp-table-selection-help">Select up to {Math.max(1, (ownHand?.length ?? 1) - 1)} dice; one must stay private.</small>}</div></div><div className="tp-bid-builder"><div className="tp-quantity"><span>Quantity</span><div><button type="button" aria-label="Decrease quantity" disabled={builderDisabled || quantity <= 1} onClick={() => { playSound("numDown"); setQuantity((value) => Math.max(1, value - 1)); setQuantityManuallyAdjusted(true); }}>−</button><strong>{quantity}</strong><button type="button" aria-label="Increase quantity" disabled={builderDisabled || quantity >= maxQuantity} onClick={() => { playSound("numUp"); setQuantity((value) => Math.min(maxQuantity, value + 1)); setQuantityManuallyAdjusted(true); }}>+</button></div></div><div className="tp-denominations" aria-label="Choose denomination">{([1, 2, 3, 4, 5, 6] as Die[]).map((die) => <button type="button" key={die} aria-label={`Choose ${denominationNames[die]}`} aria-pressed={selectedDenomination === die} disabled={builderDisabled || !minimumBidFor(die)} onClick={() => chooseDenomination(die)}><OnlineDenominationFace value={die} /></button>)}</div></div><div className="tp-actions"><button className="tp-call tp-call--dudo" type="button" disabled={controlsDisabled || !legal?.canDudo} onClick={() => call("dudo")}>Dudo</button><button className="tp-call tp-call--calzo" type="button" disabled={controlsDisabled || !legal?.canCalzo} onClick={() => call("calzo")}>Calzo</button><button className="tp-table-dice-action" type="button" aria-pressed={tableDiceMode} disabled={controlsDisabled || (!canPutDiceOnTable && !tableDiceMode)} onClick={() => { setTableDiceMode((active) => !active); setTableDiceIndices([]); playSound("tableDice"); }}>{tableDiceMode ? "Cancel table dice" : view.rules.tableDiceEnabled ? "Put dice on table" : "Table dice off"}</button><button className="tp-raise" type="button" disabled={controlsDisabled || !chosen || (tableDiceMode && !tableDiceIndices.length)} onClick={bid}>{!isMyActionTurn ? `${chosen ? "Prepared" : "Preparing"} ${quantity} ${denominationNames[selectedDenomination]}` : tableDiceMode ? `Bid & put ${tableDiceIndices.length || "…"} on table` : roundBid ? `Raise to ${quantity} ${denominationNames[selectedDenomination]}` : `Bid ${quantity} ${denominationNames[selectedDenomination]}`}</button></div></section> : <OnlineSpectatorDock roomCode={roomCode} player={ownPlayer} currentPlayerName={current?.name ?? (view.phase === "reveal" ? "Round result" : "Table")} currentBid={roundBid} round={view.round} totalDice={totalDice} formattedTime={formattedTime} onActivity={() => setFeedOpen(true)} />)}
       </section>
       {feedOpen && <button className="tp-feed-backdrop" type="button" aria-label="Close table feed" onClick={() => setFeedOpen(false)} />}
       <OnlineHistory history={history} onClose={() => setFeedOpen(false)} />

@@ -12,7 +12,7 @@ The table is the persistent place. Normal transitions must not replace it with a
 
 - Entry point: `src/App.tsx`. Live rooms enter through **Play online**; `/table-prototype` remains the offline test harness.
 - Shared table presentation: `src/ui/TablePrototype.css`, `src/ui/tablePrototypeSeats.ts`, and `src/ui/Dice.tsx`.
-- Live online presentation: `src/online/OnlineGame.tsx` and `src/online/OnlineTable.css`. It must render only the server-provided `PublicGameView` and `LegalActions`.
+- Live online presentation: `src/online/OnlineGame.tsx` and `src/online/OnlineTable.css`. It must render only the server-provided `PublicGameView` and `LegalActions`. The waiting player may derive a provisional bid list from public bid-ordering rules for advance preparation, but submission remains turn-gated and server-authoritative.
 - Offline harness: `src/ui/TablePrototype.tsx`.
 - Rules and transitions: `src/engine/`; the prototype calls the real `getLegalActions` and `applyAction` functions.
 - Bot decisions: `src/bot/`, using restricted `projectForPlayer` observations and public history.
@@ -31,12 +31,13 @@ Do not fork or simplify the engine. Presentation timers may delay what is shown,
 - The current bot seat and the human dashboard need an unmistakable active-turn treatment.
 - The page must fit in one viewport at 1280×720 and must not require document scrolling. The activity feed may scroll internally.
 - The table should not grow without limit on wide/full-screen displays. Use the feed or constrained table sizing to preserve proportions.
+- Do not repeat room code, round number, or “Normal play” along the upper felt; that information already lives in the page header and status controls.
 
 ## Player cards and table memory
 
 Cards show the established information: name, bot label, hidden/visible dice status, public table-dice status, active-turn flag, and latest bid. Latest-bid dice use a visibly large die-face icon; do not reduce them to a tiny numeral.
 
-Elimination does not remove or reflow a seat. Keep the card in its original position, convert it to fully desaturated neutral styling, retain the name and relevant public history, and show both an **Out** badge and **Out · spectating** status. The lower opacity must not make the name or state illegible.
+Elimination does not remove or reflow a seat. Keep the card in its original position, convert its body and game information to neutral styling, retain the name and relevant public history, and show both an **Out** badge and **Out · spectating** status. Do not lower opacity on the whole card: eliminated seats must remain readable. The Online/Covered/Offline badge deliberately retains green/amber/red color so connection state remains independently scannable.
 
 The center inventory represents table memory:
 
@@ -89,6 +90,7 @@ The denominator selector uses square die-face buttons with real pip layouts and 
 - Once quantity is changed with plus/minus, switching denomination must preserve that manual quantity, even when the resulting bid is temporarily illegal. Disable the final bid button until the combination is legal.
 - Quantity buttons move one integer at a time; they do not jump between legal bid quantities.
 - Clicking a die in the private hand chooses that face as the denomination when table-dice selection is inactive.
+- After cups settle, a seated player may prepare quantity and denomination while another player acts. The disabled submit button reads **Prepared** for a legal choice and **Preparing** for a temporarily illegal combination. Incoming bids preserve the prepared choice when it remains legal and otherwise advance it to a legal minimum. Dudo, Calzo, table-dice selection, and actual submission remain disabled until the server grants that player the turn.
 - Put-dice-on-table sits below Dudo and Calzo. It must remain a prominent button, not tiny helper text.
 - Table-dice mode allows one or more selected dice but always leaves at least one private. Submitted table dice stay public for the round and the remaining private dice visibly reroll.
 
