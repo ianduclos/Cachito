@@ -48,7 +48,11 @@ export const SUPPORTED_CONCURRENT_GAMES = 4;
 export function onlineLogHeader<const T extends number>(schemaVersion: T) { return { schemaVersion, gameVersion: release }; }
 const RECOVERY_CLOCK_SKEW_MS = 60_000;
 const ipHashSalt = process.env.IP_HASH_SALT;
-const configuredOrigins = new Set(["https://cachito.web.app", ...(process.env.ONLINE_ALLOWED_ORIGINS ?? "").split(",").map((value) => value.trim()).filter(Boolean)]);
+const configuredOrigins = new Set([
+  "https://cachito.web.app",
+  "https://cachito--ian-duclos.europe-west4.hosted.app",
+  ...(process.env.ONLINE_ALLOWED_ORIGINS ?? "").split(",").map((value) => value.trim()).filter(Boolean),
+]);
 
 function code() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
