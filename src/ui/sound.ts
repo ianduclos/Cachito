@@ -36,13 +36,20 @@ function prepareAudio(source: string) {
   audio.load();
   return audio;
 }
-/** Starts fetching and decoding every clip before timing-sensitive game events need it. */
+/** Starts fetching every clip before timing-sensitive game events need it. */
 export function preloadSounds() {
   if (soundsPrimed || typeof Audio === "undefined") return;
   soundsPrimed = true;
   music ??= prepareAudio("/sounds/theme.mp3");
   music.loop = true;
-  for (const name of soundNames) effectPools.set(name, [prepareAudio(`/sounds/${clips[name]}`), prepareAudio(`/sounds/${clips[name]}`)]);
+  // Keep one warm voice per clip. A second voice is created only for genuine
+  // overlap, avoiding dozens of simultaneous decoders during page startup.
+  for (const name of soundNames) effectPools.set(name, [prepareAudio(`/sounds/${clips[name]}`)]);
+}
+function unlockAudio() {
+  if (typeof AudioContext === "undefined") return;
+  audioContext ??= new AudioContext();
+  void audioContext.resume();
 }
 function musicTarget() { return levels.music * (activeEffects ? 0.16 : 1); }
 function updateMusicVolume() { if (music) music.volume = musicTarget(); }
@@ -127,4 +134,10 @@ export function useGenericButtonSounds() {
   }, []);
 }
 
-if (typeof window !== "undefined" && typeof Audio !== "undefined" && !navigator.userAgent.includes("jsdom")) preloadSounds();
+if (typeof window !== "undefined" && typeof Audio !== "undefined" && !navigator.userAgent.includes("jsdom")) {
+  preloadSounds();
+  // Resume Web Audio at the earliest user gesture, before a click handler asks
+  // an amplified cue to play. This removes the first-use context wake-up delay.
+  window.addEventListener("pointerdown", unlockAudio, { capture: true, once: true });
+  window.addEventListener("keydown", unlockAudio, { capture: true, once: true });
+}

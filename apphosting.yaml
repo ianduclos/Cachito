@@ -22,7 +22,7 @@ env:
     availability:
       - BUILD
   - variable: ONLINE_ALLOWED_ORIGINS
-    value: "https://cachito.web.app,https://cachito--ian-duclos.europe-west4.hosted.app"
+    value: "https://cachito.web.app,https://cachito--ian-duclos.europe-west4.hosted.app,https://cachito.ianduclos.com"
     availability:
       - RUNTIME
   #     - RUNTIME

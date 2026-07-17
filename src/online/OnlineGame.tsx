@@ -89,7 +89,7 @@ function onlineSocketUrl() {
   if (configured) return `${configured.replace(/^http:/, "ws:").replace(/^https:/, "wss:")}/online`;
   // Firebase Hosting serves a static bundle and cannot proxy WebSockets. Keep
   // the public deployment connected when it is built outside App Hosting.
-  if (location.hostname === "cachito.web.app" || location.hostname === "cachito--ian-duclos.europe-west4.hosted.app") {
+  if (["cachito.web.app", "cachito--ian-duclos.europe-west4.hosted.app", "cachito.ianduclos.com"].includes(location.hostname)) {
     return "wss://cachito-rooms-ribcxidnzq-ez.a.run.app/online";
   }
   const protocol = location.protocol === "https:" ? "wss" : "ws";

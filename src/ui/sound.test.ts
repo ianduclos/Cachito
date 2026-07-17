@@ -32,12 +32,12 @@ describe("sound playback preparation", () => {
 
   afterEach(() => vi.unstubAllGlobals());
 
-  it("preloads a two-voice pool and reuses it for immediate playback", async () => {
+  it("preloads one warm voice per clip and reuses it for immediate playback", async () => {
     const { playSound, preloadSounds } = await import("./sound");
     preloadSounds();
 
     const primedCount = FakeAudio.created.length;
-    expect(primedCount).toBeGreaterThan(20);
+    expect(primedCount).toBe(16);
     expect(FakeAudio.created.every((audio) => audio.preload === "auto" && audio.load.mock.calls.length === 1)).toBe(true);
 
     const suspense = playSound("suspense") as unknown as FakeAudio;

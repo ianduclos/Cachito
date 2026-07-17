@@ -51,6 +51,7 @@ const ipHashSalt = process.env.IP_HASH_SALT;
 const configuredOrigins = new Set([
   "https://cachito.web.app",
   "https://cachito--ian-duclos.europe-west4.hosted.app",
+  "https://cachito.ianduclos.com",
   ...(process.env.ONLINE_ALLOWED_ORIGINS ?? "").split(",").map((value) => value.trim()).filter(Boolean),
 ]);
 
