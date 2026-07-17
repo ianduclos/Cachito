@@ -2,6 +2,7 @@
 .git
 .gitignore
 .firebase
+AGENTS.md
 node_modules
 dist
 logs

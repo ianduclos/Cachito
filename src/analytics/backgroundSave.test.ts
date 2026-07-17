@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { saveGameLogInBackground, type GameLogFetch } from './backgroundSave'
 import type { GameLog } from './gameLog'
+import { release } from '../release'
 
 const log: GameLog = {
   schemaVersion: 1,
+  gameVersion: release,
   metadata: { seed: 42, startedAt: '2026-07-13T18:35:51.189Z', seats: [] },
   publicActions: [],
   roundResolutions: [],
@@ -41,4 +43,3 @@ describe('background game-log persistence client', () => {
     expect(log).toEqual(original)
   })
 })
-

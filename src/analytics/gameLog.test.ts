@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_GAME_RULES, getLegalActions, projectForPlayer, type PlayingState } from '../engine'
 import { createProbabilityPolicy, randomLegalPolicy, runBotMatch, type BotObservation } from '../bot'
 import { createBotDecisionRecord, serializeGameLog } from './index'
+import { release } from '../release'
 
 describe('game analysis log', () => {
   it('records a complete deterministic bot match', () => {
@@ -15,6 +16,7 @@ describe('game analysis log', () => {
 
     expect(second.log).toEqual(first.log)
     expect(first.log.schemaVersion).toBe(1)
+    expect(first.log.gameVersion).toMatch(/^r\d{4}\.\d{2}\.\d{2}\.\d{3}$/)
     expect(first.log.metadata.seed).toBe(404)
     expect(first.log.metadata).not.toHaveProperty('startedAt')
     expect(first.log.publicActions).toHaveLength(first.actions)
@@ -75,6 +77,7 @@ describe('game analysis log', () => {
     expect(decision.probabilities).not.toHaveProperty('chosenBid')
     expect(serializeGameLog({
       schemaVersion: 1,
+      gameVersion: release,
       metadata: { seats: [] },
       publicActions: [],
       roundResolutions: [],

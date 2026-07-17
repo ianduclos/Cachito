@@ -1,6 +1,7 @@
 import type { Bid, Die, RevealState, RoundResolution } from '../engine'
 import { evaluateBidDistribution, type BidDistribution } from '../bot/probability'
 import type { BotChoice, BotDecisionTrace, BotObservation } from '../bot/types'
+import { release } from '../release'
 
 export const GAME_LOG_SCHEMA_VERSION = 1 as const
 
@@ -69,6 +70,7 @@ export interface BotDecisionRecord {
 
 export interface GameLog {
   schemaVersion: typeof GAME_LOG_SCHEMA_VERSION
+  gameVersion: string
   metadata: GameLogMetadata
   publicActions: LoggedPublicAction[]
   roundResolutions: LoggedRoundResolution[]
@@ -137,6 +139,7 @@ export function createBotDecisionRecord(
 export function createGameLogBuilder(metadata: GameLogMetadataInput): GameLogBuilder {
   const log: GameLog = {
     schemaVersion: GAME_LOG_SCHEMA_VERSION,
+    gameVersion: release,
     metadata: clone({ ...metadata, seats: metadata.seats.map((seat) => ({ ...seat })) }),
     publicActions: [],
     roundResolutions: [],
