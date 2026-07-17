@@ -313,7 +313,7 @@ function RoundReveal({ view, playerId, connected, nextRound, onNext }: { view: P
   const resultState = resultResolved ? resolution.correct ? "right" : "wrong" : "pending";
   if (!showHands) return <div className={`round-result-overlay round-callout round-callout--${callName.toLowerCase()} round-callout--${resultState}`} role="status"><strong>{resultResolved && resolution.correct ? callName.toUpperCase() : [...callName.toUpperCase()].map((letter, index) => <i key={`${letter}-${index}`}>{letter}</i>)}</strong><span>{caller} calls it.</span></div>;
   const nextReady = Boolean(playerId && nextRound?.readyPlayerIds.includes(playerId));
-  const remaining = nextRound ? Math.max(0, Math.ceil((nextRound.deadlineAt - clock) / 1_000)) : 0;
+  const remaining = nextRound ? Math.min(60, Math.max(0, Math.ceil((nextRound.deadlineAt - clock) / 1_000))) : 0;
   const missingPlayers = view.players.filter((player) => !player.eliminated && !nextRound?.readyPlayerIds.includes(player.id)).map((player) => player.name);
   const revealedPlayers = view.players.filter((player) => player.hand?.length || player.tableDice.length);
   return <div className="round-result-overlay" role="dialog" aria-modal="true" aria-label="Round result" tabIndex={-1} ref={dialogRef}><section className={`reveal-panel round-result round-result--${resolution.correct ? "correct" : "wrong"}`}><div className="result-banner"><p>{caller} said {callName} to {bidder}’s bid.</p><h3>{resolution.bid.quantity} × {denominationNames[resolution.bid.denomination]} · {resolution.actualCount} there</h3><div className="online-result-verdict"><strong>{resolution.correct ? "Correct call." : "Wrong call."}</strong><span>{consequence}</span></div><small>Highlighted dice counted toward the bid.</small></div><div className="revealed-hands" style={{ "--online-hand-columns": Math.min(4, revealedPlayers.length) } as CSSProperties}>{revealedPlayers.map((player) => <div className="revealed-hand" key={player.id}><strong>{player.name}</strong><DiceRow dice={[...(player.hand ?? []), ...player.tableDice]} small highlight={highlight} /></div>)}</div>{playerId ? <div className="next-round-ready"><button className="button button--primary" disabled={!connected || nextReady} onClick={onNext}>{nextReady ? "Ready for next round" : "Next round"}</button><small>{nextRound ? missingPlayers.length ? `Waiting for ${missingPlayers.join(", ")} · auto-starts in ${remaining}s` : `Everyone is ready · auto-starts in ${remaining}s` : "Preparing the next round…"}</small></div> : <div className="next-round-ready"><small>{nextRound ? missingPlayers.length ? `Waiting for ${missingPlayers.join(", ")} · ${remaining}s` : `Next round in ${remaining}s` : "Preparing the next round…"}</small></div>}</section></div>;
@@ -323,7 +323,7 @@ function RoundShuffle({ view, playerId, connected, shuffle, shaking, clock, canS
   const activePlayers = view.players.filter((player) => !player.eliminated);
   const ready = new Set(shuffle.readyPlayerIds);
   const myReady = Boolean(playerId && ready.has(playerId));
-  const remaining = Math.max(0, Math.ceil((shuffle.deadlineAt - clock) / 1_000));
+  const remaining = Math.min(20, Math.max(0, Math.ceil((shuffle.deadlineAt - clock) / 1_000)));
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalFocus(dialogRef);
   useEffect(() => {
@@ -383,7 +383,7 @@ function OnlineTable({ view, roomCode, history, legal, playerId, playerStatuses,
   const eliminated = ownPlayer?.eliminated ?? false;
   const statusById = new Map(playerStatuses.map((status) => [status.id, status.connected]));
   const offlineCoverById = new Map(playerStatuses.map((status) => [status.id, status.covered]));
-  const secondsLeft = turnDeadlineAt ? Math.max(0, Math.ceil((turnDeadlineAt - clock) / 1_000)) : undefined;
+  const secondsLeft = turnDeadlineAt ? Math.min(view.rules.turnTimeSeconds, Math.max(0, Math.ceil((turnDeadlineAt - clock) / 1_000))) : undefined;
   const paloDefault = view.paloFijo && !legal?.bids.some((bid) => bid.quantity === quantity && bid.denomination === denomination)
     ? legal?.bids.find((bid) => bid.quantity === quantity)?.denomination
     : undefined;
