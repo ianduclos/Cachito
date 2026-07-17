@@ -66,7 +66,7 @@ function gamePlayers(viewerPlayerId?: string, eliminatedViewer = false): PublicP
   }));
 }
 
-function enterTable({ spectator = false, eliminated = false }: { spectator?: boolean; eliminated?: boolean } = {}) {
+function enterTable({ spectator = false, eliminated = false, shuffling = true }: { spectator?: boolean; eliminated?: boolean; shuffling?: boolean } = {}) {
   const playerId = spectator ? undefined : "player-1";
   const players = gamePlayers(playerId, eliminated);
   const activeIds = players.filter((player) => !player.eliminated).map((player) => player.id);
@@ -88,13 +88,13 @@ function enterTable({ spectator = false, eliminated = false }: { spectator?: boo
       type: "state",
       hostPlayerId: "player-1",
       view,
-      ...(playerId && !eliminated ? { legalActions: { bids: [{ quantity: 4, denomination: 5 }], canDudo: true, canCalzo: false, canPutDiceOnTable: true } } : {}),
       history: ["Miss Blanquita bid 3 Chinas."],
-      shuffle: { round: 1, readyPlayerIds: playerId && !eliminated ? activeIds.filter((id) => id !== playerId) : activeIds.slice(0, -1), deadlineAt: Date.now() + 20_000 },
+      ...(shuffling ? { shuffle: { round: 1, readyPlayerIds: playerId && !eliminated ? activeIds.filter((id) => id !== playerId) : activeIds.slice(0, -1), deadlineAt: Date.now() + 20_000 } } : {}),
       playerStatuses: players.map((player) => ({ id: player.id, connected: true, covered: false })),
       turnDeadlineAt: Date.now() + 60_000,
     });
   });
+  return view;
 }
 
 function enterWinner() {
@@ -193,6 +193,52 @@ describe("OnlineGame connection lifecycle", () => {
     expect(screen.getByText("Out · spectating")).toBeInTheDocument();
     expect(screen.queryByLabelText("Your hand and turn controls")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Shake my dice" })).not.toBeInTheDocument();
+  });
+
+  it("keeps eliminated seats readable while preserving connection-state color", () => {
+    render(<OnlineGame onExit={vi.fn()} />);
+    const view = enterTable({ shuffling: false });
+    const players = view.players.map((player) => player.id === "player-3" ? { ...player, diceCount: 0, eliminated: true, hand: undefined, tableDice: [] } : player);
+    act(() => socket().message({
+      type: "state",
+      hostPlayerId: "player-1",
+      view: { ...view, players },
+      history: [],
+      playerStatuses: players.map((player) => ({ id: player.id, connected: true, covered: false })),
+      turnDeadlineAt: Date.now() + 60_000,
+    }));
+
+    const seat = screen.getByRole("article", { name: /Miss Blanquita, out and spectating/ });
+    expect(seat).toHaveClass("tp-seat--out");
+    expect(seat.querySelector(".online-seat-status--online")).toHaveTextContent("Online");
+  });
+
+  it("lets a player prepare a legal raise before their turn without sending it early", () => {
+    render(<OnlineGame onExit={vi.fn()} />);
+    const view = enterTable({ shuffling: false });
+
+    expect(screen.queryByText("Normal play")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Choose Sambas" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Dudo" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Put dice on table" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Choose Sambas" }));
+    expect(screen.getByRole("button", { name: "Prepared 3 Sambas" })).toBeDisabled();
+    expect(socket().sent.map((message) => JSON.parse(message)).filter((message) => message.type === "action")).toHaveLength(0);
+
+    act(() => socket().message({
+      type: "state",
+      hostPlayerId: "player-1",
+      view: { ...view, currentPlayerId: "player-1" },
+      legalActions: { bids: [{ quantity: 3, denomination: 6 }], canDudo: true, canCalzo: true, canPutDiceOnTable: true },
+      history: [],
+      playerStatuses: view.players.map((player) => ({ id: player.id, connected: true, covered: false })),
+      turnDeadlineAt: Date.now() + 60_000,
+    }));
+
+    const raise = screen.getByRole("button", { name: "Raise to 3 Sambas" });
+    expect(raise).toBeEnabled();
+    fireEvent.click(raise);
+    expect(socket().sent.map((message) => JSON.parse(message))).toContainEqual({ type: "action", action: { type: "bid", playerId: "", bid: { quantity: 3, denomination: 6 } } });
   });
 
   it("turns the winner ceremony into the dominant final screen", () => {

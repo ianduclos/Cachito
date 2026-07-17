@@ -47,8 +47,9 @@
 .tp-seat--bottom { top: 83%; left: 50%; }
 .tp-seat--last-bid { border-color: #e8bd6873; }
 .tp-seat--active { z-index: 5; border: 2px solid #f4c767; background: linear-gradient(145deg, #193c32, #0a211c); box-shadow: 0 0 0 7px #e8bd6826, 0 0 32px #e8bd6833, 0 14px 34px #001e18b0; }
-.tp-seat--out { opacity: .66; border-color: #a9b4ae26; background: linear-gradient(145deg, #18201efa, #0d1412fa); box-shadow: 0 10px 24px #00120e75; filter: grayscale(1) saturate(0); }
-.tp-seat--out .tp-seat-copy strong { color: #d2d5d2; }
+.tp-seat--out { border-color: #a9b4ae3d; background: linear-gradient(145deg, #202a27fa, #111916fa); box-shadow: 0 10px 24px #00120e75; }
+.tp-seat--out .tp-avatar, .tp-seat--out .tp-seat-bid, .tp-seat--out .tp-seat-note { opacity: .78; filter: grayscale(1) saturate(0); }
+.tp-seat--out .tp-seat-copy strong { color: #d9ddda; }
 .tp-seat--out .tp-seat-copy > span, .tp-seat--out .tp-seat-bid > span { color: #9ca39f; }
 .tp-seat--out .tp-seat-bid { border-color: #ffffff14; }
 .tp-out-flag { position: absolute; top: 7px; right: 8px; padding: 3px 7px; border: 1px solid #bec5c133; border-radius: 999px; background: #ced3d017; color: #d6dad7; font-size: .48rem; font-weight: 950; letter-spacing: .09em; text-transform: uppercase; }
