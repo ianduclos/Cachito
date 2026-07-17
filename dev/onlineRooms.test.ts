@@ -176,7 +176,7 @@ describe("authoritative online rooms", () => {
     expect(new Set(roomCodes)).toHaveLength(SUPPORTED_CONCURRENT_GAMES);
   });
 
-  it("rejects cross-origin browser upgrades while allowing the production origin", async () => {
+  it("rejects cross-origin browser upgrades while allowing both public app origins", async () => {
     const rejected = new WebSocket(url, { origin: "https://attacker.example" });
     rejected.on("error", () => undefined);
     const status = await new Promise<number | undefined>((resolve) => rejected.once("unexpected-response", (_request, response) => {
@@ -191,6 +191,13 @@ describe("authoritative online rooms", () => {
       production.once("error", reject);
     });
     production.terminate();
+
+    const appHosting = new WebSocket(url, { origin: "https://cachito--ian-duclos.europe-west4.hosted.app" });
+    await new Promise<void>((resolve, reject) => {
+      appHosting.once("open", resolve);
+      appHosting.once("error", reject);
+    });
+    appHosting.terminate();
   });
 
   it("closes a connection that exceeds the per-socket request budget", async () => {
