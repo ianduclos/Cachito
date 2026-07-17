@@ -63,13 +63,20 @@
 .online-live-table .next-round-ready .button { min-height: 38px; padding: 7px 18px; }
 
 .online-live-table .game-paused-overlay { inset: auto; top: 49%; left: 50%; width: min(64%, 520px); min-height: 190px; border: 1px solid #d7b36a66; border-radius: 14px; background: #08251ff5; backdrop-filter: none; box-shadow: 0 22px 55px #0009; transform: translate(-50%, -50%); }
-.online-game-over-card { z-index: 17; width: min(82%, 860px); max-height: 70%; overflow: auto; }
-.online-game-over-card .summary-standings { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 9px 0; }
-.online-game-over-card .summary-standings li { padding: 7px 9px; }
-.online-game-over-card .summary-last-call { margin: 2px 0 8px !important; }
-.online-game-over-card .game-over-actions { width: 100%; }
-.online-game-over-card .game-over-actions .button { min-height: 38px; padding: 7px 13px; }
-.online-live-table .tp-confetti { z-index: 16; }
+.online-game-over-card { position: fixed; z-index: 101; inset: 0; top: 0; left: 0; width: 100vw; height: 100svh; max-height: none; align-content: center; gap: 8px; overflow: hidden; padding: clamp(24px, 5vh, 58px) clamp(20px, 7vw, 110px); border: 0; border-radius: 0; background: radial-gradient(circle at 50% 40%, #356e54 0, #0c372c 27%, #041c17 63%, #020d0b 100%); box-shadow: inset 0 0 120px #000c; transform: none; }
+.online-game-over-card::before, .online-game-over-card::after { content: ""; position: absolute; z-index: 0; left: 50%; top: 43%; width: min(96vmin, 940px); aspect-ratio: 1; border: 2px solid #e8bf6650; border-radius: 50%; box-shadow: 0 0 0 24px #e8bf6608, 0 0 0 80px #e8bf6606, 0 0 140px #e8bf663d; transform: translate(-50%, -50%); pointer-events: none; }
+.online-game-over-card::after { width: min(68vmin, 680px); border-style: double; border-width: 7px; opacity: .7; }
+.online-game-over-card > * { position: relative; z-index: 1; }
+.online-game-over-card .tp-winner-crown { margin-bottom: 4px; font-size: clamp(5rem, 12vh, 8.5rem); }
+.online-game-over-card > p { font-size: clamp(.72rem, 1.5vw, 1rem); letter-spacing: .2em; }
+.online-game-over-card > h2 { max-width: 1100px; margin: 0; color: #fff3d5; font-size: clamp(3.7rem, 10vw, 8.5rem); line-height: .9; text-wrap: balance; text-shadow: 0 10px 36px #000c, 0 0 55px #e7bf6552; }
+.online-game-over-card > strong { margin: 0 0 8px; color: #f0cd82; font-size: clamp(1rem, 2vw, 1.45rem); letter-spacing: .12em; text-transform: uppercase; }
+.online-game-over-card .summary-standings { width: min(920px, 88vw); max-height: 27vh; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: auto; margin: 8px 0; padding: 8px; border: 1px solid #e6bf6548; border-radius: 18px; background: #02130fb3; box-shadow: 0 18px 46px #0008; }
+.online-game-over-card .summary-standings li { min-height: 44px; padding: 8px 12px; border-color: #ffffff19; background: #ffffff08; }
+.online-game-over-card .summary-last-call { max-width: 850px; margin: 2px 0 8px !important; color: #c9d9d1; font-size: .72rem; text-transform: none; letter-spacing: 0; }
+.online-game-over-card .game-over-actions { width: min(620px, 90vw); }
+.online-game-over-card .game-over-actions .button { min-height: 48px; padding: 10px 18px; font-size: .75rem; }
+.online-live-table .tp-confetti { position: fixed; z-index: 100; inset: 0; }
 .online-live-table .tp-spectator-actions { grid-column: auto; grid-template-columns: 1fr; }
 
 @media (max-width: 1100px) {
@@ -89,7 +96,9 @@
   .online-live-table .revealed-hand { padding: 4px; }
   .online-live-table .revealed-hand .die { width: 19px; height: 19px; padding: 2px; }
   .online-live-table .round-callout strong { font-size: clamp(4.8rem, 22vw, 7rem); }
-  .online-game-over-card { width: 88%; max-height: 62%; padding: 13px; }
+  .online-game-over-card { width: 100vw; height: 100svh; max-height: none; padding: 18px 12px; }
+  .online-game-over-card > h2 { font-size: clamp(3rem, 17vw, 5.2rem); }
+  .online-game-over-card .tp-winner-crown { font-size: 4.5rem; }
   .online-game-over-card .summary-standings { grid-template-columns: 1fr; }
 }
 
@@ -97,5 +106,12 @@
   .online-live-table .round-result-overlay .round-result, .online-live-table .round-shuffle-card { max-height: 68%; }
   .online-live-table .round-shuffle-card { padding-top: 14px; padding-bottom: 14px; }
   .online-live-table .round-shuffle-players { margin: 5px 0 7px; }
-  .online-game-over-card { max-height: 72%; }
+  .online-game-over-card { max-height: none; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .online-game-over-card { animation: online-winner-arrival .85s cubic-bezier(.12,.82,.2,1.08) both; }
+  .online-game-over-card::before { animation: online-winner-halo 6s linear infinite; }
+  @keyframes online-winner-arrival { from { opacity: 0; filter: brightness(2); transform: scale(1.08); } }
+  @keyframes online-winner-halo { to { transform: translate(-50%, -50%) rotate(360deg); } }
 }

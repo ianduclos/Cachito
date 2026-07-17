@@ -3,7 +3,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import WebSocket, { type WebSocketServer } from "ws";
 import { createGame } from "../src/engine";
 import type { OnlineClientMessage, OnlineServerMessage } from "../src/online/protocol";
-import { applyValidatedGameAction, installOnlineRooms, isRecoverySnapshotFresh, resetOnlineRoomsForTests } from "./onlineRooms";
+import { applyValidatedGameAction, installOnlineRooms, isRecoverySnapshotFresh, onlineLogHeader, resetOnlineRoomsForTests, SUPPORTED_CONCURRENT_GAMES } from "./onlineRooms";
+import { release } from "../src/release";
 
 class ProtocolClient {
   readonly socket: WebSocket;
@@ -49,6 +50,11 @@ const isJoined = (message: OnlineServerMessage): message is Extract<OnlineServer
 const isError = (message: OnlineServerMessage): message is Extract<OnlineServerMessage, { type: "error" }> => message.type === "error";
 
 describe("online room safety guards", () => {
+  it("stamps recovery and match logs with the deployed game version", () => {
+    expect(onlineLogHeader(2)).toEqual({ schemaVersion: 2, gameVersion: release });
+    expect(onlineLogHeader(4)).toEqual({ schemaVersion: 4, gameVersion: release });
+  });
+
   it("age-bounds current snapshots and legacy snapshots during rollout", () => {
     const now = 1_000_000_000;
     expect(isRecoverySnapshotFresh({ schemaVersion: 2, lastActivityAt: now - 19 * 60_000 }, now)).toBe(true);
@@ -152,6 +158,22 @@ describe("authoritative online rooms", () => {
     const transferred = await guest.take((message): message is Extract<OnlineServerMessage, { type: "state" }> => message.type === "state" && message.hostPlayerId === guestJoined.playerId);
 
     expect(transferred.announcement?.text).toBe("Guest is now the host.");
+  });
+
+  it("runs four independent games concurrently on the authoritative instance", async () => {
+    const roomCodes: string[] = [];
+    for (let index = 0; index < SUPPORTED_CONCURRENT_GAMES; index += 1) {
+      const host = await connect();
+      host.send({ type: "create-room", name: `Host ${index + 1}` });
+      const joined = await host.take(isJoined);
+      roomCodes.push(joined.roomCode);
+      host.send({ type: "add-bot" });
+      await host.take((message) => message.type === "lobby" && message.players.length === 2);
+      host.send({ type: "start-game" });
+      await expect(host.take((message) => message.type === "state" && message.view.phase === "playing")).resolves.toBeTruthy();
+    }
+
+    expect(new Set(roomCodes)).toHaveLength(SUPPORTED_CONCURRENT_GAMES);
   });
 
   it("rejects cross-origin browser upgrades while allowing the production origin", async () => {

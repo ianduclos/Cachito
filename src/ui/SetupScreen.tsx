@@ -6,13 +6,12 @@ import { GameSettings } from "./GameSettings";
 type Props = {
   onStart: (seats: LocalSeatSetup[]) => void;
   onOpenOnline?: () => void;
-  onOpenTablePrototype?: () => void;
 };
 
 export type LocalSeatSetup = { name: string; isBot: boolean };
 const makeHumanSeat = (number: number): LocalSeatSetup => ({ name: `Player ${number}`, isBot: false });
 
-export function SetupScreen({ onStart, onOpenOnline, onOpenTablePrototype }: Props) {
+export function SetupScreen({ onStart, onOpenOnline }: Props) {
   const [screen, setScreen] = useState<"home" | "local">("home");
   const [seats, setSeats] = useState<LocalSeatSetup[]>([makeHumanSeat(1), makeHumanSeat(2), makeHumanSeat(3)]);
   const valid = seats.every((seat) => seat.name.trim().length > 0) && new Set(seats.map((seat) => seat.name.trim().toLocaleLowerCase())).size === seats.length;
@@ -25,7 +24,6 @@ export function SetupScreen({ onStart, onOpenOnline, onOpenTablePrototype }: Pro
         <div className="brand-mark" aria-hidden="true"><span>●</span><span>●</span></div>
         <h1>Cachito</h1>
         {onOpenOnline ? <button className="button button--primary start-online-button" type="button" onClick={onOpenOnline}>Play online</button> : <p className="rules-note">Rooms are being set up.</p>}
-        {onOpenTablePrototype && <button className="button button--ghost setup-learning-button" type="button" onClick={onOpenTablePrototype}>Preview table concept</button>}
         <span className="release-stamp">{release}</span>
       </section>
     </main>

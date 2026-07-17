@@ -7,6 +7,7 @@ import { applyAction, createGame, DEFAULT_GAME_RULES, getLegalActions, MAX_PLAYE
 import { chooseBotAction, createProbabilityPolicy, isChoiceLegal, type BotObservation, type PublicActionEntry } from "../src/bot";
 import { BOT_NAMES } from "../src/bot/names";
 import type { OnlineClientMessage, OnlineServerMessage } from "../src/online/protocol";
+import { release } from "../src/release";
 
 type RoomPlayer = { id: string; name: string; isBot: boolean; token?: string; socket?: WebSocket; disconnectedAt?: number };
 type RoomEvent = { type: "round-start" } | { type: "shuffle-dice" } | { type: "pause-game" } | { type: "resume-game" };
@@ -42,6 +43,9 @@ const MESSAGE_RATE_WINDOW_MS = 10_000;
 const MESSAGE_RATE_LIMIT = 40;
 const ROOM_CREATION_WINDOW_MS = 10 * 60_000;
 const ROOM_CREATION_LIMIT = 8;
+/** Validated beta capacity on the single authoritative in-memory instance. */
+export const SUPPORTED_CONCURRENT_GAMES = 4;
+export function onlineLogHeader<const T extends number>(schemaVersion: T) { return { schemaVersion, gameVersion: release }; }
 const RECOVERY_CLOCK_SKEW_MS = 60_000;
 const ipHashSalt = process.env.IP_HASH_SALT;
 const configuredOrigins = new Set(["https://cachito.web.app", ...(process.env.ONLINE_ALLOWED_ORIGINS ?? "").split(",").map((value) => value.trim()).filter(Boolean)]);
@@ -875,7 +879,7 @@ async function persistRoomSnapshotNow(room: Room) {
   if (room.game && !room.expired) {
     const updatedAt = new Date().toISOString();
     const activeSnapshot = {
-      schemaVersion: 2,
+      ...onlineLogHeader(2),
       code: room.code,
       updatedAt,
       lastActivityAt: room.lastActivityAt,
@@ -908,7 +912,7 @@ async function persistRoomSnapshotNow(room: Room) {
   if (!room.game || !room.startedAt) return;
   const filename = `online-matches/${room.startedAt.replace(/[:.]/g, "-")}-${room.code}.json`;
   const snapshot = {
-    schemaVersion: 4,
+    ...onlineLogHeader(4),
     roomCode: room.code,
     startedAt: room.startedAt,
     updatedAt: new Date().toISOString(),

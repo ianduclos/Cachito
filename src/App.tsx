@@ -246,7 +246,7 @@ export default function App() {
       ? <TablePrototype onExit={() => { window.history.replaceState({}, "", "/"); setShowTablePrototype(false); }} />
       : showOnlineGame
       ? <OnlineGame onExit={() => { window.history.replaceState({}, "", "/"); setShowOnlineGame(false); }} />
-      : <SetupScreen onStart={startGame} onOpenOnline={onlineEnabled ? () => setShowOnlineGame(true) : undefined} onOpenTablePrototype={() => { window.history.replaceState({}, "", "/table-prototype"); setShowTablePrototype(true); }} />;
+      : <SetupScreen onStart={startGame} onOpenOnline={onlineEnabled ? () => setShowOnlineGame(true) : undefined} />;
   }
 
   const activePlayerId = game.phase === "playing" ? game.currentPlayerId : null;

@@ -97,6 +97,33 @@ function enterTable({ spectator = false, eliminated = false }: { spectator?: boo
   });
 }
 
+function enterWinner() {
+  const players = gamePlayers("player-1").map((player, index) => ({ ...player, diceCount: index === 0 ? 3 : 0, eliminated: index !== 0 }));
+  const view: PublicGameView = {
+    phase: "gameOver",
+    round: 9,
+    paloFijo: false,
+    rules: { ...DEFAULT_GAME_RULES },
+    players,
+    currentPlayerId: null,
+    currentBid: null,
+    lastBidderId: null,
+    winnerId: "player-1",
+    viewerPlayerId: "player-1",
+  };
+  act(() => {
+    socket().open();
+    socket().message({ type: "joined", roomCode: "ABCDE", playerId: "player-1", reconnectToken: "secret", hostPlayerId: "player-1" });
+    socket().message({
+      type: "state",
+      hostPlayerId: "player-1",
+      view,
+      history: ["Ana María wins the match."],
+      playerStatuses: players.map((player) => ({ id: player.id, connected: true, covered: false })),
+    });
+  });
+}
+
 describe("OnlineGame connection lifecycle", () => {
   beforeEach(() => {
     MockWebSocket.instances = [];
@@ -166,5 +193,17 @@ describe("OnlineGame connection lifecycle", () => {
     expect(screen.getByText("Out · spectating")).toBeInTheDocument();
     expect(screen.queryByLabelText("Your hand and turn controls")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Shake my dice" })).not.toBeInTheDocument();
+  });
+
+  it("turns the winner ceremony into the dominant final screen", () => {
+    render(<OnlineGame onExit={vi.fn()} />);
+    enterWinner();
+
+    const winner = screen.getByRole("dialog", { name: "Game winner" });
+    expect(winner).toHaveClass("online-game-over-card");
+    expect(winner).toHaveTextContent("Champion of the table");
+    expect(winner).toHaveTextContent("Ana María wins!");
+    expect(winner).toHaveTextContent("9 rounds");
+    expect(screen.queryByLabelText("Your hand and turn controls")).not.toBeInTheDocument();
   });
 });

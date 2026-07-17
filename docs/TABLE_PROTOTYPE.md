@@ -44,6 +44,8 @@ The center inventory represents table memory:
 - Physically display only lost dice, grouped in fives, using Ace faces without adjacent numeric labels.
 - Do not draw every live die in a crowded pile. The distribution between seats remains the mystery.
 
+The three center surfaces are primary game information, not decoration. At desktop sizes they must use comfortably readable labels, totals, dice, and timer text. The current/last bid always sits on its own high-contrast rectangular card with a visible border and shadow so it remains the first thing a player can scan from across the table.
+
 ## Round setup and manual roll
 
 Every round begins with the real manual cup sequence:
@@ -110,11 +112,11 @@ Avoid long prose that explains the arithmetic in a sentence. The bid and actual 
 
 The result card is the main rapid-reading checkpoint. Preserve the uploaded/reference hierarchy: context, very large bid-versus-actual evidence, popping color-coded verdict, short consequence, then revealed hands. At eight players, use four readable hand cards per row; names and dice must remain readable at 1280×720 without adding page scroll.
 
-All purposeful sounds go through `playSound`, which starts the theme if needed and ducks it for effects lasting at least one second. Preserve the 120 ms duck, 16% music target, and 1.05 second recovery unless audio is deliberately redesigned. Do not layer the clock, shake-stop, turn-pass, suspense, and result cues over one another accidentally.
+All purposeful sounds go through `playSound`. The sound module eagerly preloads two voices of every effect plus the theme so the first cue does not wait on a network fetch or decode; preserve that pool when adding clips. Playback starts the theme if needed and ducks it for effects lasting at least one second. Preserve the 120 ms duck, 16% music target, and 1.05 second recovery unless audio is deliberately redesigned. Do not layer the clock, shake-stop, turn-pass, suspense, and result cues over one another accidentally.
 
 ## Winner presentation
 
-When `nextRound` produces `gameOver`, play the winner sound and show the final winner card over the table. It includes the winner’s real display name, crown, round count, replay action, radial bloom, and the full 132-piece gold/coral/green/cream confetti burst. Respect reduced-motion preferences: the result remains clear without requiring animation.
+When `nextRound` produces `gameOver`, play the winner sound and replace the table with a deliberately excessive full-viewport champion ceremony. It includes the winner’s real display name at headline scale, crown, round count, standings, replay/leave actions, layered radial bloom, and the full 132-piece gold/coral/green/cream confetti burst. It must not look like another centered modal. Respect reduced-motion preferences: the result remains clear without requiring animation.
 
 ## Responsive and accessibility requirements
 
