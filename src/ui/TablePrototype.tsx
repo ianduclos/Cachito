@@ -27,9 +27,9 @@ import {
 } from "../bot";
 import { DiceRow } from "./Dice";
 import { playSound, type SoundName } from "./sound";
+import { seatLayoutFor, type SeatPosition } from "./tablePrototypeSeats";
 import "./TablePrototype.css";
 
-type SeatPosition = "top" | "left-top" | "left-middle" | "left-bottom" | "right-top" | "right-middle" | "right-bottom";
 type FeedEvent = { id: number; initials: string; text: string; time: string; tone?: "bid" | "you" | "quiet" };
 type CallPresentation = { key: string; kind: "dudo" | "calzo"; name: string; correct: boolean; resolved: boolean; showHands: boolean };
 type RoundRoll = { key: string; round: number; readyIds: string[]; userRolling: boolean };
@@ -42,7 +42,6 @@ const BOT_SHAKE_DELAY_MIN_MS = 2_000;
 const BOT_SHAKE_DELAY_SPREAD_MS = 1_000;
 const CALL_RESOLVE_MS = 2_100;
 const CALL_REVEAL_MS = 3_300;
-const seatPositions: SeatPosition[] = ["left-bottom", "left-middle", "left-top", "top", "right-top", "right-middle", "right-bottom"];
 const dieGlyphs: Record<DieValue, string> = { 1: "⚀", 2: "⚁", 3: "⚂", 4: "⚃", 5: "⚄", 6: "⚅" };
 const denominationNames: Record<DieValue, string> = { 1: "Aces", 2: "Dones", 3: "Trenes", 4: "Cuadras", 5: "Chinas", 6: "Sambas" };
 const facePips: Record<DieValue, number[]> = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
@@ -105,7 +104,7 @@ function DiceInventory({ inPlay, startingTotal }: { inPlay: number; startingTota
   );
 }
 
-function PlayerSeat({ player, position, revealDistribution, currentTurn, latestBid, rolling, rollReady }: { player: EnginePlayer; position: SeatPosition; revealDistribution: boolean; currentTurn: boolean; latestBid?: Bid; rolling: boolean; rollReady: boolean }) {
+export function PrototypePlayerSeat({ player, position, revealDistribution, currentTurn, latestBid, rolling, rollReady }: { player: EnginePlayer; position: SeatPosition; revealDistribution: boolean; currentTurn: boolean; latestBid?: Bid; rolling: boolean; rollReady: boolean }) {
   const status = player.diceCount === 0
     ? "Out · spectating"
     : revealDistribution
@@ -116,8 +115,9 @@ function PlayerSeat({ player, position, revealDistribution, currentTurn, latestB
           ? `${player.tableDice.length} public · rest hidden`
           : "Dice hidden";
   return (
-    <article className={`tp-seat tp-seat--${position}${player.diceCount === 0 ? " tp-seat--out" : ""}${currentTurn ? " tp-seat--active" : ""}`} aria-label={`${player.name}${currentTurn ? ", current turn" : ""}`}>
+    <article className={`tp-seat tp-seat--${position}${player.diceCount === 0 ? " tp-seat--out" : ""}${currentTurn ? " tp-seat--active" : ""}`} aria-label={`${player.name}${player.diceCount === 0 ? ", out and spectating" : ""}${currentTurn ? ", current turn" : ""}`}>
       {currentTurn && <span className="tp-turn-flag">Thinking</span>}
+      {player.diceCount === 0 && <span className="tp-out-flag">Out</span>}
       <div className="tp-avatar" aria-hidden="true">{initials(player.name)}</div>
       <div className="tp-seat-copy">
         <div><strong>{player.name}</strong><small>Bot</small></div>
@@ -156,7 +156,7 @@ export function PrototypeCallout({ kind, name, correct, resolved }: { kind: "dud
   );
 }
 
-function RoundRollOverlay({ state, players, userName, onShake }: { state: RoundRoll; players: EnginePlayer[]; userName: string; onShake: () => void }) {
+function RoundRollOverlay({ state, players, userName, spectating, onShake }: { state: RoundRoll; players: EnginePlayer[]; userName: string; spectating: boolean; onShake: () => void }) {
   const ready = new Set(state.readyIds);
   const active = players.filter((player) => player.diceCount > 0);
   const userActive = active.some((player) => player.id === USER_ID);
@@ -164,9 +164,30 @@ function RoundRollOverlay({ state, players, userName, onShake }: { state: RoundR
     <section className="tp-roll-overlay" role="dialog" aria-label="Shake dice">
       <p>Round {state.round} · first bid waits for every cup</p>
       <h2>Shake your dice</h2>
-      <span>Roll manually, then the table will settle into this round.</span>
-      <div className="tp-roll-players">{active.map((player) => <div className={ready.has(player.id) ? "tp-roll-player--ready" : ""} key={player.id}><strong>{player.name}</strong><small>{ready.has(player.id) ? "Dice shuffled" : player.id === USER_ID ? "Waiting for you" : "Bot preparing"}</small></div>)}</div>
-      {userActive ? <button type="button" disabled={state.userRolling || ready.has(USER_ID)} onClick={onShake}>{ready.has(USER_ID) ? `${userName} is ready` : state.userRolling ? "Shuffling…" : "Shake my dice"}</button> : <small>Watching the remaining cups.</small>}
+      <span>{spectating ? "Every active cup settles automatically while you watch." : "Roll manually, then the table will settle into this round."}</span>
+      <div className="tp-roll-players">{active.map((player) => <div className={ready.has(player.id) ? "tp-roll-player--ready" : ""} key={player.id}><strong>{player.name}</strong><small>{ready.has(player.id) ? "Dice shuffled" : player.id === USER_ID ? spectating ? "Bot preparing" : "Waiting for you" : "Bot preparing"}</small></div>)}</div>
+      {userActive && !spectating ? <button type="button" disabled={state.userRolling || ready.has(USER_ID)} onClick={onShake}>{ready.has(USER_ID) ? `${userName} is ready` : state.userRolling ? "Shuffling…" : "Shake my dice"}</button> : <small className="tp-roll-watch-note">Watching the remaining cups.</small>}
+    </section>
+  );
+}
+
+function SpectatorDock({ user, currentPlayerName, currentBid, round, totalDice, formattedTime, eliminated, onReturn, onActivity }: { user: EnginePlayer; currentPlayerName: string; currentBid: Bid | null; round: number; totalDice: number; formattedTime?: string; eliminated: boolean; onReturn: () => void; onActivity: () => void }) {
+  return (
+    <section className={`tp-spectator-dock${eliminated ? " tp-spectator-dock--out" : ""}`} aria-label="Spectator view">
+      <div className="tp-spectator-identity">
+        <div className="tp-spectator-icon" aria-hidden="true">◎</div>
+        <div><p>{eliminated ? "Out · spectating" : "Watching the table"}</p><strong>{user.name}</strong><span>{eliminated ? "Your seat stays visible. Private hands stay hidden." : `A bot is covering ${user.name}’s seat.`}</span></div>
+      </div>
+      <div className="tp-spectator-glance" aria-live="polite">
+        <div><span>Current turn</span><strong>{currentPlayerName}</strong>{formattedTime && <small>{formattedTime} remaining</small>}</div>
+        <div><span>Current bid</span><strong>{currentBid ? `${currentBid.quantity} × ${denominationNames[currentBid.denomination]}` : "No bid yet"}</strong></div>
+        <div><span>Round</span><strong>{round}</strong></div>
+        <div><span>Dice in play</span><strong>{totalDice}</strong></div>
+      </div>
+      <div className="tp-spectator-actions">
+        <button type="button" onClick={onActivity}>Open activity</button>
+        {!eliminated && <button className="tp-spectator-return" type="button" onClick={onReturn}>Return to seat</button>}
+      </div>
     </section>
   );
 }
@@ -179,14 +200,15 @@ function RoundResult({ state, onNext }: { state: RevealState; onNext: () => void
   const change = resolution.diceChanges[0];
   const qualifying = (value: number) => value === resolution.bid.denomination || (!state.paloFijo && resolution.bid.denomination !== 1 && value === 1);
   const amount = Math.abs(change?.delta ?? 0);
+  const revealedPlayers = state.players.filter((player) => player.hand.length || player.tableDice.length);
   const consequence = change?.delta && change.delta > 0
     ? `${changed} gains ${amount} ${amount === 1 ? "die" : "dice"}.`
     : `${changed} loses ${amount} ${amount === 1 ? "die" : "dice"}.`;
   return (
     <section className={`tp-round-result tp-round-result--${resolution.correct ? "correct" : "wrong"}`} role="dialog" aria-label="Round result">
       <div className="tp-result-heading"><p>{caller} said {resolution.kind === "dudo" ? "Dudo" : "Calzo"} to {bidder}’s bid.</p><h2>{resolution.bid.quantity} × {denominationNames[resolution.bid.denomination]} · {resolution.actualCount} there</h2><div className="tp-result-verdict"><strong>{resolution.correct ? "Correct call." : "Wrong call."}</strong><span>{consequence}</span></div><small>Highlighted dice counted toward the bid.</small></div>
-      <div className="tp-revealed-hands">
-        {state.players.filter((player) => player.hand.length || player.tableDice.length).map((player) => <div key={player.id}><strong>{player.name}</strong><DiceRow dice={[...player.hand, ...player.tableDice]} small highlight={qualifying} /></div>)}
+      <div className="tp-revealed-hands" style={{ "--hand-columns": Math.min(4, revealedPlayers.length) } as CSSProperties}>
+        {revealedPlayers.map((player) => <div key={player.id}><strong>{player.name}</strong><DiceRow dice={[...player.hand, ...player.tableDice]} small highlight={qualifying} /></div>)}
       </div>
       <button type="button" onClick={onNext}>Next round</button>
     </section>
@@ -225,6 +247,7 @@ export function TablePrototype({ onExit }: { onExit: () => void }) {
   const turnPassTimerRef = useRef<number | undefined>(undefined);
   const shakeStopActiveRef = useRef(false);
   const pendingTurnPassRef = useRef(false);
+  const roundReadyIdsRef = useRef<string[]>([]);
   const clockSoundDeadlineRef = useRef<number | undefined>(undefined);
   const clockSoundRef = useRef<HTMLAudioElement | undefined>(undefined);
   const clockSoundTurnRef = useRef<string | null>(null);
@@ -246,6 +269,7 @@ export function TablePrototype({ onExit }: { onExit: () => void }) {
   const [previewAlert, setPreviewAlert] = useState(false);
   const [callPresentation, setCallPresentation] = useState<CallPresentation | null>(null);
   const [feedOpen, setFeedOpen] = useState(false);
+  const [spectatorMode, setSpectatorMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [events, setEvents] = useState<FeedEvent[]>([
     { id: 1, initials: initials(initial.userName), text: `${initial.userName} joined seven offline bots`, time: "Now", tone: "you" },
@@ -258,11 +282,12 @@ export function TablePrototype({ onExit }: { onExit: () => void }) {
     setGameState(next);
   }, []);
   const user = game.players.find((player) => player.id === USER_ID) ?? game.players[0];
+  const isSpectating = spectatorMode || user.diceCount === 0;
   const currentPlayer = game.phase === "playing" ? game.players.find((player) => player.id === game.currentPlayerId) : undefined;
   const activePlayers = game.players.filter((player) => player.diceCount > 0);
   const rollComplete = game.phase !== "playing" || roundRoll.round !== game.round || activePlayers.every((player) => roundRoll.readyIds.includes(player.id));
   const isYourTurn = game.phase === "playing" && game.currentPlayerId === USER_ID;
-  const isYourActionTurn = isYourTurn && rollComplete && !callPresentation;
+  const isYourActionTurn = isYourTurn && rollComplete && !callPresentation && !isSpectating;
   const legal = useMemo(() => isYourActionTurn ? getLegalActions(game, USER_ID) : noLegalActions, [game, isYourActionTurn]);
   const totalDice = useMemo(() => game.players.reduce((total, player) => total + player.diceCount, 0), [game.players]);
   const startingTotal = playerCount * 5;
@@ -273,7 +298,7 @@ export function TablePrototype({ onExit }: { onExit: () => void }) {
   const secondsLeft = turnDeadlineAt ? Math.max(0, Math.ceil((turnDeadlineAt - clock) / 1_000)) : undefined;
   const tableDicePlayers = game.players.filter((player) => player.tableDice.length > 0);
   const tableDice = tableDicePlayers.flatMap((player) => player.tableDice);
-  const tableSeats = game.players.slice(1).map((player, index) => ({ player, position: seatPositions[index] }));
+  const tableSeats = game.players.slice(1).map((player, index) => ({ player, position: seatLayoutFor(playerCount)[index] }));
 
   const prepareControls = useCallback(() => {
     setTableDiceMode(false);
@@ -360,14 +385,20 @@ export function TablePrototype({ onExit }: { onExit: () => void }) {
   }, [clearCallTimers, stopClockSound]);
 
   useEffect(() => {
+    roundReadyIdsRef.current = roundRoll.readyIds;
+  }, [roundRoll.readyIds]);
+
+  useEffect(() => {
     const snapshot = gameRef.current;
     if (!snapshot || snapshot.phase !== "playing" || roundRoll.round !== snapshot.round) return;
-    const timers = snapshot.players.filter((player) => player.id !== USER_ID && player.diceCount > 0).map((player) => window.setTimeout(() => {
+    const alreadyReady = new Set(roundReadyIdsRef.current);
+    const timers = snapshot.players.filter((player) => player.diceCount > 0 && !alreadyReady.has(player.id) && (player.id !== USER_ID || isSpectating)).map((player) => window.setTimeout(() => {
+      if (roundReadyIdsRef.current.includes(player.id)) return;
       setRoundRoll((current) => current.key === roundRoll.key && !current.readyIds.includes(player.id) ? { ...current, readyIds: [...current.readyIds, player.id] } : current);
       addEvent(`${player.name} shook their cup`, "quiet", player.name);
     }, BOT_SHAKE_DELAY_MIN_MS + Math.floor(Math.random() * BOT_SHAKE_DELAY_SPREAD_MS)));
     return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [addEvent, roundRoll.key, roundRoll.round]);
+  }, [addEvent, isSpectating, roundRoll.key, roundRoll.round]);
 
   useEffect(() => {
     if (game.phase !== "playing" || !rollComplete) return;
@@ -468,7 +499,7 @@ export function TablePrototype({ onExit }: { onExit: () => void }) {
   }, [addEvent, beginCallPresentation, game, isYourActionTurn, prepareControls, setGame, stopClockSound, timerTurnKey, turnDeadlineAt, user]);
 
   useEffect(() => {
-    if (game.phase !== "playing" || game.currentPlayerId === USER_ID || !rollComplete || callPresentation) {
+    if (game.phase !== "playing" || (game.currentPlayerId === USER_ID && !isSpectating) || !rollComplete || callPresentation) {
       pendingBotTurnRef.current = null;
       return;
     }
@@ -485,7 +516,7 @@ export function TablePrototype({ onExit }: { onExit: () => void }) {
           legalActions: getLegalActions(game, playerId),
           history: [...historyRef.current],
         };
-        const random = botRandomsRef.current.get(playerId);
+        const random = playerId === USER_ID ? timeoutRandomRef.current : botRandomsRef.current.get(playerId);
         if (!random) throw new Error(`Missing bot random source for ${playerId}`);
         const bot = game.players.find((player) => player.id === playerId);
         if (!bot) throw new Error(`Missing bot player ${playerId}`);
@@ -497,16 +528,17 @@ export function TablePrototype({ onExit }: { onExit: () => void }) {
           : { type: choice.type, playerId };
         const next = applyAction(game, action, gameRandomRef.current);
         const botName = game.players.find((player) => player.id === playerId)?.name ?? "Bot";
+        const coveringSeat = playerId === USER_ID;
         const outcome: PublicRoundOutcome | undefined = next.phase === "reveal"
           ? { kind: next.resolution.kind, bidderId: next.resolution.bidderId, bid: { ...next.resolution.bid }, correct: next.resolution.correct }
           : undefined;
         historyRef.current.push({ round: game.round, playerId, action: choice, outcome });
         if (choice.type === "bid") {
           setRoundBids((current) => ({ ...current, [playerId]: { ...choice.bid } }));
-          addEvent(`${botName} bid ${choice.bid.quantity} ${denominationNames[choice.bid.denomination]}${choice.tableDiceIndices?.length ? ` and put ${choice.tableDiceIndices.length} on the table` : ""}`, "bid", botName);
+          addEvent(`${coveringSeat ? `Bot covering ${botName} bid` : `${botName} bid`} ${choice.bid.quantity} ${denominationNames[choice.bid.denomination]}${choice.tableDiceIndices?.length ? ` and put ${choice.tableDiceIndices.length} on the table` : ""}`, coveringSeat ? "you" : "bid", botName);
           safePlaySound(choice.tableDiceIndices?.length ? "tableDice" : "denomination");
         } else if (next.phase === "reveal") {
-          addEvent(`${botName} called ${choice.type === "dudo" ? "Dudo" : "Calzo"}`, "you", botName);
+          addEvent(`${coveringSeat ? `Bot covering ${botName} called` : `${botName} called`} ${choice.type === "dudo" ? "Dudo" : "Calzo"}`, "you", botName);
           beginCallPresentation(next, botName);
         }
         setGame(next);
@@ -521,7 +553,7 @@ export function TablePrototype({ onExit }: { onExit: () => void }) {
       window.clearTimeout(timer);
       if (pendingBotTurnRef.current === turnKey) pendingBotTurnRef.current = null;
     };
-  }, [addEvent, beginCallPresentation, callPresentation, game, prepareControls, rollComplete, setGame, stopClockSound]);
+  }, [addEvent, beginCallPresentation, callPresentation, game, isSpectating, prepareControls, rollComplete, setGame, stopClockSound]);
 
   const shakeDice = () => {
     if (game.phase !== "playing" || roundRoll.userRolling || roundRoll.readyIds.includes(USER_ID) || user.diceCount === 0) return;
@@ -637,7 +669,7 @@ export function TablePrototype({ onExit }: { onExit: () => void }) {
     }
   };
 
-  const userStatus = user.diceCount === 0 ? "Out · watching" : !rollComplete ? roundRoll.userRolling ? "Shaking your cup" : roundRoll.readyIds.includes(USER_ID) ? "Ready · waiting for cups" : "Roll to begin" : isYourTurn ? "Your turn · make a move" : game.phase === "playing" ? `Waiting for ${currentPlayer?.name ?? "the table"}` : game.phase === "reveal" ? "Round revealed" : "Game complete";
+  const userStatus = !rollComplete ? roundRoll.userRolling ? "Shaking your cup" : roundRoll.readyIds.includes(USER_ID) ? "Ready · waiting for cups" : "Roll to begin" : isYourTurn ? "Your turn · make a move" : game.phase === "playing" ? `Waiting for ${currentPlayer?.name ?? "the table"}` : game.phase === "reveal" ? "Round revealed" : "Game complete";
   const controlsDisabled = !isYourActionTurn;
   const visibleHand = roundRoll.userRolling && shuffleFaces ? shuffleFaces : user.hand;
   const formattedTime = secondsLeft === undefined ? undefined : `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}`;
@@ -646,10 +678,11 @@ export function TablePrototype({ onExit }: { onExit: () => void }) {
   return (
     <main className="table-prototype-shell">
       <header className="tp-header">
-        <div><p className="tp-eyebrow">Offline engine · {user.name} + bots</p><h1>Cachito</h1></div>
+        <div><p className="tp-eyebrow">{isSpectating ? "Offline spectator table" : `Offline engine · ${user.name} + bots`}</p><h1>Cachito</h1></div>
         <div className="tp-header-actions">
           <label className="tp-player-count-control"><span>Players</span><select aria-label="Offline players" value={playerCount} onChange={(event) => choosePlayerCount(Number(event.target.value))}>{Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, index) => index + MIN_PLAYERS).map((count) => <option key={count} value={count}>{count}</option>)}</select></label>
           <button className="tp-quiet-button" type="button" onClick={() => restartGame()}>Restart</button>
+          {user.diceCount > 0 && !spectatorMode && <button className="tp-quiet-button tp-watch-toggle" type="button" disabled={roundRoll.userRolling} onClick={() => { setSpectatorMode(true); prepareControls(); }}>Watch table</button>}
           <label className="tp-mystery-toggle"><input type="checkbox" checked={revealDistribution} onChange={(event) => setRevealDistribution(event.target.checked)} /><span>Reveal seat totals</span></label>
           <button className="tp-quiet-button tp-feed-toggle" type="button" aria-expanded={feedOpen} onClick={() => setFeedOpen((open) => !open)}>Activity <span>{events.length}</span></button>
           <button className="tp-quiet-button" type="button" onClick={onExit}>Back to current beta</button>
@@ -661,11 +694,11 @@ export function TablePrototype({ onExit }: { onExit: () => void }) {
           <div className={`tp-table${roundRoll.userRolling ? " tp-table--shuffling" : ""}`}>
             <div className="tp-table-grain" aria-hidden="true" />
             <div className="tp-round-meta"><span>Offline engine</span><strong>Round {game.round}</strong><span>{game.paloFijo ? "Palo fijo" : "Normal play"}</span></div>
-            {tableSeats.map(({ player, position }) => <PlayerSeat key={player.id} player={player} position={position} revealDistribution={revealDistribution} currentTurn={rollComplete && game.phase === "playing" && game.currentPlayerId === player.id} latestBid={roundBids[player.id]} rolling={!rollComplete && game.phase === "playing"} rollReady={roundRoll.readyIds.includes(player.id)} />)}
+            {tableSeats.map(({ player, position }) => <PrototypePlayerSeat key={player.id} player={player} position={position} revealDistribution={revealDistribution} currentTurn={rollComplete && game.phase === "playing" && game.currentPlayerId === player.id} latestBid={roundBids[player.id]} rolling={!rollComplete && game.phase === "playing"} rollReady={roundRoll.readyIds.includes(player.id)} />)}
             {previewAlert && <div className="tp-table-alert" role="status"><span>Dudo called</span><strong>The full call sequence pauses before the reveal</strong><button type="button" aria-label="Dismiss Dudo alert" onClick={() => setPreviewAlert(false)}>×</button></div>}
 
             {game.phase === "reveal" ? callPresentation && !callPresentation.showHands ? <PrototypeCallout kind={callPresentation.kind} name={callPresentation.name} correct={callPresentation.correct} resolved={callPresentation.resolved} /> : <RoundResult state={game} onNext={nextRound} /> : game.phase === "gameOver" ? <PrototypeGameOver winnerName={game.players.find((player) => player.id === game.winnerId)?.name ?? "Player"} round={game.round} onRestart={() => restartGame()} /> : <>
-              {!rollComplete && <RoundRollOverlay state={roundRoll} players={game.players} userName={user.name} onShake={shakeDice} />}
+              {!rollComplete && <RoundRollOverlay state={roundRoll} players={game.players} userName={user.name} spectating={isSpectating} onShake={shakeDice} />}
               <div className="tp-table-center">
                 <DiceInventory inPlay={totalDice} startingTotal={startingTotal} />
                 {game.currentBid ? <section className="tp-current-bid" aria-label={`Current bid: ${game.currentBid.quantity} ${denominationNames[game.currentBid.denomination]}`}><p>{game.players.find((player) => player.id === game.lastBidderId)?.name}’s bid</p><div><strong>{game.currentBid.quantity}</strong><span>×</span><b>{dieGlyphs[game.currentBid.denomination]}</b></div><h2>{denominationNames[game.currentBid.denomination]}</h2>{turnTimer}</section> : <section className="tp-current-bid tp-current-bid--empty"><p>Opening bid</p><h2>{currentPlayer?.name ?? "Table"}</h2>{turnTimer ?? <span className="tp-clock">Cups first</span>}</section>}
@@ -674,7 +707,7 @@ export function TablePrototype({ onExit }: { onExit: () => void }) {
             </>}
           </div>
 
-          <section className={`tp-action-dock${isYourActionTurn ? " tp-action-dock--your-turn" : ""}${user.diceCount === 0 ? " tp-action-dock--out" : ""}`} aria-label="Your hand and turn controls">
+          {isSpectating ? <SpectatorDock user={user} currentPlayerName={currentPlayer?.name ?? (game.phase === "reveal" ? "Round result" : game.phase === "gameOver" ? "Game complete" : "Table")} currentBid={game.currentBid} round={game.round} totalDice={totalDice} formattedTime={formattedTime} eliminated={user.diceCount === 0} onReturn={() => { setSpectatorMode(false); prepareControls(); }} onActivity={() => setFeedOpen(true)} /> : <section className={`tp-action-dock${isYourActionTurn ? " tp-action-dock--your-turn" : ""}`} aria-label="Your hand and turn controls">
             <div className="tp-player-hud">
               <div className="tp-hud-owner"><div className="tp-avatar" aria-hidden="true">{initials(user.name)}</div><div><strong>{user.name}</strong><small>Your seat</small><span>{userStatus}</span></div></div>
               <div className="tp-hand"><div><p>{user.name}’s hand</p></div><DiceRow dice={visibleHand} className={`${roundRoll.userRolling ? "dice-row--shuffling" : ""}${tableRerolling ? " dice-row--table-reroll" : ""}`.trim()} selectedIndices={tableDiceMode ? tableDiceIndices : undefined} onDieClick={isYourActionTurn ? tableDiceMode ? toggleTableDie : (value) => chooseDenomination(value as DieValue) : undefined} getDieButtonLabel={(value, index, selected) => tableDiceMode ? `${selected ? "Remove" : "Choose"} die ${index + 1} for the table` : `Choose ${denominationNames[value as DieValue]} from die ${index + 1}`} />{tableDiceMode && <small className="tp-table-selection-help">Select up to {Math.max(1, user.hand.length - 1)} dice; one must stay private.</small>}</div>
@@ -682,7 +715,7 @@ export function TablePrototype({ onExit }: { onExit: () => void }) {
             <div className="tp-bid-builder"><div className="tp-quantity"><span>Quantity</span><div><button type="button" aria-label="Decrease quantity" disabled={controlsDisabled || quantity <= 1} onClick={() => stepQuantity(-1)}>−</button><strong>{quantity}</strong><button type="button" aria-label="Increase quantity" disabled={controlsDisabled || quantity >= maxQuantity} onClick={() => stepQuantity(1)}>+</button></div></div><div className="tp-denominations" aria-label="Choose denomination">{([1, 2, 3, 4, 5, 6] as DieValue[]).map((value) => <button type="button" key={value} aria-label={`Choose ${denominationNames[value]}`} aria-pressed={denomination === value} disabled={controlsDisabled || !minimumBidFor(value)} onClick={() => chooseDenomination(value)}><DenominationFace value={value} /></button>)}</div></div>
             <div className="tp-actions"><button className="tp-call tp-call--dudo" type="button" disabled={controlsDisabled || !legal.canDudo} onClick={() => call("dudo")}>Dudo</button><button className="tp-call tp-call--calzo" type="button" disabled={controlsDisabled || !legal.canCalzo} onClick={() => call("calzo")}>Calzo</button><button className="tp-table-dice-action" type="button" aria-pressed={tableDiceMode} disabled={controlsDisabled || !legal.canPutDiceOnTable && !tableDiceMode} onClick={() => { setTableDiceMode((active) => !active); setTableDiceIndices([]); safePlaySound("tableDice"); }}>{tableDiceMode ? "Cancel table dice" : user.tableDiceUsed ? "Dice already on table" : "Put dice on table"}</button><button className="tp-raise" type="button" disabled={controlsDisabled || !chosenLegal || tableDiceMode && !selectedTableDice.length} onClick={bid}>{tableDiceMode ? `Bid & put ${selectedTableDice.length || "…"} on table` : game.currentBid ? `Raise to ${quantity} ${denominationNames[denomination]}` : `Bid ${quantity} ${denominationNames[denomination]}`}</button></div>
             {error && <p className="tp-engine-error" role="alert">{error}</p>}
-          </section>
+          </section>}
         </section>
         {feedOpen && <button className="tp-feed-backdrop" type="button" aria-label="Close table feed" onClick={() => setFeedOpen(false)} />}
         <TableFeed events={events} currentPlayerName={currentPlayer?.name ?? "Round complete"} isYourTurn={isYourActionTurn} onPreviewAlert={() => setPreviewAlert(true)} onClose={() => setFeedOpen(false)} />

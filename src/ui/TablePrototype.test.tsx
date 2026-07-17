@@ -1,7 +1,9 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BOT_NAMES } from "../bot";
-import { PrototypeCallout, PrototypeGameOver, TablePrototype } from "./TablePrototype";
+import type { EnginePlayer } from "../engine";
+import { PrototypeCallout, PrototypeGameOver, PrototypePlayerSeat, TablePrototype } from "./TablePrototype";
+import { seatLayoutFor } from "./tablePrototypeSeats";
 
 beforeEach(() => localStorage.setItem("cachito-display-name", "Ian"));
 
@@ -20,6 +22,25 @@ async function finishManualRoll() {
 }
 
 describe("TablePrototype", () => {
+  it("uses deliberate symmetric seat maps for every supported player count", () => {
+    expect(seatLayoutFor(2)).toEqual(["top"]);
+    expect(seatLayoutFor(3)).toEqual(["left-middle", "right-middle"]);
+    expect(seatLayoutFor(4)).toEqual(["left-middle", "top", "right-middle"]);
+    expect(seatLayoutFor(5)).toEqual(["left-top", "left-bottom", "right-top", "right-bottom"]);
+    expect(seatLayoutFor(6)).toEqual(["left-top", "left-bottom", "top", "right-top", "right-bottom"]);
+    expect(seatLayoutFor(7)).toEqual(["left-top", "left-middle", "left-bottom", "right-top", "right-middle", "right-bottom"]);
+    expect(seatLayoutFor(8)).toEqual(["left-bottom", "left-middle", "left-top", "top", "right-top", "right-middle", "right-bottom"]);
+  });
+
+  it("keeps eliminated players visibly seated as spectators", () => {
+    const player: EnginePlayer = { id: "out", name: "Min-chi Park", diceCount: 0, hand: [], tableDice: [], tableDiceUsed: false, paloFijoTriggered: false };
+    render(<PrototypePlayerSeat player={player} position="top" revealDistribution={false} currentTurn={false} rolling={false} rollReady={false} />);
+    const seat = screen.getByRole("article", { name: "Min-chi Park, out and spectating" });
+    expect(seat).toHaveClass("tp-seat--out");
+    expect(seat).toHaveTextContent("Out · spectating");
+    expect(seat).toHaveTextContent("Out");
+  });
+
   it("renders success as one green word and failure as independently falling letters", () => {
     const { rerender, container } = render(<PrototypeCallout kind="calzo" name="Ian" correct resolved />);
     expect(screen.getByRole("status", { name: "CALZO call, correct" })).toHaveClass("tp-callout--right");
@@ -62,6 +83,25 @@ describe("TablePrototype", () => {
     expect(screen.getByRole("button", { name: "Bid 1 Dones" })).toBeDisabled();
     await finishManualRoll();
     expect(screen.getByRole("button", { name: "Bid 1 Dones" })).toBeEnabled();
+  });
+
+  it("provides a private-safe spectator dashboard and bot cover for an active seat", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    render(<TablePrototype onExit={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Watch table" }));
+    expect(screen.getByRole("region", { name: "Spectator view" })).toHaveTextContent("A bot is covering Ian’s seat.");
+    expect(document.querySelector(".tp-hand")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Shake my dice" })).not.toBeInTheDocument();
+
+    await act(async () => vi.advanceTimersByTime(2_999));
+    expect(screen.queryByRole("dialog", { name: "Shake dice" })).not.toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTime(3_000));
+    expect(screen.getByText(/Bot covering Ian (bid|called)/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Return to seat" }));
+    expect(screen.getByLabelText("Your hand and turn controls")).toBeInTheDocument();
   });
 
   it("restores pip-face controls, hand shortcuts, manual quantity intent, and the turn clock", async () => {
@@ -160,13 +200,13 @@ describe("TablePrototype", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Bid 1 Dones" }));
     expect(screen.getByLabelText("Current bid: 1 Dones")).toBeInTheDocument();
-    expect(screen.getByRole("article", { name: `${botName}, current turn` })).toHaveClass("tp-seat--left-bottom");
+    expect(screen.getByRole("article", { name: `${botName}, current turn` })).toHaveClass("tp-seat--top");
     await act(async () => vi.advanceTimersByTime(2_999));
     expect(screen.getByLabelText("Current bid: 1 Dones")).toBeInTheDocument();
     await act(async () => vi.advanceTimersByTime(1));
-    expect(screen.getByRole("article").className).toContain("tp-seat--left-bottom");
+    expect(screen.getByRole("article").className).toContain("tp-seat--top");
     expect(screen.getByRole("article").className).not.toBe("");
-    expect(fixedSeatClass).toContain("tp-seat--left-bottom");
+    expect(fixedSeatClass).toContain("tp-seat--top");
 
     if (!screen.queryByRole("status", { name: /call, checking/i })) fireEvent.click(screen.getByRole("button", { name: "Dudo" }));
     expect(screen.getByRole("status", { name: /call, checking/i })).toBeInTheDocument();

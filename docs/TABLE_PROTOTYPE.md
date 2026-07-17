@@ -23,6 +23,7 @@ Do not fork or simplify the engine for the prototype. Presentation timers may de
 
 - Support two through eight total players. Offline prototype games default to one named human plus seven autonomous bots.
 - Bot seats are assigned once and remain fixed. Never rotate cards to put the active player at a preferred compass point.
+- Choose the seat map from the total player count at game creation; do not merely fill the eight-player map from one side. The deliberate maps are: 2 = top; 3 = left/right middle; 4 = left middle/top/right middle; 5 = left/right top and bottom; 6 = those four plus top; 7 = all three left and all three right; 8 = those six plus top. The bottom dashboard remains the human seat in every map.
 - The human is represented by the bottom dashboard, which is their fixed seat. Show the saved display name, not the word “You.”
 - Names commonly contain two or three words. Seat and dashboard names must allow two lines without destroying the layout.
 - The current bot seat and the human dashboard need an unmistakable active-turn treatment.
@@ -32,6 +33,8 @@ Do not fork or simplify the engine for the prototype. Presentation timers may de
 ## Player cards and table memory
 
 Cards show the established information: name, bot label, hidden/visible dice status, public table-dice status, active-turn flag, and latest bid. Latest-bid dice use a visibly large die-face icon; do not reduce them to a tiny numeral.
+
+Elimination does not remove or reflow a seat. Keep the card in its original position, convert it to fully desaturated neutral styling, retain the name and relevant public history, and show both an **Out** badge and **Out · spectating** status. The lower opacity must not make the name or state illegible.
 
 The center inventory represents table memory:
 
@@ -49,6 +52,19 @@ Every round begins with the real manual cup sequence:
 - The opening bid waits until all active cups are ready.
 - The shuffle card is rectangular, compact, and unblurred over the visible table. It is not a full-table oval overlay.
 - If the turn-pass cue becomes ready while the shake-stop sound is playing, queue it until shake-stop finishes, then allow a short separation before playing it.
+
+## Spectator and eliminated-player mode
+
+The prototype supports two paths into the same privacy-safe watch experience:
+
+- An active human can choose **Watch table**. Their private hand and every action control disappear immediately. A normal restricted-observation bot covers that seat, including the current round's cup and any later turns, using the same randomized delays as the other bots. **Return to seat** stops future bot cover as long as the player is still active. Do not switch modes in the middle of the manual tumble animation; the watch action remains disabled until that shake settles.
+- A human at zero dice enters spectator mode automatically for the rest of the match. They cannot return to play, but their greyed-out seat remains visible at the table.
+
+The spectator dashboard is a compact at-a-glance surface, not a disabled player hand. It must show the viewer identity/status, current actor and clock, current bid, round, dice in play, and an activity action. It must never render the private-hand component or live hand values. Result screens may show all hands only after the engine enters `reveal`, as normal Cachito rules require.
+
+For the offline prototype, bot cover may read the covered seat's engine-restricted player projection in order to act. That private observation is never rendered. When this design moves to online play, normal spectators must receive only the existing sanitized spectator projection from the server; never reconstruct spectator privacy in CSS or from a full client-side state object.
+
+During the round-setup card, a spectator sees every active cup settle automatically and has no manual shake button. An eliminated player is already absent from the active-cup list. Spectator mode keeps the table audio, suspense, results, activity feed, and winner ceremony so watching remains a first-class experience.
 
 ## Turn pacing and clock
 
@@ -90,6 +106,8 @@ Result copy has a stable hierarchy:
 
 Avoid long prose that explains the arithmetic in a sentence. The bid and actual count already communicate that evidence.
 
+The result card is the main rapid-reading checkpoint. Preserve the uploaded/reference hierarchy: context, very large bid-versus-actual evidence, popping color-coded verdict, short consequence, then revealed hands. At eight players, use four readable hand cards per row; names and dice must remain readable at 1280×720 without adding page scroll.
+
 All purposeful sounds go through `playSound`, which starts the theme if needed and ducks it for effects lasting at least one second. Preserve the 120 ms duck, 16% music target, and 1.05 second recovery unless audio is deliberately redesigned. Do not layer the clock, shake-stop, turn-pass, suspense, and result cues over one another accidentally.
 
 ## Winner presentation
@@ -122,8 +140,9 @@ Then inspect the live route at 1280×720:
 2. Manual shake blocks the first bid; bots settle in two to three seconds.
 3. Timer, face controls, hand shortcuts, quantity intent, and table-dice reroll behave as documented.
 4. Player cards remain fixed and long names fit; active turn and latest bid are legible.
-5. Dudo and Calzo show pending, resolved-success, resolved-failure, and delayed reveal states.
-6. Result context names caller and bidder, verdict color is correct, and highlighted dice match engine rules.
-7. A complete short match ends with winner sound, crown, replay card, and confetti.
-8. There is no document scrollbar, clipped primary action, runtime error, or accidental blurred/opaque full-table overlay.
-
+5. Counts 2–8 each produce a balanced seat map; changing counts starts a new game without changing the engine rules.
+6. **Watch table** removes the private hand, auto-settles the human cup, bot-covers the seat after the normal delay, and **Return to seat** restores the player dashboard. Eliminated seats stay fixed, grey, and explicitly marked Out.
+7. Dudo and Calzo show pending, resolved-success, resolved-failure, and delayed reveal states.
+8. Result context names caller and bidder, verdict color is correct, and highlighted dice match engine rules.
+9. A complete short match ends with winner sound, crown, replay card, and confetti for players and spectators.
+10. There is no document scrollbar, clipped primary action, runtime error, private-hand leak, or accidental blurred/opaque full-table overlay.
