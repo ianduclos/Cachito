@@ -131,6 +131,8 @@ One device can safely move between players using an explicit handoff:
 
 The public table is also the local normal spectator view. Normal spectators can follow the turn, current bid, dice remaining, history, and round results, but cannot inspect live hands or submit actions. The separate admin testing view can expose all hands for debugging and must be clearly marked.
 
+The additive `/table-prototype` route demonstrates the intended next table layout without replacing the beta. It uses the real offline engine, balanced fixed-seat maps for two through eight players, first-class spectator and eliminated-player dashboards, full challenge/result/winner presentation, and the same privacy rule: no live private hand is rendered while watching. See [TABLE_PROTOTYPE.md](./docs/TABLE_PROTOTYPE.md) for the detailed interaction, timing, audio, responsive, and migration contract.
+
 Bot seats obey the same privacy boundary. Their live hands are hidden in Player and normal Spectator modes and are visible only in Admin testing mode. A bot takes its turn automatically after a short delay; consecutive bot bids continue without a human handoff. Dudo and Calzo still stop on the public reveal screen so a user can inspect the result and explicitly start the next round.
 
 Each UI bot turn has a 6–8 second thinking delay. This delay is presentation-only: headless matches and later training runs execute without waiting.
