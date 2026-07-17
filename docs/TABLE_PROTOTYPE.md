@@ -6,7 +6,7 @@ This is the maintainer handoff for the table presentation now used by live onlin
 
 The target is a calmer table-game atmosphere: an oval felt table, fixed people around it, one anchored player dashboard, and enough ceremony around challenges to create suspense. Poker clients are a useful spatial reference, but Cachito should remain quieter and easier to read.
 
-The table is the persistent place. Normal transitions must not replace it with a separate page. Result and shuffle states use crisp rectangular cards over the visible table. Do not bring back a full-table oval veil, circular blended panel, or blurred backdrop for those states. Dudo/Calzo suspense is the deliberate exception: its enormous word appears directly on the uncovered table with a fully transparent background.
+The table is the persistent place. Normal transitions must not replace it with a separate page. Result, shuffle, pause, and settings states use fully opaque, crisp rectangular cards over the visible table. Do not bring back translucent popup cards, a full-table oval veil, circular blended panel, or blurred backdrop for those states. Dudo/Calzo suspense is the deliberate exception: its enormous word appears directly on the uncovered table with a fully transparent background.
 
 ## Architecture and invariants
 
@@ -74,6 +74,7 @@ During the round-setup card, a spectator sees every active cup settle automatica
 
 - Bot decisions use a fresh random delay between three and eight seconds on every turn, including consecutive bot turns.
 - The visible clock follows `game.rules.turnTimeSeconds` (60 seconds under current prototype rules) and resets for every new actor/action state.
+- A new actor must be published with only their fresh deadline; never render the previous actor's deadline first. Room updates that do not change the actor may preserve or shorten the deadline, but never add time.
 - At ten seconds, enter the urgent visual state and start the clock cue exactly once for that deadline.
 - Stop the clock cue immediately when an action resolves, the actor changes, the phase changes, or a call begins.
 - If the human reaches zero, a restricted-observation safety bot makes one legal move and the feed says that time ran out.
@@ -112,11 +113,15 @@ Avoid long prose that explains the arithmetic in a sentence. The bid and actual 
 
 The result card is the main rapid-reading checkpoint. Preserve the uploaded/reference hierarchy: context, very large bid-versus-actual evidence, popping color-coded verdict, short consequence, then revealed hands. At eight players, use four readable hand cards per row; names and dice must remain readable at 1280×720 without adding page scroll.
 
-All purposeful sounds go through `playSound`. The sound module eagerly preloads two voices of every effect plus the theme so the first cue does not wait on a network fetch or decode; preserve that pool when adding clips. Playback starts the theme if needed and ducks it for effects lasting at least one second. Preserve the 120 ms duck, 16% music target, and 1.05 second recovery unless audio is deliberately redesigned. Do not layer the clock, shake-stop, turn-pass, suspense, and result cues over one another accidentally.
+All purposeful sounds go through `playSound`. The sound module eagerly preloads one warm voice for every effect plus the theme so the first cue does not wait on a network fetch or decode; it creates an additional voice only when a clip genuinely overlaps itself. Web Audio is resumed on the earliest user gesture so amplified cues do not pay a first-use wake-up delay. Playback starts the theme if needed and ducks it for effects lasting at least one second. Preserve the 120 ms duck, 16% music target, and 1.05 second recovery unless audio is deliberately redesigned. Do not layer the clock, shake-stop, turn-pass, suspense, and result cues over one another accidentally.
 
 ## Winner presentation
 
-When `nextRound` produces `gameOver`, play the winner sound and replace the table with a deliberately excessive full-viewport champion ceremony. It includes the winner’s real display name at headline scale, crown, round count, standings, replay/leave actions, layered radial bloom, and the full 132-piece gold/coral/green/cream confetti burst. It must not look like another centered modal. Respect reduced-motion preferences: the result remains clear without requiring animation.
+When `nextRound` produces `gameOver`, play the winner sound and replace the table with a deliberately excessive full-viewport champion ceremony. It includes the winner’s real display name at headline scale, crown, round count, standings, replay/leave actions, layered radial bloom, and the full 132-piece gold/coral/green/cream confetti burst. Confetti must layer above the opaque winner surface, not behind it. It must not look like another centered modal. Respect reduced-motion preferences: the result remains clear without requiring animation.
+
+## Settings and forfeit
+
+During an active online game, Settings includes pause/resume, audio, reduced motion, exit, and **Forfeit game**. Forfeit always requires an inline confirmation explaining that the player will be out and continue as a spectator. A confirmed forfeit eliminates that fixed seat, clears the interrupted bid, starts a clean round for remaining players, and immediately declares a winner when only one player remains. It is not equivalent to disconnecting or leaving the room.
 
 ## Responsive and accessibility requirements
 

@@ -4,6 +4,7 @@ export type OnlineClientMessage =
   | { type: "create-room"; name: string }
   | { type: "join-room"; roomCode: string; name?: string; reconnectToken?: string; spectator?: boolean }
   | { type: "leave-room" }
+  | { type: "forfeit-game" }
   | { type: "start-game" }
   | { type: "add-bot" }
   | { type: "remove-bot"; playerId: string }

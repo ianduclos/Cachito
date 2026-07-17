@@ -160,6 +160,50 @@ describe("authoritative online rooms", () => {
     expect(transferred.announcement?.text).toBe("Guest is now the host.");
   });
 
+  it("turns a confirmed forfeit into elimination and a winner when one player remains", async () => {
+    const host = await connect();
+    host.send({ type: "create-room", name: "Host" });
+    const hostJoined = await host.take(isJoined);
+    const guest = await connect();
+    guest.send({ type: "join-room", roomCode: hostJoined.roomCode, name: "Guest" });
+    await guest.take(isJoined);
+    await host.take((message) => message.type === "lobby" && message.players.length === 2);
+    host.send({ type: "start-game" });
+    await host.take((message) => message.type === "state" && message.view.phase === "playing");
+
+    guest.send({ type: "forfeit-game" });
+    const finished = await host.take((message): message is Extract<OnlineServerMessage, { type: "state" }> => message.type === "state" && message.view.phase === "gameOver");
+
+    expect(finished.view.players.find((player) => player.name === "Guest")?.eliminated).toBe(true);
+    expect(finished.view.phase === "gameOver" && finished.view.winnerId).toBe(hostJoined.playerId);
+    expect(finished.history).toContain("Guest forfeited the game.");
+  });
+
+  it("publishes a new turn with only its fresh deadline", async () => {
+    const host = await connect();
+    host.send({ type: "create-room", name: "Host" });
+    const hostJoined = await host.take(isJoined);
+    const guest = await connect();
+    guest.send({ type: "join-room", roomCode: hostJoined.roomCode, name: "Guest" });
+    const guestJoined = await guest.take(isJoined);
+    await host.take((message) => message.type === "lobby" && message.players.length === 2);
+    host.send({ type: "start-game" });
+    await host.take((message) => message.type === "state" && message.view.phase === "playing");
+    host.send({ type: "shuffle-dice" });
+    guest.send({ type: "shuffle-dice" });
+    const opened = await host.take((message): message is Extract<OnlineServerMessage, { type: "state" }> => message.type === "state" && Boolean(message.turnDeadlineAt) && message.shuffle?.readyPlayerIds.length === 2);
+    const initialDeadline = opened.turnDeadlineAt!;
+    await new Promise((resolve) => setTimeout(resolve, 1_050));
+
+    const acting = opened.view.currentPlayerId === hostJoined.playerId ? host : guest;
+    const observing = opened.view.currentPlayerId === hostJoined.playerId ? guest : host;
+    const nextPlayerId = opened.view.currentPlayerId === hostJoined.playerId ? guestJoined.playerId : hostJoined.playerId;
+    acting.send({ type: "action", action: { type: "bid", playerId: opened.view.currentPlayerId!, bid: { quantity: 1, denomination: 2 } } });
+    const nextTurn = await observing.take((message): message is Extract<OnlineServerMessage, { type: "state" }> => message.type === "state" && message.view.currentPlayerId === nextPlayerId && message.view.currentBid?.quantity === 1);
+
+    expect(nextTurn.turnDeadlineAt).toBeGreaterThan(initialDeadline + 800);
+  });
+
   it("runs four independent games concurrently on the authoritative instance", async () => {
     const roomCodes: string[] = [];
     for (let index = 0; index < SUPPORTED_CONCURRENT_GAMES; index += 1) {

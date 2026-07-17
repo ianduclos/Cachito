@@ -76,6 +76,29 @@ export function applyAction(state: GameState, action: GameAction, random: Random
   }
 }
 
+/** Eliminates a conceding player and starts a clean round for those remaining. */
+export function forfeitPlayer(state: GameState, playerId: string, random: RandomSource = Math.random): GameState {
+  if (state.phase === 'gameOver') throw new GameRuleError('WRONG_PHASE', 'A completed game cannot be forfeited')
+  const forfeiting = getPlayer(state.players, playerId)
+  if (forfeiting.diceCount === 0) throw new GameRuleError('INVALID_PLAYERS', 'This player is already out')
+  const eliminatedPlayers = state.players.map((player) => player.id === playerId
+    ? { ...player, diceCount: 0, hand: [], tableDice: [], tableDiceUsed: true }
+    : { ...player, hand: [], tableDice: [], tableDiceUsed: false })
+  const remaining = eliminatedPlayers.filter((player) => player.diceCount > 0)
+  if (remaining.length === 1) {
+    return {
+      phase: 'gameOver', players: eliminatedPlayers, round: state.round, paloFijo: false,
+      rules: { ...state.rules }, currentPlayerId: null, currentBid: null, lastBidderId: null,
+      winnerId: remaining[0].id,
+    }
+  }
+  const players = eliminatedPlayers.map((player) => player.diceCount > 0 ? { ...player, hand: rollHand(player.diceCount, random) } : player)
+  return {
+    phase: 'playing', players, round: state.round + 1, paloFijo: false, rules: { ...state.rules },
+    currentPlayerId: nextActivePlayerId(players, playerId), currentBid: null, lastBidderId: null,
+  }
+}
+
 function placeBid(state: PlayingState, playerId: string, bid: Bid, tableDiceIndices: number[] | undefined, random: RandomSource): PlayingState {
   const totalDice = state.players.reduce((sum, player) => sum + player.diceCount, 0)
   const player = getPlayer(state.players, playerId)

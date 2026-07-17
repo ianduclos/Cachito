@@ -1,4 +1,4 @@
-export { applyAction, createGame, GameRuleError } from './engine'
+export { applyAction, createGame, forfeitPlayer, GameRuleError } from './engine'
 export { DEFAULT_GAME_RULES, MAX_PLAYERS, MIN_PLAYERS } from './types'
 export type { GameRuleErrorCode } from './engine'
 export { createSeededRandom, rollDie, rollHand } from './random'
