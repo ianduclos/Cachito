@@ -11,3 +11,14 @@ Project-wide rules:
 - Run `npm run lint`, `npm run build`, and `npm test -- --run` before handoff. The online-room tests open a temporary loopback WebSocket server and need an environment that permits local listening.
 - When UI behavior changes, add a regression test and perform a live 1280×720 browser pass. Check the whole interaction sequence, not only the resting screenshot.
 
+## `lab/` — research workspace (Claude Code + Ian)
+
+`lab/` is a separate research area for bot-AI R&D and statistical analysis of games
+(bot-only and human/hybrid). See [lab/README.md](lab/README.md) for its charter.
+
+- Lab work reads the engine and logs but does not modify code outside `lab/`;
+  conversely, product work should not depend on anything in `lab/`.
+- Findings that call for product changes (e.g. richer game logging in online rooms,
+  promoting a new bot policy) will arrive as explicit write-ups, not direct patches.
+- `lab/` is exempt from the lint/build/test handoff checklist above unless it
+  touches shared code.
