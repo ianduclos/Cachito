@@ -21,7 +21,7 @@ The current app includes:
 - deterministic, testable engine behavior; and
 - a clean boundary between rules, presentation, and future networking.
 
-The local app includes a playable probability bot and an experimental parameter-learning lab. Realtime room play is live at [cachito.web.app](https://cachito.web.app): it uses Firebase Hosting for the browser app and a server-authoritative Cloud Run service for rooms. Accounts, public matchmaking, and durable relational persistence are not implemented.
+The local app includes a playable probability bot and an experimental parameter-learning lab. Realtime room play is live at [cachito.web.app](https://cachito.web.app): it uses the fixed-seat table presentation, Firebase Hosting for the browser app, and a server-authoritative Cloud Run service for rooms. Accounts, public matchmaking, and durable relational persistence are not implemented.
 
 ## Live online play
 
@@ -80,7 +80,7 @@ npm install
 npm run dev
 ```
 
-The separate table-layout prototype is available at `http://localhost:5173/table-prototype`. It does not replace the current beta interface. It runs the real engine offline with the saved online display name, a fixed human dashboard, and up to seven randomly named autonomous bot seats. Every round retains the manual cup shake, 2–3 second bot shakes, 3–8 second bot thinking time, the full 60-second turn clock with 10-second audio warning and timeout bot cover, staged Dudo/Calzo suspense and success/failure animation, highlighted result reveal, table-dice rerolls, turn sounds, audio ducking, and grouped lost-dice tracking. The bid controls also preserve the beta’s pip-face selectors, clickable hand-dice shortcuts, remembered denomination, and automatic minimum-legal-quantity behavior.
+The fixed-seat table is the production presentation for online rooms. The same design remains available at `http://localhost:5173/table-prototype` as a real-engine offline regression harness with a saved display name and up to seven randomly named autonomous bots. The harness is useful for rapidly checking manual cup shakes, randomized bot pacing, the full turn clock, staged Dudo/Calzo suspense, highlighted results, winner confetti, table-dice rerolls, audio ducking, and grouped lost-dice tracking without changing the live room protocol.
 
 Other available checks:
 
@@ -131,7 +131,7 @@ One device can safely move between players using an explicit handoff:
 
 The public table is also the local normal spectator view. Normal spectators can follow the turn, current bid, dice remaining, history, and round results, but cannot inspect live hands or submit actions. The separate admin testing view can expose all hands for debugging and must be clearly marked.
 
-The additive `/table-prototype` route demonstrates the intended next table layout without replacing the beta. It uses the real offline engine, balanced fixed-seat maps for two through eight players, first-class spectator and eliminated-player dashboards, full challenge/result/winner presentation, and the same privacy rule: no live private hand is rendered while watching. See [TABLE_PROTOTYPE.md](./docs/TABLE_PROTOTYPE.md) for the detailed interaction, timing, audio, responsive, and migration contract.
+The `/table-prototype` route mirrors the production online table as an offline test harness. Production rooms use balanced fixed-seat maps for two through eight players, first-class spectator and eliminated-player dashboards, full challenge/result/winner presentation, and the same privacy rule: no live private hand is rendered while watching. Online rendering consumes only the sanitized player or spectator view supplied by the authoritative room server. See [TABLE_PROTOTYPE.md](./docs/TABLE_PROTOTYPE.md) for the detailed interaction, timing, audio, responsive, and release contract.
 
 Bot seats obey the same privacy boundary. Their live hands are hidden in Player and normal Spectator modes and are visible only in Admin testing mode. A bot takes its turn automatically after a short delay; consecutive bot bids continue without a human handoff. Dudo and Calzo still stop on the public reveal screen so a user can inspect the result and explicitly start the next round.
 

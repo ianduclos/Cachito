@@ -1,6 +1,6 @@
 # Table prototype design and behavior contract
 
-This is the maintainer handoff for `http://localhost:5173/table-prototype`. The prototype explores a more physical, social table without replacing the current beta or changing the game engine. It is a real offline game, not a static mockup.
+This is the maintainer handoff for the table presentation now used by live online rooms and retained as an offline regression harness at `http://localhost:5173/table-prototype`. The layout changes presentation only; both paths continue to use the existing game engine.
 
 ## Product intent
 
@@ -10,14 +10,16 @@ The table is the persistent place. Normal transitions must not replace it with a
 
 ## Architecture and invariants
 
-- Entry point: `src/App.tsx`, route `/table-prototype`.
-- Game and presentation: `src/ui/TablePrototype.tsx` and `src/ui/TablePrototype.css`.
+- Entry point: `src/App.tsx`. Live rooms enter through **Play online**; `/table-prototype` remains the offline test harness.
+- Shared table presentation: `src/ui/TablePrototype.css`, `src/ui/tablePrototypeSeats.ts`, and `src/ui/Dice.tsx`.
+- Live online presentation: `src/online/OnlineGame.tsx` and `src/online/OnlineTable.css`. It must render only the server-provided `PublicGameView` and `LegalActions`.
+- Offline harness: `src/ui/TablePrototype.tsx`.
 - Rules and transitions: `src/engine/`; the prototype calls the real `getLegalActions` and `applyAction` functions.
 - Bot decisions: `src/bot/`, using restricted `projectForPlayer` observations and public history.
 - Shared bot names: `src/bot/names.ts`. Use this pool instead of inventing prototype-only names.
 - Sounds and music ducking: `src/ui/sound.ts`.
 
-Do not fork or simplify the engine for the prototype. Presentation timers may delay what is shown, but they must not alter the authoritative result. Keep the prototype separate from the current beta route.
+Do not fork or simplify the engine. Presentation timers may delay what is shown, but they must not alter the authoritative result. The July 17, 2026 product decision promoted this presentation to online play; keep the offline route as a fast behavior and visual regression harness rather than a second product implementation.
 
 ## Seating and layout
 
@@ -62,7 +64,7 @@ The prototype supports two paths into the same privacy-safe watch experience:
 
 The spectator dashboard is a compact at-a-glance surface, not a disabled player hand. It must show the viewer identity/status, current actor and clock, current bid, round, dice in play, and an activity action. It must never render the private-hand component or live hand values. Result screens may show all hands only after the engine enters `reveal`, as normal Cachito rules require.
 
-For the offline prototype, bot cover may read the covered seat's engine-restricted player projection in order to act. That private observation is never rendered. When this design moves to online play, normal spectators must receive only the existing sanitized spectator projection from the server; never reconstruct spectator privacy in CSS or from a full client-side state object.
+For the offline prototype, bot cover may read the covered seat's engine-restricted player projection in order to act. That private observation is never rendered. In live online play, normal spectators receive only the existing sanitized spectator projection from the server; never reconstruct spectator privacy in CSS or from a full client-side state object. Pure spectators use the dedicated eight-position spectator maps so every seated player remains visible, including the bottom seat. A seated player uses the bottom dashboard as their own fixed seat and the remaining position map for opponents.
 
 During the round-setup card, a spectator sees every active cup settle automatically and has no manual shake button. An eliminated player is already absent from the active-cup list. Spectator mode keeps the table audio, suspense, results, activity feed, and winner ceremony so watching remains a first-class experience.
 
@@ -134,7 +136,7 @@ npm run build
 npm test -- --run
 ```
 
-Then inspect the live route at 1280×720:
+Then inspect both the offline harness and a real local online room at 1280×720. Join the online room once as a seated player and once as a normal spectator:
 
 1. Eight-player initial shuffle card is rectangular and the table remains visible.
 2. Manual shake blocks the first bid; bots settle in two to three seconds.
@@ -146,3 +148,5 @@ Then inspect the live route at 1280×720:
 8. Result context names caller and bidder, verdict color is correct, and highlighted dice match engine rules.
 9. A complete short match ends with winner sound, crown, replay card, and confetti for players and spectators.
 10. There is no document scrollbar, clipped primary action, runtime error, private-hand leak, or accidental blurred/opaque full-table overlay.
+
+Before a production release, bump `src/release.ts`, deploy the room service first when its supported player count or protocol differs from production, then deploy the production-endpoint browser build. Verify the visible release marker and repeat the seated-player and spectator privacy checks on `https://cachito.web.app`.

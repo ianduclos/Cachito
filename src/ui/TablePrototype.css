@@ -44,6 +44,7 @@
 .tp-seat--right-top { top: 27%; left: 96%; }
 .tp-seat--right-middle { top: 47%; left: 97%; }
 .tp-seat--right-bottom { top: 68%; left: 96%; }
+.tp-seat--bottom { top: 83%; left: 50%; }
 .tp-seat--last-bid { border-color: #e8bd6873; }
 .tp-seat--active { z-index: 5; border: 2px solid #f4c767; background: linear-gradient(145deg, #193c32, #0a211c); box-shadow: 0 0 0 7px #e8bd6826, 0 0 32px #e8bd6833, 0 14px 34px #001e18b0; }
 .tp-seat--out { opacity: .66; border-color: #a9b4ae26; background: linear-gradient(145deg, #18201efa, #0d1412fa); box-shadow: 0 10px 24px #00120e75; filter: grayscale(1) saturate(0); }
