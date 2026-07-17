@@ -5,9 +5,9 @@ updated: 2026-07-17
 machine: mac
 summary: Research lab founded inside the project (nested repo lab/) and produced two bot generations that beat the production baseline plus two published visualizations; product side is separately maintained by Codex.
 next:
-  - exp-010 intent/playstyle estimation (in flight) — Gen 5 bluffing groundwork, pulled forward per Ian; Gen 4 endgame skipped
-  - game replay viewer (in flight) — win-prob graph + per-decision bot beliefs for any logged game
-  - table-dice execution in the headless sim runner (queued infra; needed for dice-on-table playstyle work)
+  - Gen 5 conditional bluffing (exp-007) — now properly scoped by exp-011's finding: needs bid-level bluff discrimination, not just per-player rates
+  - Codex reactions: bot/replay integration write-up + runBotMatch table-dice bug fix (docs/lab-handoff-bots-and-replay.md, HANDOFF.md)
+  - get bulk room-log access from the GCS bucket (Ian) — unblocks human-style analysis at scale
   - build the game replay viewer (any logged game, win-prob graph + bot beliefs per turn)
   - get bulk room-log access from the GCS bucket (Ian) to start human-style analysis
   - write up Codex asks — log schema v5, champion promotion format, seeded online bot randomness
