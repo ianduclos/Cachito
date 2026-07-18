@@ -2,6 +2,8 @@
 
 ## Current implementation
 
+> Production status (July 18, 2026): all authoritative online-room bot seats now use the promoted **Gen 2 + Persona** policy. Gen 2 combines public-history belief filtering with equity-aware challenge pricing; the persona layer adds occasional bid storytelling and table-dice use. Heads-up play delegates fully to Conservative. The older local probability-bot interface and learning dashboard are development/regression surfaces, not the released bot. See [docs/BOT_AND_MATCH_ANALYSIS.md](./docs/BOT_AND_MATCH_ANALYSIS.md) for the current policy, privacy, telemetry, persona, and postgame-analysis contract.
+
 The first foundation is now available under `src/bot/`:
 
 - a policy interface receiving only a restricted player view, legal actions, and public history;
@@ -14,7 +16,7 @@ The first foundation is now available under `src/bot/`:
 - versioned match logs with public actions, reveal outcomes, and privacy-safe decision telemetry; and
 - regression coverage for privacy, reproducibility, termination, and baseline strength.
 
-The local interface also supports a Human/Bot switch for every startup seat and uses the probability heuristic for playable bot seats. Live bot hands remain hidden in Player and normal Spectator modes; only Admin testing mode exposes them. Each UI bot turn waits 800 ms, including consecutive bot bids; headless simulation has no delay. Dudo and Calzo reveal screens do not auto-advance, so the user can inspect the result before starting the next round.
+The deprecated local interface still supports mixed Human/Bot startup seats and the probability heuristic for regression work. Production online bots use the server policy above and a fresh 3–8 second presentation delay. Live bot hands remain hidden from players and normal spectators; only explicitly local admin testing may expose them. Dudo and Calzo reveal screens do not auto-advance, so the table can inspect the result before starting the next round.
 
 Opponent modeling, information-set search, and neural policies remain future milestones. The current learned policy is an evolutionary optimization of the five interpretable probability-policy parameters.
 

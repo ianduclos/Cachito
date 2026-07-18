@@ -12,6 +12,7 @@ import {
   binomialAtLeast,
   binomialPmf,
   chooseBotAction,
+  createPersonaBluffPolicy,
   createProbabilityPolicy,
   evaluateBidDistribution,
   evaluateTableDiceDistribution,
@@ -19,6 +20,7 @@ import {
   runBotBatch,
   runBotMatch,
   runSeatBalancedDuel,
+  toGameAction,
   type BotPolicy,
 } from './index'
 
@@ -88,6 +90,22 @@ describe('bot probability model', () => {
 })
 
 describe('headless bot matches', () => {
+  it('promotes table-dice selections into authoritative engine actions', () => {
+    expect(toGameAction('bot-a', { type: 'bid', bid: { quantity: 2, denomination: 5 }, tableDiceIndices: [0, 2] })).toEqual({
+      type: 'bid', playerId: 'bot-a', bid: { quantity: 2, denomination: 5 }, tableDiceIndices: [0, 2],
+    })
+  })
+
+  it('runs the promoted Gen 2 persona policy and keeps heads-up play cautious', () => {
+    const state = stateWithHands({ a: [1, 5, 5], b: [2, 3, 4] })
+    const observation = { playerId: 'a', view: projectForPlayer(state, 'a'), legalActions: getLegalActions(state, 'a'), history: [] }
+    const policy = createPersonaBluffPolicy({ aggression: 'aggressive' })
+    const result = chooseBotAction(policy, observation, createSeededRandom(19))
+
+    expect(result.trace?.plainReason).toBe('At a two-player table, it used the proven cautious heads-up approach.')
+    expect(result.trace?.model).not.toBe('persona-bluff')
+  })
+
   it('is reproducible from a seed and terminates', () => {
     const seats = [
       { id: 'probability', name: 'Probability', policy: createProbabilityPolicy() },
@@ -227,5 +245,5 @@ function assertPrivateView(view: PublicGameView, playerId: string): void {
   }
   const viewer = view.players.find((player) => player.id === playerId)!
   if (view.paloFijo && viewer.diceCount > 1) expect(viewer).not.toHaveProperty('hand')
-  else expect(viewer.hand).toHaveLength(viewer.diceCount)
+  else expect((viewer.hand?.length ?? 0) + viewer.tableDice.length).toBe(viewer.diceCount)
 }

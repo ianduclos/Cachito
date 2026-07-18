@@ -68,6 +68,8 @@ export interface BotActionValueTrace {
 export interface BotDecisionTrace {
   model: string
   version: number
+  /** Post-game-safe explanation written for players, never a hidden-hand dump. */
+  plainReason?: string
   settings?: Record<string, number>
   decisionReason: BotDecisionReason
   currentBidAnalysis?: {

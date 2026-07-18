@@ -2,6 +2,8 @@
 
 Read [docs/TABLE_PROTOTYPE.md](docs/TABLE_PROTOTYPE.md) before changing `/table-prototype`, game presentation, turn timing, sounds, bot pacing, or reveal/winner flows. That document records the interaction details that are easy to lose in a visual redesign.
 
+Read [docs/BOT_AND_MATCH_ANALYSIS.md](docs/BOT_AND_MATCH_ANALYSIS.md) before changing production bot policy, personas, bot telemetry, private match logs, or the completed-game analysis. The offline prototype is now regression-only; production bot behavior lives in the authoritative online room service.
+
 Project-wide rules:
 
 - The engine in `src/engine/` is authoritative. UI code must use `getLegalActions` and `applyAction`; never recreate bid ordering, Dudo, Calzo, Palo Fijo, elimination, or table-dice rules in a component.

@@ -16,10 +16,13 @@ The table is the persistent place. Normal transitions must not replace it with a
 - Offline harness: `src/ui/TablePrototype.tsx`.
 - Rules and transitions: `src/engine/`; the prototype calls the real `getLegalActions` and `applyAction` functions.
 - Bot decisions: `src/bot/`, using restricted `projectForPlayer` observations and public history.
+- Production bots and the completed winner analysis: `docs/BOT_AND_MATCH_ANALYSIS.md`. Online bots use Gen 2 + Persona; the offline route is regression-only and must not become a competing policy surface.
 - Shared bot names: `src/bot/names.ts`. Use this pool instead of inventing prototype-only names.
 - Sounds and music ducking: `src/ui/sound.ts`.
 
 Do not fork or simplify the engine. Presentation timers may delay what is shown, but they must not alter the authoritative result. The July 17, 2026 product decision promoted this presentation to online play; keep the offline route as a fast behavior and visual regression harness rather than a second product implementation.
+
+The July 18 product decision deprecated the offline prototype as a product path. Preserve it only where it cheaply catches engine, animation, audio, or layout regressions; new online features do not need a parallel offline implementation.
 
 ## Seating and layout
 
@@ -145,7 +148,7 @@ npm run build
 npm test -- --run
 ```
 
-Then inspect both the offline harness and a real local online room at 1280×720. Join the online room once as a seated player and once as a normal spectator:
+Then inspect a real local online room at 1280×720. Use the deprecated offline harness only when the changed behavior still exists there. Join the online room once as a seated player and once as a normal spectator:
 
 1. Eight-player initial shuffle card is rectangular and the table remains visible.
 2. Manual shake blocks the first bid; bots settle in two to three seconds.
@@ -155,7 +158,7 @@ Then inspect both the offline harness and a real local online room at 1280×720.
 6. **Watch table** removes the private hand, auto-settles the human cup, bot-covers the seat after the normal delay, and **Return to seat** restores the player dashboard. Eliminated seats stay fixed, grey, and explicitly marked Out.
 7. Dudo and Calzo show pending, resolved-success, resolved-failure, and delayed reveal states.
 8. Result context names caller and bidder, verdict color is correct, and highlighted dice match engine rules.
-9. A complete short match ends with winner sound, crown, replay card, and confetti for players and spectators.
+9. A complete short match ends with winner sound, crown, standings, and confetti for players and spectators. **Game analysis** opens an opaque full-screen summary, explains Bluff/Aggression/Challenge on hover and keyboard focus, shows early reads honestly, and can return to the winner ceremony.
 10. There is no document scrollbar, clipped primary action, runtime error, private-hand leak, or accidental blurred/opaque full-table overlay.
 
 Before a production release, bump `src/release.ts`, deploy the room service first when its supported player count or protocol differs from production, then deploy the production-endpoint browser build. Verify the visible release marker and repeat the seated-player and spectator privacy checks on `https://cachito.web.app`.

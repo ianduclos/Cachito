@@ -42,8 +42,8 @@ function mixSeed(seed: number, stream: number): number {
   return value >>> 0
 }
 
-function toGameAction(playerId: string, choice: BotChoice): GameAction {
-  if (choice.type === 'bid') return { type: 'bid', playerId, bid: choice.bid }
+export function toGameAction(playerId: string, choice: BotChoice): GameAction {
+  if (choice.type === 'bid') return { type: 'bid', playerId, bid: choice.bid, ...(choice.tableDiceIndices?.length ? { tableDiceIndices: [...choice.tableDiceIndices] } : {}) }
   return { type: choice.type, playerId }
 }
 

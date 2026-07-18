@@ -1,4 +1,5 @@
 import type { GameAction, GameRules, LegalActions, PublicGameView } from "../engine";
+import type { MatchAnalysis } from "../analysis";
 
 export type OnlineClientMessage =
   | { type: "create-room"; name: string }
@@ -21,5 +22,5 @@ export type OnlineClientMessage =
 export type OnlineServerMessage =
   | { type: "joined"; roomCode: string; playerId?: string; reconnectToken?: string; hostPlayerId: string }
   | { type: "lobby"; roomCode: string; hostPlayerId: string; players: Array<{ id: string; name: string; connected: boolean; isBot: boolean }>; spectatorCount: number; rules: GameRules; pendingRules?: { rules: GameRules; proposedById: string; approvalPlayerIds: string[] } }
-  | { type: "state"; hostPlayerId: string; view: PublicGameView; legalActions?: LegalActions; history: string[]; announcement?: { text: string; playerId?: string }; shuffle?: { round: number; readyPlayerIds: string[]; deadlineAt: number }; nextRound?: { readyPlayerIds: string[]; deadlineAt: number }; paused?: { pausedByName: string }; playerStatuses: Array<{ id: string; connected: boolean; covered: boolean }>; turnDeadlineAt?: number }
+  | { type: "state"; hostPlayerId: string; view: PublicGameView; legalActions?: LegalActions; history: string[]; analysis?: MatchAnalysis; announcement?: { text: string; playerId?: string }; shuffle?: { round: number; readyPlayerIds: string[]; deadlineAt: number }; nextRound?: { readyPlayerIds: string[]; deadlineAt: number }; paused?: { pausedByName: string }; playerStatuses: Array<{ id: string; connected: boolean; covered: boolean }>; turnDeadlineAt?: number }
   | { type: "error"; message: string };

@@ -3,8 +3,11 @@ export { BOT_NAMES } from './names'
 export { adjustSupportForOpponent, buildOpponentProfile } from './opponentModel'
 export { collectRunChampions, mergeChampionShelf } from './championArchive'
 export { chooseBotAction, createProbabilityPolicy, isChoiceLegal, randomLegalPolicy } from './policies'
-export { runBotBatch, runBotMatch, runSeatBalancedDuel } from './simulator'
+export { runBotBatch, runBotMatch, runSeatBalancedDuel, toGameAction } from './simulator'
 export { createAdversarialPolicyLeague, runAdversarialTournament } from './adversarial'
+export { createBeliefEquityPolicy } from './champion/beliefEquity'
+export { createPersonaBluffPolicy, PERSONA_LABELS } from './champion/personaBluff'
+export type { PersonaAggression, PersonaBluffOptions } from './champion/personaBluff'
 export {
   LearningCancelledError,
   createInitialLearningPopulation,

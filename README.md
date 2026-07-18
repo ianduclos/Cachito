@@ -2,7 +2,7 @@
 
 Cachito is a browser implementation of the hidden-dice game also known as Dudo, Liar's Dice, or Perudo. It supports 2–8 player local games and live, server-authoritative private online rooms.
 
-See [RULES.md](./RULES.md) for the game rules, denomination names, bid examples, Palo Fijo behavior, and privacy rules. See [MACHINE_PLAYER.md](./MACHINE_PLAYER.md) for the staged bot plan. Agents and maintainers changing the separate table experience must also read [docs/TABLE_PROTOTYPE.md](./docs/TABLE_PROTOTYPE.md).
+See [RULES.md](./RULES.md) for the game rules, denomination names, bid examples, Palo Fijo behavior, and privacy rules. See [MACHINE_PLAYER.md](./MACHINE_PLAYER.md) for the staged bot plan. Agents and maintainers changing the table, production bots, or postgame reporting must also read [docs/TABLE_PROTOTYPE.md](./docs/TABLE_PROTOTYPE.md) and [docs/BOT_AND_MATCH_ANALYSIS.md](./docs/BOT_AND_MATCH_ANALYSIS.md).
 
 ## Current scope
 
@@ -21,7 +21,7 @@ The current app includes:
 - deterministic, testable engine behavior; and
 - a clean boundary between rules, presentation, and future networking.
 
-The local app includes a playable probability bot and an experimental parameter-learning lab. Realtime room play is live at [cachito.web.app](https://cachito.web.app): it uses the fixed-seat table presentation, Firebase Hosting for the browser app, and a server-authoritative Cloud Run service for rooms. Accounts, public matchmaking, and durable relational persistence are not implemented.
+Realtime room play is live at [cachito.web.app](https://cachito.web.app): it uses the fixed-seat table presentation, Gen 2 + Persona production bots, Firebase Hosting for the browser app, and a server-authoritative Cloud Run service for rooms. The old local prototype remains only as a regression harness. Accounts, public matchmaking, and durable relational persistence are not implemented.
 
 ## Live online play
 
@@ -82,7 +82,7 @@ npm install
 npm run dev
 ```
 
-The fixed-seat table is the production presentation for online rooms. The offline regression harness remains directly available at `http://localhost:5173/table-prototype`, but it is intentionally absent from the public opening-screen actions. It uses the real engine with a saved display name and up to seven randomly named autonomous bots, making it useful for rapidly checking manual cup shakes, randomized bot pacing, the full turn clock, staged Dudo/Calzo suspense, highlighted results, winner confetti, table-dice rerolls, audio ducking, and grouped lost-dice tracking without changing the live room protocol.
+The fixed-seat table is the production presentation for online rooms. The deprecated offline regression harness remains directly available at `http://localhost:5173/table-prototype`, but it is intentionally absent from the public opening-screen actions and does not need feature parity. It remains useful for rapidly checking manual cup shakes, staged Dudo/Calzo suspense, highlighted results, winner confetti, table-dice rerolls, audio ducking, and grouped lost-dice tracking without changing the live room protocol.
 
 Other available checks:
 
@@ -159,7 +159,7 @@ Logs are intended for local inspection now and later batch analysis. Every new l
 
 ### Private online snapshots and recovery
 
-Production online snapshots are private, server-only records. Schema version 4 retains the unanimously approved game rules alongside the nickname and controller for every seat, every round's full dealt hands, nickname-labelled actions (including table dice and rerolled private dice), and a timing record for each completed turn (start, deadline, finish, elapsed/remaining time, and bid/Dudo/Calzo/timeout outcome). Active recovery records have a separate versioned shape, are rate-limited and coalesced to avoid object-storage mutation limits, preserve reconnect tokens and offline timing state, and are never sent to players or spectators. A recovery record is deleted when its room expires; stale or incompatible records are rejected and removed during recovery.
+Production online snapshots are private, server-only records. Schema version 5 retains the unanimously approved rules, seat/controller/persona metadata, dealt hands, nickname-labelled actions, covered timeout moves, structured round resolutions, privacy-safe bot decisions, completed-game analysis, and detailed turn timing. Only the compact analysis is sent to browsers, and only after game over; raw diagnostics and hands stay private. Active recovery records have a separate versioned shape, are rate-limited and coalesced to avoid object-storage mutation limits, preserve reconnect tokens and offline timing state, and are never sent to players or spectators during play. See [docs/BOT_AND_MATCH_ANALYSIS.md](./docs/BOT_AND_MATCH_ANALYSIS.md) for the score meanings and privacy contract.
 
 ### Analyze a logs folder
 

@@ -52,7 +52,7 @@ const isError = (message: OnlineServerMessage): message is Extract<OnlineServerM
 describe("online room safety guards", () => {
   it("stamps recovery and match logs with the deployed game version", () => {
     expect(onlineLogHeader(2)).toEqual({ schemaVersion: 2, gameVersion: release });
-    expect(onlineLogHeader(4)).toEqual({ schemaVersion: 4, gameVersion: release });
+    expect(onlineLogHeader(5)).toEqual({ schemaVersion: 5, gameVersion: release });
   });
 
   it("age-bounds current snapshots and legacy snapshots during rollout", () => {
@@ -177,6 +177,7 @@ describe("authoritative online rooms", () => {
     expect(finished.view.players.find((player) => player.name === "Guest")?.eliminated).toBe(true);
     expect(finished.view.phase === "gameOver" && finished.view.winnerId).toBe(hostJoined.playerId);
     expect(finished.history).toContain("Guest forfeited the game.");
+    expect(finished.analysis).toMatchObject({ schemaVersion: 1, winnerId: hostJoined.playerId, headline: expect.stringContaining("Host") });
   });
 
   it("publishes a new turn with only its fresh deadline", async () => {

@@ -4,22 +4,24 @@ import { isIP } from "node:net";
 import { WebSocketServer, type WebSocket } from "ws";
 import { Storage } from "@google-cloud/storage";
 import { applyAction, createGame, DEFAULT_GAME_RULES, forfeitPlayer, getLegalActions, MAX_PLAYERS, projectForPlayer, projectForSpectator, type Die, type GameAction, type GameRules, type GameState, type PlayerSetup } from "../src/engine";
-import { chooseBotAction, createProbabilityPolicy, isChoiceLegal, type BotObservation, type PublicActionEntry } from "../src/bot";
+import { chooseBotAction, createPersonaBluffPolicy, isChoiceLegal, PERSONA_LABELS, type BotObservation, type BotPolicy, type PersonaAggression, type PublicActionEntry } from "../src/bot";
+import { createBotDecisionRecord, type BotDecisionRecord, type LoggedRoundResolution } from "../src/analytics";
+import { buildMatchAnalysis, type MatchAnalysis } from "../src/analysis";
 import { BOT_NAMES } from "../src/bot/names";
 import type { OnlineClientMessage, OnlineServerMessage } from "../src/online/protocol";
 import { release } from "../src/release";
 
-type RoomPlayer = { id: string; name: string; isBot: boolean; token?: string; socket?: WebSocket; disconnectedAt?: number };
+type RoomPlayer = { id: string; name: string; isBot: boolean; botPersona?: PersonaAggression; token?: string; socket?: WebSocket; disconnectedAt?: number };
 type RoomEvent = { type: "round-start" } | { type: "shuffle-dice" } | { type: "pause-game" } | { type: "resume-game" } | { type: "forfeit-game" };
 type Spectator = { socket: WebSocket; queuedPlayer?: RoomPlayer };
 type ConnectionContext = { connectionId: string; ipHash: string | null; ipVersion: "ipv4" | "ipv6" | "unknown"; forwardedForCount: number; userAgentHash: string | null; origin?: string; language?: string; protocol?: string; hashConfigured: boolean };
 type ConnectionEvent = ConnectionContext & { at: string; event: "room-created" | "player-joined" | "player-reconnected" | "player-queued" | "spectator-joined" | "disconnected"; role: "player" | "spectator"; playerId?: string };
-type LoggedAction = { at: string; playerId?: string; nickname?: string; action: GameAction | RoomEvent; tableDice?: Die[]; rerolledDice?: Die[] };
+type LoggedAction = { at: string; round?: number; playerId?: string; nickname?: string; action: GameAction | RoomEvent; tableDice?: Die[]; rerolledDice?: Die[]; covered?: boolean };
 type RoundDeal = { round: number; dealtAt: string; paloFijo: boolean; starterId: string | null; hands: Array<{ playerId: string; nickname: string; dice: number[] }> };
 type TurnTiming = { round: number; playerId: string; nickname: string; controller: "human" | "bot"; startedAt: string; deadlineAt: string; finishedAt?: string; elapsedMs?: number; remainingMs?: number; outcome?: "bid" | "dudo" | "calzo" | "timeout" | "forfeit" | "interrupted" };
 type RoomRuleProposal = { rules: GameRules; proposedById: string; approvalPlayerIds: Set<string> };
 type PauseState = { pausedById: string; pausedAt: number; turnRemainingMs?: number; shuffleRemainingMs?: number; nextRoundRemainingMs?: number };
-type Room = { code: string; hostPlayerId: string; players: RoomPlayer[]; spectators: Map<WebSocket, Spectator>; connectionEvents: ConnectionEvent[]; rules: GameRules; pendingRules?: RoomRuleProposal; roundDeals: RoundDeal[]; turnTimings: TurnTiming[]; activeTurn?: TurnTiming; game?: GameState; history: string[]; botHistory: PublicActionEntry[]; announcement?: { text: string; playerId?: string }; shuffleReadyPlayerIds?: Set<string>; nextRoundReadyPlayerIds?: Set<string>; nextRoundDeadlineAt?: number; shuffleDeadlineAt?: number; paused?: PauseState; actions: LoggedAction[]; startedAt?: string; lastActivityAt: number; nextGameStarterId?: string; turnDeadlineAt?: number; turnTimer?: ReturnType<typeof setTimeout>; shuffleTimer?: ReturnType<typeof setTimeout>; nextRoundTimer?: ReturnType<typeof setTimeout>; offlineCoverTimer?: ReturnType<typeof setTimeout>; snapshotTimer?: ReturnType<typeof setTimeout>; snapshotPersisting?: boolean; snapshotQueued?: boolean; snapshotDeleteQueued?: boolean; expired?: boolean; lastSnapshotAt?: number; botShuffleTimers?: Array<ReturnType<typeof setTimeout>>; botNextRoundTimers?: Array<ReturnType<typeof setTimeout>> };
+type Room = { code: string; hostPlayerId: string; players: RoomPlayer[]; spectators: Map<WebSocket, Spectator>; connectionEvents: ConnectionEvent[]; rules: GameRules; pendingRules?: RoomRuleProposal; roundDeals: RoundDeal[]; roundResolutions: LoggedRoundResolution[]; turnTimings: TurnTiming[]; activeTurn?: TurnTiming; game?: GameState; history: string[]; botHistory: PublicActionEntry[]; botDecisions: BotDecisionRecord[]; analysis?: MatchAnalysis; announcement?: { text: string; playerId?: string }; shuffleReadyPlayerIds?: Set<string>; nextRoundReadyPlayerIds?: Set<string>; nextRoundDeadlineAt?: number; shuffleDeadlineAt?: number; paused?: PauseState; actions: LoggedAction[]; startedAt?: string; lastActivityAt: number; nextGameStarterId?: string; turnDeadlineAt?: number; turnTimer?: ReturnType<typeof setTimeout>; shuffleTimer?: ReturnType<typeof setTimeout>; nextRoundTimer?: ReturnType<typeof setTimeout>; offlineCoverTimer?: ReturnType<typeof setTimeout>; snapshotTimer?: ReturnType<typeof setTimeout>; snapshotPersisting?: boolean; snapshotQueued?: boolean; snapshotDeleteQueued?: boolean; expired?: boolean; lastSnapshotAt?: number; botShuffleTimers?: Array<ReturnType<typeof setTimeout>>; botNextRoundTimers?: Array<ReturnType<typeof setTimeout>> };
 const rooms = new Map<string, Room>();
 const roomCreationTimestamps = new Map<string, number[]>();
 const connectionContexts = new WeakMap<WebSocket, ConnectionContext>();
@@ -176,12 +178,25 @@ function nextBotName(room: Room) {
   const unused = BOT_NAMES.filter((name) => !room.players.some((player) => player.name === name));
   return unused[Math.floor(Math.random() * unused.length)] ?? `Bot ${room.players.filter((player) => player.isBot).length + 1}`;
 }
-function onlineBotPolicy(player: RoomPlayer) {
-  const style = [...player.name].reduce((total, character) => total + character.charCodeAt(0), 0) % 3;
-  if (style === 1) return createProbabilityPolicy({ name: "Pressure strategist", bluffRate: 0.12, targetBidConfidence: 0.57, tableAggression: 0.52 });
-  if (style === 2) return createProbabilityPolicy({ name: "Careful strategist", bluffRate: 0.035, targetBidConfidence: 0.67, tableAggression: 0.08 });
-  return createProbabilityPolicy({ name: "Adaptive strategist", bluffRate: 0.07, targetBidConfidence: 0.62, tableAggression: 0.24 });
+function randomBotPersona(): PersonaAggression {
+  const roll = randomInt(100);
+  return roll < 30 ? "conservative" : roll < 75 ? "balanced" : "aggressive";
 }
+function stableBotPersona(player: RoomPlayer): PersonaAggression {
+  if (player.botPersona) return player.botPersona;
+  const styles: PersonaAggression[] = ["conservative", "balanced", "aggressive"];
+  return styles[[...player.id].reduce((total, character) => total + character.charCodeAt(0), 0) % styles.length];
+}
+const personaPolicies = new Map<PersonaAggression, BotPolicy>();
+function personaPolicy(persona: PersonaAggression) {
+  let policy = personaPolicies.get(persona);
+  if (!policy) {
+    policy = createPersonaBluffPolicy({ name: `Gen 2 · ${PERSONA_LABELS[persona]}`, aggression: persona });
+    personaPolicies.set(persona, policy);
+  }
+  return policy;
+}
+function onlineBotPolicy(player: RoomPlayer) { return personaPolicy(stableBotPersona(player)); }
 function send(socket: WebSocket, message: OnlineServerMessage) { if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message)); }
 function lobby(room: Room): Extract<OnlineServerMessage, { type: "lobby" }> {
   return { type: "lobby", roomCode: room.code, hostPlayerId: room.hostPlayerId, spectatorCount: room.spectators.size,
@@ -266,16 +281,17 @@ function everyoneReadyForNextRound(room: Room) {
   return Boolean(room.game?.phase === "reveal" && room.nextRoundReadyPlayerIds && activeRoomPlayers(room).every((player) => room.nextRoundReadyPlayerIds!.has(player.id)));
 }
 function publish(room: Room) {
+  const analysisPayload = room.game?.phase === "gameOver" && room.analysis ? { analysis: room.analysis } : {};
   for (const player of room.players) {
     if (!player.socket) continue;
     if (!room.game) send(player.socket, lobby(room));
     else {
       const view = projectForPlayer(room.game, player.id);
-      send(player.socket, { type: "state", hostPlayerId: room.hostPlayerId, view, history: [...room.history], playerStatuses: playerStatuses(room), ...(room.turnDeadlineAt ? { turnDeadlineAt: room.turnDeadlineAt } : {}), ...(room.announcement ? { announcement: room.announcement } : {}), ...pausePayload(room), ...shufflePayload(room), ...nextRoundPayload(room), ...(room.game.phase === "playing" && everyoneShuffled(room) && room.game.currentPlayerId === player.id ? { legalActions: getLegalActions(room.game, player.id) } : {}) });
+      send(player.socket, { type: "state", hostPlayerId: room.hostPlayerId, view, history: [...room.history], playerStatuses: playerStatuses(room), ...analysisPayload, ...(room.turnDeadlineAt ? { turnDeadlineAt: room.turnDeadlineAt } : {}), ...(room.announcement ? { announcement: room.announcement } : {}), ...pausePayload(room), ...shufflePayload(room), ...nextRoundPayload(room), ...(room.game.phase === "playing" && everyoneShuffled(room) && room.game.currentPlayerId === player.id ? { legalActions: getLegalActions(room.game, player.id) } : {}) });
     }
   }
   for (const { socket } of room.spectators.values()) {
-    if (room.game) send(socket, { type: "state", hostPlayerId: room.hostPlayerId, view: projectForSpectator(room.game), history: [...room.history], playerStatuses: playerStatuses(room), ...(room.turnDeadlineAt ? { turnDeadlineAt: room.turnDeadlineAt } : {}), ...(room.announcement ? { announcement: room.announcement } : {}), ...pausePayload(room), ...shufflePayload(room), ...nextRoundPayload(room) });
+    if (room.game) send(socket, { type: "state", hostPlayerId: room.hostPlayerId, view: projectForSpectator(room.game), history: [...room.history], playerStatuses: playerStatuses(room), ...analysisPayload, ...(room.turnDeadlineAt ? { turnDeadlineAt: room.turnDeadlineAt } : {}), ...(room.announcement ? { announcement: room.announcement } : {}), ...pausePayload(room), ...shufflePayload(room), ...nextRoundPayload(room) });
     else send(socket, lobby(room));
   }
 }
@@ -314,13 +330,15 @@ function scheduleTurn(room: Room, requestedRemainingMs?: number) {
     if (!game || game.phase !== "playing" || game.currentPlayerId !== actor.id) return;
     try {
       const observation: BotObservation = { playerId: actor.id, view: projectForPlayer(game, actor.id), legalActions: getLegalActions(game, actor.id), history: room.botHistory };
-      const { choice } = chooseBotAction(onlineBotPolicy(actor), observation, Math.random);
+      const policy = actor.isBot ? onlineBotPolicy(actor) : personaPolicy("conservative");
+      const { choice, trace } = chooseBotAction(policy, observation, Math.random);
       if (!isChoiceLegal(observation, choice)) throw new Error("Bot selected an illegal action.");
       // A timeout bot is a safety net, not a strategic table-dice move.
       const action = choice.type === "bid" ? { type: "bid" as const, playerId: actor.id, bid: choice.bid, ...(actor.isBot && choice.tableDiceIndices?.length ? { tableDiceIndices: choice.tableDiceIndices } : {}) } : { type: choice.type, playerId: actor.id };
       finishTurnTiming(room, actor.isBot ? action.type : "timeout");
+      if (actor.isBot) room.botDecisions.push({ ...createBotDecisionRecord(observation, policy.name, choice, trace), sequence: room.botDecisions.length });
       room.game = applyAction(game, action);
-      recordAction(room, actor.name, action);
+      recordAction(room, actor.name, action, { covered: !actor.isBot });
       if (room.game.phase === "reveal") startNextRoundVote(room);
       if (!actor.isBot) {
         room.history.unshift(`${actor.name} ran out of time — a bot made the move.`);
@@ -360,7 +378,7 @@ function startRoundShuffle(room: Room, remainingMs = SHUFFLE_LIMIT_MS, keepReady
     const timer = setTimeout(() => {
       if (!room.game || room.game.phase !== "playing" || !room.shuffleReadyPlayerIds || room.shuffleReadyPlayerIds.has(bot.id)) return;
       room.shuffleReadyPlayerIds.add(bot.id);
-      room.actions.push({ at: new Date().toISOString(), playerId: bot.id, nickname: bot.name, action: { type: "shuffle-dice" } });
+      room.actions.push({ at: new Date().toISOString(), round: room.game.round, playerId: bot.id, nickname: bot.name, action: { type: "shuffle-dice" } });
       room.announcement = { text: `${bot.name} shakes their cup.`, playerId: bot.id };
       void persistRoomSnapshot(room);
       publish(room);
@@ -455,16 +473,19 @@ async function loadPersistedRoom(roomCode: string): Promise<Room | undefined> {
     const restored: Room = {
       code: saved.code,
       hostPlayerId: saved.hostPlayerId ?? "",
-      players: saved.players.map((player) => ({ id: player.id, name: player.name, isBot: player.isBot, ...(player.token ? { token: player.token } : {}), ...(!player.isBot ? { disconnectedAt: typeof player.disconnectedAt === "number" ? player.disconnectedAt : Date.now() } : {}) })),
+      players: saved.players.map((player) => ({ id: player.id, name: player.name, isBot: player.isBot, ...(player.botPersona ? { botPersona: player.botPersona } : {}), ...(player.token ? { token: player.token } : {}), ...(!player.isBot ? { disconnectedAt: typeof player.disconnectedAt === "number" ? player.disconnectedAt : Date.now() } : {}) })),
       spectators: new Map(),
       connectionEvents: saved.connectionEvents ?? [],
       rules: saved.rules ?? DEFAULT_GAME_RULES,
       roundDeals: saved.roundDeals ?? [],
+      roundResolutions: saved.roundResolutions ?? [],
       turnTimings: saved.turnTimings ?? [],
       ...(saved.activeTurn ? { activeTurn: saved.activeTurn } : {}),
       game: saved.game,
       history: saved.history ?? [],
       botHistory: saved.botHistory ?? [],
+      botDecisions: saved.botDecisions ?? [],
+      ...(saved.analysis ? { analysis: saved.analysis } : {}),
       ...(saved.announcement ? { announcement: saved.announcement } : {}),
       ...(saved.shuffleReadyPlayerIds ? { shuffleReadyPlayerIds: new Set(saved.shuffleReadyPlayerIds) } : {}),
       ...(saved.nextRoundReadyPlayerIds ? { nextRoundReadyPlayerIds: new Set(saved.nextRoundReadyPlayerIds) } : {}),
@@ -506,7 +527,7 @@ function pauseGame(room: Room, player: RoomPlayer) {
   room.turnDeadlineAt = undefined;
   room.shuffleDeadlineAt = undefined;
   room.nextRoundDeadlineAt = undefined;
-  room.actions.push({ at: new Date(now).toISOString(), playerId: player.id, nickname: player.name, action: { type: "pause-game" } });
+  room.actions.push({ at: new Date(now).toISOString(), round: room.game.round, playerId: player.id, nickname: player.name, action: { type: "pause-game" } });
   room.history.unshift(`${player.name} paused the game.`);
   room.announcement = { text: `${player.name} paused the game. Any player can resume it from Settings.`, playerId: player.id };
 }
@@ -520,7 +541,7 @@ function resumeGame(room: Room, player: RoomPlayer) {
     if (pause.turnRemainingMs !== undefined) room.activeTurn.deadlineAt = new Date(now + pause.turnRemainingMs).toISOString();
   }
   room.paused = undefined;
-  room.actions.push({ at: new Date(now).toISOString(), playerId: player.id, nickname: player.name, action: { type: "resume-game" } });
+  room.actions.push({ at: new Date(now).toISOString(), round: room.game.round, playerId: player.id, nickname: player.name, action: { type: "resume-game" } });
   room.history.unshift(`${player.name} resumed the game.`);
   room.announcement = { text: `${player.name} resumed the game.`, playerId: player.id };
   if (room.game.phase === "playing") {
@@ -624,7 +645,7 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           roomCreationTimestamps.set(creationAddress, [...recentCreations, creationNow]);
           const id = `player-${crypto.randomUUID()}`;
           player = { id, name, isBot: false, token: token(), socket };
-          room = { code: code(), hostPlayerId: id, players: [player], spectators: new Map(), connectionEvents: [], rules: { ...DEFAULT_GAME_RULES }, roundDeals: [], turnTimings: [], history: [], botHistory: [], actions: [], lastActivityAt: Date.now() };
+          room = { code: code(), hostPlayerId: id, players: [player], spectators: new Map(), connectionEvents: [], rules: { ...DEFAULT_GAME_RULES }, roundDeals: [], roundResolutions: [], turnTimings: [], history: [], botHistory: [], botDecisions: [], actions: [], lastActivityAt: Date.now() };
           recordConnection(room, socket, "room-created", "player", id);
           rooms.set(room.code, room);
           association = "bound";
@@ -723,7 +744,7 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
         } else if (message.type === "add-bot") {
           if (!player || player.id !== room.hostPlayerId || room.game) throw new Error("Only the host can change bots before the game starts.");
           if (room.players.length >= MAX_PLAYERS) throw new Error(`This room already has ${MAX_PLAYERS} players.`);
-          room.players.push({ id: `bot-${crypto.randomUUID()}`, name: nextBotName(room), isBot: true }); settleRuleProposal(room); touch(room); publish(room);
+          room.players.push({ id: `bot-${crypto.randomUUID()}`, name: nextBotName(room), isBot: true, botPersona: randomBotPersona() }); settleRuleProposal(room); touch(room); publish(room);
         } else if (message.type === "remove-bot") {
           if (!player || player.id !== room.hostPlayerId || room.game) throw new Error("Only the host can change bots before the game starts.");
           const index = room.players.findIndex((entry) => entry.id === message.playerId && entry.isBot);
@@ -757,10 +778,10 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           if (room.pendingRules) throw new Error("Every player must approve the pending rules before the game starts.");
           const starter = room.players.find((candidate) => candidate.id === room!.nextGameStarterId) ?? room.players[Math.floor(Math.random() * room.players.length)];
           const otherPlayers = room.players.filter((candidate) => candidate.id !== starter.id).sort(() => Math.random() - .5);
-          room.game = createGame([starter, ...otherPlayers].map(({ id, name }): PlayerSetup => ({ id, name })), Math.random, room.rules); room.startedAt = new Date().toISOString(); room.history = [`Round 1 begins — ${starter.name} starts.`]; room.botHistory = []; room.actions = [{ at: room.startedAt, action: { type: "round-start" } }]; room.roundDeals = []; room.turnTimings = []; room.activeTurn = undefined; recordRoundDeal(room); touch(room); startRoundShuffle(room); void persistRoomSnapshot(room); publish(room);
+          room.game = createGame([starter, ...otherPlayers].map(({ id, name }): PlayerSetup => ({ id, name })), Math.random, room.rules); room.startedAt = new Date().toISOString(); room.history = [`Round 1 begins — ${starter.name} starts.`]; room.botHistory = []; room.botDecisions = []; room.analysis = undefined; room.actions = [{ at: room.startedAt, round: 1, action: { type: "round-start" } }]; room.roundDeals = []; room.roundResolutions = []; room.turnTimings = []; room.activeTurn = undefined; recordRoundDeal(room); touch(room); startRoundShuffle(room); void persistRoomSnapshot(room); publish(room);
         } else if (message.type === "return-to-lobby") {
           if (!player || player.id !== room.hostPlayerId || room.game?.phase !== "gameOver") throw new Error("Only the host can return this completed game to the lobby.");
-          promoteQueuedSpectators(room); room.game = undefined; room.history = []; room.botHistory = []; room.announcement = undefined; room.paused = undefined; room.shuffleReadyPlayerIds = undefined; room.nextRoundReadyPlayerIds = undefined; room.nextRoundDeadlineAt = undefined; room.shuffleDeadlineAt = undefined; if (room.shuffleTimer) clearTimeout(room.shuffleTimer); room.shuffleTimer = undefined; for (const timer of room.botShuffleTimers ?? []) clearTimeout(timer); room.botShuffleTimers = []; if (room.nextRoundTimer) clearTimeout(room.nextRoundTimer); room.nextRoundTimer = undefined; for (const timer of room.botNextRoundTimers ?? []) clearTimeout(timer); room.botNextRoundTimers = []; if (room.turnTimer) clearTimeout(room.turnTimer); room.turnTimer = undefined; room.turnDeadlineAt = undefined; room.actions = []; room.roundDeals = []; room.turnTimings = []; room.activeTurn = undefined; room.startedAt = undefined; touch(room); void persistRoomSnapshot(room); publish(room);
+          promoteQueuedSpectators(room); room.game = undefined; room.history = []; room.botHistory = []; room.botDecisions = []; room.analysis = undefined; room.announcement = undefined; room.paused = undefined; room.shuffleReadyPlayerIds = undefined; room.nextRoundReadyPlayerIds = undefined; room.nextRoundDeadlineAt = undefined; room.shuffleDeadlineAt = undefined; if (room.shuffleTimer) clearTimeout(room.shuffleTimer); room.shuffleTimer = undefined; for (const timer of room.botShuffleTimers ?? []) clearTimeout(timer); room.botShuffleTimers = []; if (room.nextRoundTimer) clearTimeout(room.nextRoundTimer); room.nextRoundTimer = undefined; for (const timer of room.botNextRoundTimers ?? []) clearTimeout(timer); room.botNextRoundTimers = []; if (room.turnTimer) clearTimeout(room.turnTimer); room.turnTimer = undefined; room.turnDeadlineAt = undefined; room.actions = []; room.roundDeals = []; room.roundResolutions = []; room.turnTimings = []; room.activeTurn = undefined; room.startedAt = undefined; touch(room); void persistRoomSnapshot(room); publish(room);
         } else if (message.type === "toggle-pause") {
           if (!player || !room.game || room.game.phase === "gameOver" || !room.players.some((candidate) => candidate.id === player!.id)) throw new Error("Only a player at this table can pause or resume the game.");
           if (room.paused) resumeGame(room, player);
@@ -779,7 +800,7 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           room.shuffleReadyPlayerIds = undefined; room.nextRoundReadyPlayerIds = undefined;
           finishTurnTiming(room, room.activeTurn?.playerId === player.id ? "forfeit" : "interrupted");
           room.game = forfeitPlayer(room.game, player.id);
-          room.actions.push({ at: new Date().toISOString(), playerId: player.id, nickname: player.name, action: { type: "forfeit-game" } });
+          room.actions.push({ at: new Date().toISOString(), round: room.game.round, playerId: player.id, nickname: player.name, action: { type: "forfeit-game" } });
           room.history.unshift(`${player.name} forfeited the game.`);
           room.announcement = { text: `${player.name} forfeited the game.`, playerId: player.id };
           if (room.game.phase === "playing") { recordRoundDeal(room); startRoundShuffle(room); }
@@ -787,6 +808,7 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
             const finishedGame = room.game;
             const winner = finishedGame.players.find((candidate) => candidate.id === finishedGame.winnerId);
             if (winner) room.history.unshift(`${winner.name} wins the match.`);
+            ensureMatchAnalysis(room);
           }
           touch(room); void persistRoomSnapshot(room); publish(room);
         } else if (room.paused) {
@@ -795,7 +817,7 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           if (!player || !room.players.some((candidate) => candidate.id === player!.id) || !room.game || room.game.phase !== "playing" || !room.shuffleReadyPlayerIds || !activeRoomPlayers(room).some((candidate) => candidate.id === player!.id)) throw new Error("There are no dice to shuffle right now.");
           if (room.shuffleReadyPlayerIds.has(player.id)) return;
           room.shuffleReadyPlayerIds.add(player.id);
-          room.actions.push({ at: new Date().toISOString(), playerId: player.id, nickname: player.name, action: { type: "shuffle-dice" } });
+          room.actions.push({ at: new Date().toISOString(), round: room.game.round, playerId: player.id, nickname: player.name, action: { type: "shuffle-dice" } });
           room.announcement = { text: `${player.name} shakes their cup.`, playerId: player.id };
           touch(room); void persistRoomSnapshot(room); publish(room); scheduleTurn(room);
         } else if (message.type === "ready-next-round") {
@@ -845,17 +867,43 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
   return wss;
 }
 
-function recordAction(room: Room, name: string, action: GameAction) {
+function ensureMatchAnalysis(room: Room) {
+  if (!room.game || room.game.phase !== "gameOver" || room.analysis) return;
+  room.analysis = buildMatchAnalysis({
+    rules: room.game.rules,
+    seats: room.players.map((player) => ({
+      id: player.id,
+      name: player.name,
+      controller: player.isBot ? "bot" : "human",
+      ...(player.isBot ? { persona: PERSONA_LABELS[stableBotPersona(player)] } : {}),
+    })),
+    actions: room.actions,
+    roundDeals: room.roundDeals,
+    roundResolutions: room.roundResolutions,
+    botDecisions: room.botDecisions,
+    finalState: room.game,
+  });
+}
+
+function recordAction(room: Room, name: string, action: GameAction, options: { covered?: boolean } = {}) {
   if (!room.game) return;
   const player = action.type === "nextRound" ? undefined : room.game.players.find((candidate) => candidate.id === action.playerId);
   const tableMove = action.type === "bid" && action.tableDiceIndices?.length && player ? { tableDice: [...player.tableDice], rerolledDice: [...player.hand] } : {};
-  room.actions.push({ at: new Date().toISOString(), ...(action.type === "nextRound" ? {} : { playerId: action.playerId, nickname: name }), action, ...tableMove });
+  room.actions.push({ at: new Date().toISOString(), round: room.game.round, ...(action.type === "nextRound" ? {} : { playerId: action.playerId, nickname: name }), action, ...tableMove, ...(options.covered ? { covered: true } : {}) });
   if (action.type === "bid") room.history.unshift(action.tableDiceIndices?.length ? `${name} puts ${action.tableDiceIndices.length} dice on the table and bids ${action.bid.quantity} ${denominationName(action.bid.denomination)}.` : `${name} bids ${action.bid.quantity} ${denominationName(action.bid.denomination)}.`);
   else if (action.type === "dudo") room.history.unshift(`${name} calls Dudo.`);
   else if (action.type === "calzo") room.history.unshift(`${name} calls Calzo.`);
   else room.history.unshift(`Round ${room.game.round} begins.`);
   if (room.game.phase === "reveal") {
     const { resolution } = room.game;
+    if (!room.roundResolutions.some((entry) => entry.round === room.game!.round)) {
+      room.roundResolutions.push({
+        round: room.game.round,
+        paloFijo: room.game.paloFijo,
+        resolution: structuredClone(resolution),
+        revealedHands: room.game.players.map((revealedPlayer) => ({ playerId: revealedPlayer.id, dice: [...revealedPlayer.hand, ...revealedPlayer.tableDice] })),
+      });
+    }
     const loss = resolution.diceChanges.find((change) => change.delta < 0);
     if (loss) room.nextGameStarterId = loss.playerId;
     room.history.unshift(`${resolution.kind === "dudo" ? "Dudo" : "Calzo"}: ${resolution.correct ? "correct" : "incorrect"} — ${resolution.actualCount} actual.`);
@@ -866,6 +914,7 @@ function recordAction(room: Room, name: string, action: GameAction) {
     const winner = gameOver.players.find((player) => player.id === gameOver.winnerId);
     room.history.unshift(`${winner?.name ?? "The last player"} wins the match.`);
     room.announcement = { text: `${winner?.name ?? "The last player"} wins the match.`, playerId: gameOver.winnerId };
+    ensureMatchAnalysis(room);
   }
   room.history = room.history.slice(0, 30);
   if (room.game.phase === "reveal") {
@@ -925,15 +974,18 @@ async function persistRoomSnapshotNow(room: Room) {
       updatedAt,
       lastActivityAt: room.lastActivityAt,
       hostPlayerId: room.hostPlayerId,
-      players: room.players.map(({ id, name, isBot, token, disconnectedAt }) => ({ id, name, isBot, ...(token ? { token } : {}), ...(typeof disconnectedAt === "number" ? { disconnectedAt } : {}) })),
+      players: room.players.map(({ id, name, isBot, botPersona, token, disconnectedAt }) => ({ id, name, isBot, ...(botPersona ? { botPersona } : {}), ...(token ? { token } : {}), ...(typeof disconnectedAt === "number" ? { disconnectedAt } : {}) })),
       connectionEvents: room.connectionEvents,
       rules: room.rules,
       roundDeals: room.roundDeals,
+      roundResolutions: room.roundResolutions,
       turnTimings: room.turnTimings,
       activeTurn: room.activeTurn,
       game: room.game,
       history: room.history,
       botHistory: room.botHistory,
+      botDecisions: room.botDecisions,
+      analysis: room.analysis,
       announcement: room.announcement,
       shuffleReadyPlayerIds: room.shuffleReadyPlayerIds ? [...room.shuffleReadyPlayerIds] : undefined,
       nextRoundReadyPlayerIds: room.nextRoundReadyPlayerIds ? [...room.nextRoundReadyPlayerIds] : undefined,
@@ -953,15 +1005,18 @@ async function persistRoomSnapshotNow(room: Room) {
   if (!room.game || !room.startedAt) return;
   const filename = `online-matches/${room.startedAt.replace(/[:.]/g, "-")}-${room.code}.json`;
   const snapshot = {
-    ...onlineLogHeader(4),
+    ...onlineLogHeader(5),
     roomCode: room.code,
     startedAt: room.startedAt,
     updatedAt: new Date().toISOString(),
     rules: room.game.rules,
-    seats: room.players.map(({ id, name, isBot }) => ({ id, name, nickname: name, controller: isBot ? "bot" : "human" })),
+    seats: room.players.map((player) => ({ id: player.id, name: player.name, nickname: player.name, controller: player.isBot ? "bot" : "human", ...(player.isBot ? { policyName: onlineBotPolicy(player).name, persona: stableBotPersona(player), personaLabel: PERSONA_LABELS[stableBotPersona(player)] } : {}) })),
     history: room.history,
     actions: room.actions,
     roundDeals: room.roundDeals,
+    roundResolutions: room.roundResolutions,
+    botDecisions: room.botDecisions,
+    analysis: room.analysis,
     turnTimings: room.turnTimings,
     connectionEvents: room.connectionEvents,
     connectionAudit: {

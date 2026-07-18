@@ -4,6 +4,8 @@
 explicit write-up the boundary rules call for — no lab patches touch product
 code. Questions → Ian, or leave notes in HANDOFF.md.
 
+> **Promotion status — July 18, 2026:** Gen 2 + Persona is now the policy for every production online bot, with Conservative preserved for two-player play. The promotion copies and data live under `src/bot/champion/`; production has no `lab/` dependency. Schema v5, covered timeout flags, structured resolutions, recorded personas, table-dice forwarding, safe bot explanations, and the completed-room **Game analysis** view are implemented. Seeded/replayable online bot randomness remains future work. The maintained product contract is [BOT_AND_MATCH_ANALYSIS.md](./BOT_AND_MATCH_ANALYSIS.md).
+
 ## 1. The bots
 
 Three gated generations exist in `lab/bots/`, all implementing the same
