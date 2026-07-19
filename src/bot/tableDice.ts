@@ -1,7 +1,11 @@
-// Canonical table-dice play: when a bot commits dice to the table, it exposes
-// every private die supporting the chosen bid — never an arbitrary theatrical
-// subset. Promoted from lab exp-014 after audits showed most shipped partial
-// reveals failed a conservative support judgment (lab/LOG.md exp-014).
+// Canonical table-dice JUDGMENT: the one all-qualifying reveal for a bid and a
+// conservative read-only assessment of whether it beats the plain bid.
+// Promoted from lab exp-014 for telemetry, replay explanation, and lab
+// analysis. It is deliberately NOT wired into any policy's action selection:
+// lab exp-015 duels showed replacing the shipped minimal 1-die reveal with the
+// canonical all-qualifying play loses ~2.7pp of win share — larger reveals
+// shrink the reroll and leak information the support-gain metric doesn't
+// price (lab/LOG.md exp-015).
 
 import type { Bid } from '../engine'
 import { evaluateBidDistribution, evaluateTableDiceDistribution, type BidDistribution } from './probability'

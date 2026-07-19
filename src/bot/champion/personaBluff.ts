@@ -61,7 +61,6 @@
 // human/bot controller identity.
 
 import { createBeliefEquityPolicy, type BeliefEquityPolicyOptions } from './beliefEquity'
-import { assessCanonicalTableDice } from '../tableDice'
 import type { BotActionResult, BotChoice, BotDecisionTrace, BotObservation, BotPolicy } from '../types'
 import type { Bid, Die, PublicGameView, PublicPlayer } from '../../engine'
 import { loadEquityTable, lookupEquity, type EquityTable } from './equity'
@@ -283,19 +282,23 @@ export function createPersonaBluffPolicy(options: PersonaBluffOptions): BotPolic
       // possible").
       tableDiceIndices = base.choice.tableDiceIndices
     } else if (toldStory && legalActions.canPutDiceOnTable && player.hand && player.hand.length > 1 && random() < tableDiceChance) {
-      // Canonical rule (lab exp-014 audit): commit every supporting die or
-      // none, and only when the conservative support judgment says the reveal
-      // is worth the reroll — never a partial theatrical reveal. The
-      // tableDiceChance draw above stays the persona's willingness dial and
-      // keeps the seeded random stream aligned with earlier versions.
-      const judgment = assessCanonicalTableDice(observation, finalBid)
-      if (judgment.recommendation === 'consider' && judgment.tableDiceIndices) {
-        tableDiceIndices = [...judgment.tableDiceIndices]
+      // Minimal reveal is deliberate, not an oversight: lab exp-015 duels
+      // showed the "expose ALL qualifying dice" canonical rule loses ~2.7pp
+      // vs this 1-die play — a small reveal keeps most of the hand rerolling
+      // and leaks the least information while still selling the story.
+      const paloFijo = view.paloFijo
+      const qualifying = player.hand.flatMap((die, index) =>
+        die === finalBid.denomination || (!paloFijo && finalBid.denomination !== 1 && die === 1) ? [index] : [],
+      )
+      if (qualifying.length > 0) {
+        const revealCount = aggression === 'aggressive' && qualifying.length >= 2 && player.hand.length >= 4 ? 2 : 1
+        const capped = Math.min(revealCount, qualifying.length, player.hand.length - 1)
+        if (capped > 0) tableDiceIndices = qualifying.slice(0, capped)
       }
     }
 
     if (tableDiceIndices?.length) {
-      trace.plainReason = `${trace.plainReason ?? 'It chose a supported raise.'} It put every die supporting that bid on the table to commit to the story publicly.`
+      trace.plainReason = `${trace.plainReason ?? 'It chose a supported raise.'} It exposed a matching die to make that story more convincing.`
     }
 
     const choice: BotChoice = { type: 'bid', bid: finalBid, ...(tableDiceIndices ? { tableDiceIndices } : {}) }
