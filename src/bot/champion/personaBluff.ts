@@ -101,6 +101,8 @@ export interface PersonaBluffOptions extends BeliefEquityPolicyOptions {
   tableDiceChance?: number
   /** Aggressive-vs-conservative dial; supplies defaults for bluffRate/tableDiceChance/commitment tolerance/downside cap. Default 'balanced'. */
   aggression?: PersonaAggression
+  /** Let the persona tell stories heads-up instead of delegating (exp-017 gate). Default false. */
+  headsUpPersona?: boolean
 }
 
 /** Mirror of beliefEquity.ts's private `activeOtherStacks` (itself a mirror of equityAware.ts's) — duplicated for the same reason: not exported, and lab/ files don't reach into each other's private closures. */
@@ -206,6 +208,7 @@ export function createPersonaBluffPolicy(options: PersonaBluffOptions): BotPolic
   const table: EquityTable = loadEquityTable()
   const minSamples = options.minSamples ?? 300
   const aggression = options.aggression ?? 'balanced'
+  const headsUpPersona = options.headsUpPersona ?? false
   const preset = AGGRESSION_PRESETS[aggression]
   const bluffRate = options.bluffRate ?? preset.bluffRate
   const tableDiceChance = options.tableDiceChance ?? preset.tableDiceChance
@@ -215,8 +218,10 @@ export function createPersonaBluffPolicy(options: PersonaBluffOptions): BotPolic
 
   const decide = (observation: BotObservation, random: () => number): BotActionResult => {
     const base = wrapped.chooseActionWithTrace!(observation, random)
-    // The measured production gate keeps heads-up play on the stronger Conservative policy.
-    if (observation.view.players.length === 2) return base
+    // Heads-up personality is opt-in (lab exp-017): the historical gate kept
+    // 2p play on the delegated Conservative line, which is why heads-up
+    // humans never saw a bluff, story, or table die (SZ3UX audit).
+    if (observation.view.players.length === 2 && !headsUpPersona) return base
     // Dudo/Calzo, and any bid decision the wrapped policy couldn't trace, pass through untouched
     // — see module docstring on why challenge decisions are never second-guessed here.
     if (base.choice.type !== 'bid' || !base.trace) return base

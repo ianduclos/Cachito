@@ -3,7 +3,7 @@ import { randomInt } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { Storage } from "@google-cloud/storage";
 import { applyAction, createGame, DEFAULT_GAME_RULES, forfeitPlayer, getLegalActions, MAX_PLAYERS, projectForPlayer, projectForSpectator, type GameAction, type GameRules, type GameState, type PlayerSetup } from "../src/engine";
-import { chooseBotAction, createPersonaBluffPolicy, isChoiceLegal, PERSONA_LABELS, type BotObservation, type BotPolicy, type PersonaAggression, type PublicActionEntry } from "../src/bot";
+import { chooseBotAction, createPersonaBluffPolicy, createRespectGatedPolicy, isChoiceLegal, PERSONA_LABELS, type BotObservation, type BotPolicy, type PersonaAggression, type PublicActionEntry } from "../src/bot";
 import { createBotDecisionRecord } from "../src/analytics";
 import { buildMatchAnalysis } from "../src/analysis";
 import { BOT_NAMES } from "../src/bot/names";
@@ -139,7 +139,9 @@ const personaPolicies = new Map<PersonaAggression, BotPolicy>();
 function personaPolicy(persona: PersonaAggression) {
   let policy = personaPolicies.get(persona);
   if (!policy) {
-    policy = createPersonaBluffPolicy({ name: `Gen 2 · ${PERSONA_LABELS[persona]}`, aggression: persona });
+    // Respect gate (lab exp-016, gated promotion): a marginal Dudo against a
+    // bidder whose revealed bids keep holding becomes a supportable raise.
+    policy = createRespectGatedPolicy(createPersonaBluffPolicy({ name: `Gen 2 · ${PERSONA_LABELS[persona]}`, aggression: persona }));
     personaPolicies.set(persona, policy);
   }
   return policy;
