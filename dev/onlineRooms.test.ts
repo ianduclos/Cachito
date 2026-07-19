@@ -1,9 +1,10 @@
 import { createServer, type Server } from "node:http";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import WebSocket, { type WebSocketServer } from "ws";
-import { createGame } from "../src/engine";
+import { applyAction, createGame, type GameAction, type GameState } from "../src/engine";
+import type { PublicActionEntry } from "../src/bot";
 import type { OnlineClientMessage, OnlineServerMessage } from "../src/online/protocol";
-import { applyValidatedGameAction, installOnlineRooms, isRecoverySnapshotFresh, onlineLogHeader, resetOnlineRoomsForTests, SUPPORTED_CONCURRENT_GAMES } from "./onlineRooms";
+import { applyValidatedGameAction, installOnlineRooms, isRecoverySnapshotFresh, onlineLogHeader, recordBotHistoryEntry, resetOnlineRoomsForTests, SUPPORTED_CONCURRENT_GAMES } from "./onlineRooms";
 import { release } from "../src/release";
 
 class ProtocolClient {
@@ -63,6 +64,36 @@ describe("online room safety guards", () => {
     expect(isRecoverySnapshotFresh({ schemaVersion: 1 }, now, new Date(now - 20 * 60_000).toISOString())).toBe(false);
     expect(isRecoverySnapshotFresh({ schemaVersion: 1 }, now)).toBe(false);
     expect(isRecoverySnapshotFresh({ schemaVersion: 2, lastActivityAt: now + 61_000 }, now)).toBe(false);
+  });
+
+  it("mirrors the full public ladder into bot history and attaches the reveal outcome", () => {
+    // Every die is a 4 with this random source, so a Dudo on "3 threes" is
+    // correct with a publicly revealed actualCount of 0.
+    let game: GameState = createGame([{ id: "one", name: "One" }, { id: "two", name: "Two" }], () => 0.5);
+    const botHistory: PublicActionEntry[] = [];
+    const apply = (action: GameAction) => {
+      game = applyAction(game, action, () => 0.5);
+      recordBotHistoryEntry(botHistory, action, game);
+    };
+    const first = game.currentPlayerId;
+    const second = game.players.find((player) => player.id !== first)!.id;
+
+    apply({ type: "bid", playerId: first, bid: { quantity: 2, denomination: 3 } });
+    apply({ type: "bid", playerId: second, bid: { quantity: 3, denomination: 3 } });
+    apply({ type: "dudo", playerId: first });
+
+    expect(botHistory.map((entry) => entry.action.type)).toEqual(["bid", "bid", "dudo"]);
+    expect(botHistory[0]).toEqual({ round: 1, playerId: first, action: { type: "bid", bid: { quantity: 2, denomination: 3 } } });
+    expect(botHistory[1].outcome).toBeUndefined();
+    expect(botHistory[2]).toEqual({
+      round: 1,
+      playerId: first,
+      action: { type: "dudo" },
+      outcome: { kind: "dudo", bidderId: second, bid: { quantity: 3, denomination: 3 }, correct: true, actualCount: 0 },
+    });
+
+    apply({ type: "nextRound" });
+    expect(botHistory).toHaveLength(3);
   });
 
   it("does not finalize timing when the engine rejects an action", () => {

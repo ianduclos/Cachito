@@ -17,6 +17,12 @@ export interface PublicRoundOutcome {
   bid: Bid
   /** Whether the bid met the challenged condition. */
   correct: boolean
+  /**
+   * The revealed count of qualifying dice, announced to the whole table at the
+   * reveal. Optional only for histories recorded before this field existed;
+   * both the simulator and the online room service always supply it.
+   */
+  actualCount?: number
 }
 
 export interface PublicActionEntry {

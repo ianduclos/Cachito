@@ -111,12 +111,13 @@ export function runBotMatch(seats: readonly BotSeat[], options: MatchOptions): M
   }
 }
 
-function publicOutcome(resolution: { kind: 'dudo' | 'calzo'; bidderId: string; bid: { quantity: number; denomination: import('../engine').Die }; correct: boolean }): PublicRoundOutcome {
+function publicOutcome(resolution: { kind: 'dudo' | 'calzo'; bidderId: string; bid: { quantity: number; denomination: import('../engine').Die }; correct: boolean; actualCount: number }): PublicRoundOutcome {
   return {
     kind: resolution.kind,
     bidderId: resolution.bidderId,
     bid: { ...resolution.bid },
     correct: resolution.correct,
+    actualCount: resolution.actualCount,
   }
 }
 

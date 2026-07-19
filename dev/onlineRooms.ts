@@ -3,7 +3,7 @@ import { randomInt } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { Storage } from "@google-cloud/storage";
 import { applyAction, createGame, DEFAULT_GAME_RULES, forfeitPlayer, getLegalActions, MAX_PLAYERS, projectForPlayer, projectForSpectator, type GameAction, type GameRules, type GameState, type PlayerSetup } from "../src/engine";
-import { chooseBotAction, createPersonaBluffPolicy, isChoiceLegal, PERSONA_LABELS, type BotObservation, type BotPolicy, type PersonaAggression } from "../src/bot";
+import { chooseBotAction, createPersonaBluffPolicy, isChoiceLegal, PERSONA_LABELS, type BotObservation, type BotPolicy, type PersonaAggression, type PublicActionEntry } from "../src/bot";
 import { createBotDecisionRecord } from "../src/analytics";
 import { buildMatchAnalysis } from "../src/analysis";
 import { BOT_NAMES } from "../src/bot/names";
@@ -833,11 +833,34 @@ function ensureMatchAnalysis(room: Room) {
   });
 }
 
+/**
+ * Mirrors the simulator's public-history contract for online bot observations:
+ * every bid/Dudo/Calzo enters the ladder as it happens, and the reveal outcome
+ * (including the publicly announced actualCount) attaches to the challenge
+ * entry. Called with the post-`applyAction` game state.
+ */
+export function recordBotHistoryEntry(botHistory: PublicActionEntry[], action: GameAction, game: GameState) {
+  if (action.type !== "bid" && action.type !== "dudo" && action.type !== "calzo") return;
+  const entry: PublicActionEntry = {
+    round: game.round,
+    playerId: action.playerId,
+    action: action.type === "bid"
+      ? { type: "bid", bid: { ...action.bid }, ...(action.tableDiceIndices?.length ? { tableDiceIndices: [...action.tableDiceIndices] } : {}) }
+      : { type: action.type },
+  };
+  if (game.phase === "reveal" && entry.action.type === game.resolution.kind) {
+    const { resolution } = game;
+    entry.outcome = { kind: resolution.kind, bidderId: resolution.bidderId, bid: { ...resolution.bid }, correct: resolution.correct, actualCount: resolution.actualCount };
+  }
+  botHistory.push(entry);
+}
+
 function recordAction(room: Room, name: string, action: GameAction, options: { covered?: boolean } = {}) {
   if (!room.game) return;
   const player = action.type === "nextRound" ? undefined : room.game.players.find((candidate) => candidate.id === action.playerId);
   const tableMove = action.type === "bid" && action.tableDiceIndices?.length && player ? { tableDice: [...player.tableDice], rerolledDice: [...player.hand] } : {};
   room.actions.push({ at: new Date().toISOString(), round: room.game.round, ...(action.type === "nextRound" ? {} : { playerId: action.playerId, nickname: name }), action, ...tableMove, ...(options.covered ? { covered: true } : {}) });
+  recordBotHistoryEntry(room.botHistory, action, room.game);
   if (action.type === "bid") room.history.unshift(action.tableDiceIndices?.length ? `${name} puts ${action.tableDiceIndices.length} dice on the table and bids ${action.bid.quantity} ${denominationName(action.bid.denomination)}.` : `${name} bids ${action.bid.quantity} ${denominationName(action.bid.denomination)}.`);
   else if (action.type === "dudo") room.history.unshift(`${name} calls Dudo.`);
   else if (action.type === "calzo") room.history.unshift(`${name} calls Calzo.`);
@@ -865,16 +888,6 @@ function recordAction(room: Room, name: string, action: GameAction, options: { c
     ensureMatchAnalysis(room);
   }
   room.history = room.history.slice(0, 30);
-  if (room.game.phase === "reveal") {
-    const { resolution } = room.game;
-    room.botHistory.push({
-      round: room.game.round,
-      playerId: resolution.bidderId,
-      action: { type: "bid", bid: { ...resolution.bid } },
-      outcome: { kind: resolution.kind, bidderId: resolution.bidderId, bid: { ...resolution.bid }, correct: resolution.correct },
-    });
-    room.botHistory = room.botHistory.slice(-80);
-  }
 }
 
 function denominationName(value: number) { return ["", "Aces", "Dones", "Trenes", "Cuadras", "Chinas", "Sambas"][value] ?? "dice"; }
