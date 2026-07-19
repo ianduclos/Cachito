@@ -1,13 +1,15 @@
 import type { BotDecisionRecord } from '../analytics'
 import { evaluateBidDistribution } from '../bot/probability'
 import styleModels from '../bot/champion/data/style-models.json'
-import type { Bid, Die, GameAction, GameOverState, GameRules, PublicGameView, RoundResolution } from '../engine'
+import { countBid, getLegalActions, type Bid, type Die, type EnginePlayer, type GameAction, type GameOverState, type GameRules, type PlayingState, type PublicGameView, type RoundResolution } from '../engine'
 
 export interface MatchAnalysisAction {
   round?: number
   playerId?: string
   action: GameAction | { type: string }
   tableDice?: Die[]
+  /** Private post-reroll hand, retained by the server and never included in the browser payload. */
+  rerolledDice?: Die[]
 }
 
 export interface MatchAnalysisRound {
@@ -60,8 +62,15 @@ export interface MatchAnalysisPlayer {
   }
   stats: {
     bids: number
-    confirmedBluffs: number
-    bluffsCaught: number
+    unsupportedFinalBids: number
+    unsupportedCaught: number
+    unsupportedSurvived: number
+    deliberatePersonaBluffs: number
+    deliberateBluffsCaught: number
+    deliberateBluffsSurvived: number
+    forcedEscalations: number
+    forcedEscalationsCaught: number
+    forcedEscalationsSurvived: number
     dudoAttempts: number
     dudoCorrect: number
     calzoAttempts: number
@@ -75,7 +84,7 @@ export interface MatchAnalysisPlayer {
 }
 
 export interface MatchAnalysis {
-  schemaVersion: 1
+  schemaVersion: 2
   generatedAt: string
   rounds: number
   totalTurns: number
@@ -91,6 +100,13 @@ type MutablePlayer = MatchAnalysisPlayer & {
   aggressionValues: number[]
   challengeValues: number[]
   verifiedBids: number
+}
+
+interface FinalBidClassification {
+  bidderId: string
+  bid: Bid
+  deliberatePersonaBluff: boolean
+  forcedEscalation: boolean
 }
 
 const priors = styleModels.priors
@@ -119,6 +135,24 @@ function facingRisk(view: PublicGameView, playerId: string, bid: Bid, kind: 'rai
   return 1 - distribution.exact
 }
 
+function sameBid(left: Bid, right: Bid) {
+  return left.quantity === right.quantity && left.denomination === right.denomination
+}
+
+function fullySupportedRaiseExists(state: PlayingState, playerId: string) {
+  const player = state.players.find((candidate) => candidate.id === playerId)
+  if (!player || !state.currentBid) return true
+  const supportState: PlayingState = {
+    ...state,
+    players: state.players.map((candidate) => ({
+      ...candidate,
+      hand: candidate.id === playerId ? [...player.hand] : [],
+      tableDice: [],
+    })),
+  }
+  return getLegalActions(state, playerId).bids.some((bid) => countBid(supportState, bid) >= bid.quantity)
+}
+
 function actionLabel(decision: BotDecisionRecord) {
   if (decision.chosenAction.type === 'bid') return `Bid ${decision.chosenAction.bid.quantity} ${denominationNames[decision.chosenAction.bid.denomination]}`
   return decision.chosenAction.type === 'dudo' ? 'Dudo' : 'Calzo'
@@ -129,10 +163,10 @@ function verdict(player: MutablePlayer, averages: MatchAnalysis['tableAverages']
   const challenge = player.scores.challenge.value - averages.challenge
   const style = aggression > 8 ? 'Pressed the table hard' : aggression < -8 ? 'Bid patiently' : 'Kept a balanced bidding pace'
   const nerve = challenge > 8 ? 'and challenged boldly' : challenge < -8 ? 'and chose calls carefully' : 'and picked measured moments to challenge'
-  const bluff = player.stats.confirmedBluffs
-    ? ` Finished with ${player.stats.confirmedBluffs} confirmed bluff${player.stats.confirmedBluffs === 1 ? '' : 's'}${player.stats.bluffsCaught ? `, ${player.stats.bluffsCaught} caught` : ''}.`
-    : ' No confirmed bluffs reached a reveal.'
-  return `${style} ${nerve}.${bluff}`
+  const claims = player.stats.unsupportedFinalBids
+    ? ` ${player.stats.unsupportedFinalBids} final ${player.stats.unsupportedFinalBids === 1 ? 'claim was' : 'claims were'} unsupported: ${player.stats.unsupportedCaught} caught, ${player.stats.unsupportedSurvived} survived.`
+    : ' Every final claim held up at reveal.'
+  return `${style} ${nerve}.${claims}`
 }
 
 export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().toISOString()): MatchAnalysis {
@@ -142,13 +176,17 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
     winner: seat.id === input.finalState.winnerId,
     verdict: '',
     scores: { bluff: score(priors.bluffRate, 0, 4), aggression: score(priors.aggressionMean, 0, 3), challenge: score(priors.challengeMean, 0, 2) },
-    stats: { bids: 0, confirmedBluffs: 0, bluffsCaught: 0, dudoAttempts: 0, dudoCorrect: 0, calzoAttempts: 0, calzoCorrect: 0, diceGained: 0, diceLost: 0, tableDicePlays: 0 },
+    stats: { bids: 0, unsupportedFinalBids: 0, unsupportedCaught: 0, unsupportedSurvived: 0, deliberatePersonaBluffs: 0, deliberateBluffsCaught: 0, deliberateBluffsSurvived: 0, forcedEscalations: 0, forcedEscalationsCaught: 0, forcedEscalationsSurvived: 0, dudoAttempts: 0, dudoCorrect: 0, calzoAttempts: 0, calzoCorrect: 0, diceGained: 0, diceLost: 0, tableDicePlays: 0 },
     aggressionValues: [], challengeValues: [], verifiedBids: 0,
   }]))
 
   for (const deal of input.roundDeals) {
     let currentBid: Bid | null = null
+    let lastBidderId: string | null = null
+    let finalBidClassification: FinalBidClassification | undefined
     const tableDiceById = new Map<string, Die[]>()
+    const handsById = new Map(deal.hands.map((hand) => [hand.playerId, [...hand.dice] as Die[]]))
+    const usedBotDecisions = new Set<number>()
     const roundActions = input.actions.filter((entry) => entry.round === deal.round)
     for (const entry of roundActions) {
       const actor = entry.playerId ? mutable.get(entry.playerId) : undefined
@@ -156,10 +194,26 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
       const action = entry.action
       const view = publicView(input, deal, tableDiceById, currentBid)
       if (action.type === 'bid') {
+        const players: EnginePlayer[] = input.seats.map((seat) => {
+          const hand = handsById.get(seat.id) ?? []
+          const tableDice = tableDiceById.get(seat.id) ?? []
+          return { id: seat.id, name: seat.name, diceCount: hand.length + tableDice.length, hand: [...hand], tableDice: [...tableDice], tableDiceUsed: tableDice.length > 0, paloFijoTriggered: false }
+        })
+        const decision = input.botDecisions.find((candidate) => !usedBotDecisions.has(candidate.sequence) && candidate.round === deal.round && candidate.playerId === actor.id && candidate.chosenAction.type === 'bid' && sameBid(candidate.chosenAction.bid, action.bid))
+        if (decision) usedBotDecisions.add(decision.sequence)
+        const stateBeforeBid: PlayingState = { phase: 'playing', round: deal.round, paloFijo: deal.paloFijo, rules: input.rules, players, currentPlayerId: actor.id, currentBid, lastBidderId }
         actor.stats.bids += 1
         if (currentBid) actor.aggressionValues.push(facingRisk(view, actor.id, currentBid, 'raise'))
         if (entry.tableDice?.length) { actor.stats.tableDicePlays += 1; tableDiceById.set(actor.id, [...entry.tableDice]) }
+        finalBidClassification = {
+          bidderId: actor.id,
+          bid: action.bid,
+          deliberatePersonaBluff: decision?.trace?.settings?.personaBluffFired === 1,
+          forcedEscalation: Boolean(currentBid && !fullySupportedRaiseExists(stateBeforeBid, actor.id)),
+        }
         currentBid = action.bid
+        lastBidderId = actor.id
+        if (entry.rerolledDice) handsById.set(actor.id, [...entry.rerolledDice])
       } else if (action.type === 'dudo' && currentBid) {
         actor.stats.dudoAttempts += 1
         actor.challengeValues.push(facingRisk(view, actor.id, currentBid, 'dudo'))
@@ -179,13 +233,28 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
     }
     if (bidder) {
       bidder.verifiedBids += 1
+      const caught = resolved.kind === 'dudo' && resolved.correct
+      const matchingFinalBid = finalBidClassification?.bidderId === resolved.bidderId && sameBid(finalBidClassification.bid, resolved.bid)
+        ? finalBidClassification
+        : undefined
       if (resolved.actualCount < resolved.bid.quantity) {
-        bidder.stats.confirmedBluffs += 1
-        if (resolved.kind === 'dudo' && resolved.correct) bidder.stats.bluffsCaught += 1
+        bidder.stats.unsupportedFinalBids += 1
+        if (caught) bidder.stats.unsupportedCaught += 1
+        else bidder.stats.unsupportedSurvived += 1
         const gap = resolved.bid.quantity - resolved.actualCount
-        const candidate = `Round ${deal.round}: claimed ${resolved.bid.quantity} ${denominationNames[resolved.bid.denomination]} with ${resolved.actualCount} actually there${resolved.kind === 'dudo' && resolved.correct ? ` — ${input.seats.find((seat) => seat.id === resolved.callerId)?.name ?? 'the caller'} caught it` : ''}.`
+        const candidate = `Round ${deal.round}: claimed ${resolved.bid.quantity} ${denominationNames[resolved.bid.denomination]} with ${resolved.actualCount} actually there${caught ? ` — ${input.seats.find((seat) => seat.id === resolved.callerId)?.name ?? 'the caller'} caught it` : ' — it survived the call'}.`
         const priorGap = bidder.moment?.match(/gap:(\d+)/)?.[1]
         if (!priorGap || gap > Number(priorGap)) bidder.moment = `${candidate} gap:${gap}`
+      }
+      if (matchingFinalBid?.deliberatePersonaBluff) {
+        bidder.stats.deliberatePersonaBluffs += 1
+        if (caught) bidder.stats.deliberateBluffsCaught += 1
+        else bidder.stats.deliberateBluffsSurvived += 1
+      }
+      if (matchingFinalBid?.forcedEscalation) {
+        bidder.stats.forcedEscalations += 1
+        if (caught) bidder.stats.forcedEscalationsCaught += 1
+        else bidder.stats.forcedEscalationsSurvived += 1
       }
     }
     for (const change of resolved.diceChanges) {
@@ -201,7 +270,7 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
 
   const mean = (values: number[], prior: number, strength: number) => (prior * strength + values.reduce((sum, value) => sum + value, 0)) / (strength + values.length)
   for (const player of mutable.values()) {
-    const bluffMean = (priors.bluffRate * priors.bluffPriorStrength + player.stats.confirmedBluffs) / (priors.bluffPriorStrength + player.verifiedBids)
+    const bluffMean = (priors.bluffRate * priors.bluffPriorStrength + player.stats.unsupportedFinalBids) / (priors.bluffPriorStrength + player.verifiedBids)
     player.scores = {
       bluff: score(bluffMean, player.verifiedBids, 4),
       aggression: score(mean(player.aggressionValues, priors.aggressionMean, 5), player.aggressionValues.length, 3),
@@ -238,7 +307,7 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
     ...(player.moment ? { moment: player.moment } : {}), ...(player.botReasoning ? { botReasoning: player.botReasoning } : {}),
   }))
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: now,
     rounds: input.finalState.round,
     totalTurns: input.actions.filter((entry) => 'playerId' in entry.action && ['bid', 'dudo', 'calzo'].includes(entry.action.type)).length,

@@ -351,14 +351,27 @@ function RoundShuffle({ view, playerId, connected, shuffle, shaking, clock, canS
 }
 
 const analysisMetricHelp = {
-  bluff: "How often a final claim was unsupported when the dice were revealed. Early scores lean toward the table baseline.",
+  bluff: "How often a final claim was unsupported when the dice were revealed. This describes the outcome, not whether the player meant to bluff. Early scores lean toward the table baseline.",
   aggression: "How strongly and quickly someone raised: bolder raises into uncertain bids score higher.",
   challenge: "How much risk someone accepted by calling Dudo or Calzo. Call accuracy is shown separately.",
 } as const;
 
+const analysisMetricLabels = { bluff: "Unsupported", aggression: "Aggression", challenge: "Challenge" } as const;
+
 function AnalysisMetric({ name, player }: { name: keyof MatchAnalysisPlayer["scores"]; player: MatchAnalysisPlayer }) {
   const score = player.scores[name];
-  return <div className="analysis-metric"><div><span>{name[0].toUpperCase() + name.slice(1)} <i className="analysis-help" tabIndex={0} data-tooltip={analysisMetricHelp[name]} aria-label={`${name}: ${analysisMetricHelp[name]}`}>?</i></span><strong>{score.value}</strong></div><div className="analysis-meter" aria-label={`${name} score ${score.value} out of 100`}><i style={{ width: `${score.value}%` }} /></div><small>{score.earlyRead ? `Early read · ${score.samples} ${score.samples === 1 ? "moment" : "moments"}` : `${score.samples} moments`}</small></div>;
+  const label = analysisMetricLabels[name];
+  return <div className="analysis-metric"><div><span>{label} <i className="analysis-help" tabIndex={0} data-tooltip={analysisMetricHelp[name]} aria-label={`${label}: ${analysisMetricHelp[name]}`}>?</i></span><strong>{score.value}</strong></div><div className="analysis-meter" aria-label={`${label} score ${score.value} out of 100`}><i style={{ width: `${score.value}%` }} /></div><small>{score.earlyRead ? `Early read · ${score.samples} ${score.samples === 1 ? "moment" : "moments"}` : `${score.samples} moments`}</small></div>;
+}
+
+function ClaimBreakdown({ player }: { player: MatchAnalysisPlayer }) {
+  const stat = (name: keyof MatchAnalysisPlayer["stats"]) => player.stats[name] ?? 0;
+  const rows = [
+    { label: "Unsupported", help: "The final bid was above the number revealed. This is an outcome, not proof of intent.", total: stat("unsupportedFinalBids"), caught: stat("unsupportedCaught"), survived: stat("unsupportedSurvived") },
+    { label: "Deliberate", help: "The persona bot explicitly chose a bluffing play. Human intent is not inferred.", total: player.controller === "bot" ? stat("deliberatePersonaBluffs") : undefined, caught: stat("deliberateBluffsCaught"), survived: stat("deliberateBluffsSurvived") },
+    { label: "Forced raise", help: "No legal raise could be fully covered by that player’s own dice at the time.", total: stat("forcedEscalations"), caught: stat("forcedEscalationsCaught"), survived: stat("forcedEscalationsSurvived") },
+  ];
+  return <section className="analysis-claim-breakdown" aria-label={`${player.name} final bid breakdown`}>{rows.map((row) => <div key={row.label}><span>{row.label} <i className="analysis-help" tabIndex={0} data-tooltip={row.help} aria-label={`${row.label}: ${row.help}`}>?</i></span><strong>{row.total ?? "—"}</strong><small>{row.total === undefined ? "Intent not recorded" : `${row.caught} caught · ${row.survived} survived`}</small></div>)}</section>;
 }
 
 function GameAnalysisPanel({ analysis, onClose }: { analysis: MatchAnalysis; onClose: () => void }) {
@@ -379,6 +392,7 @@ function GameAnalysisPanel({ analysis, onClose }: { analysis: MatchAnalysis; onC
         <header><div><span className="analysis-player-dot" /><h3>{player.name}</h3>{player.winner && <b>Winner</b>}</div>{player.controller === "bot" && <small>{player.persona ?? "Bot"}</small>}</header>
         <p>{player.verdict}</p>
         <div className="analysis-metrics"><AnalysisMetric name="bluff" player={player} /><AnalysisMetric name="aggression" player={player} /><AnalysisMetric name="challenge" player={player} /></div>
+        <ClaimBreakdown player={player} />
         <dl><div><dt>Bids</dt><dd>{player.stats.bids}</dd></div><div><dt>Dudo</dt><dd>{player.stats.dudoCorrect}/{player.stats.dudoAttempts}</dd></div><div><dt>Calzo</dt><dd>{player.stats.calzoCorrect}/{player.stats.calzoAttempts}</dd></div><div><dt>Dice swing</dt><dd>{player.stats.diceGained ? `+${player.stats.diceGained}` : "0"} / −{player.stats.diceLost}</dd></div></dl>
         {player.moment && <aside><span>Defining moment</span>{player.moment}</aside>}
         {player.botReasoning?.length ? <details><summary>What this bot was thinking</summary>{player.botReasoning.map((reason, reasonIndex) => <p key={`${reason.round}-${reasonIndex}`}><b>Round {reason.round} · {reason.action}</b>{reason.explanation}</p>)}</details> : null}

@@ -126,6 +126,16 @@
 .analysis-help { position: relative; display: inline-grid; width: 14px; height: 14px; place-items: center; border: 1px solid #ffffff3b; border-radius: 50%; color: #bdd1c8; font-size: .52rem; font-style: normal; cursor: help; }
 .analysis-help::after { content: attr(data-tooltip); position: absolute; z-index: 3; left: 50%; bottom: calc(100% + 7px); width: 210px; padding: 8px 9px; border: 1px solid #d7b36a55; border-radius: 7px; color: #f6ead2; background: #02110e; box-shadow: 0 8px 24px #000a; font-size: .62rem; font-weight: 600; line-height: 1.35; opacity: 0; pointer-events: none; transform: translate(-50%, 3px); transition: .14s ease; }
 .analysis-help:hover::after, .analysis-help:focus::after { opacity: 1; transform: translate(-50%, 0); }
+.analysis-claim-breakdown { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 9px; }
+.analysis-claim-breakdown > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 5px; padding: 7px 8px; border: 1px solid #ffffff12; border-radius: 7px; background: #061f19; }
+.analysis-claim-breakdown span { min-width: 0; color: #a9beb5; font-size: .55rem; font-weight: 800; white-space: nowrap; }
+.analysis-claim-breakdown strong { color: #f1dfbd; font-size: .72rem; }
+.analysis-claim-breakdown small { grid-column: 1 / -1; overflow: hidden; color: #769187; font-size: .49rem; text-overflow: ellipsis; white-space: nowrap; }
+.analysis-claim-breakdown .analysis-help { width: 12px; height: 12px; font-size: .46rem; }
+.analysis-claim-breakdown > div:first-child .analysis-help::after { left: -6px; transform: translateY(3px); }
+.analysis-claim-breakdown > div:first-child .analysis-help:hover::after, .analysis-claim-breakdown > div:first-child .analysis-help:focus::after { transform: translateY(0); }
+.analysis-claim-breakdown > div:last-child .analysis-help::after { right: -6px; left: auto; transform: translateY(3px); }
+.analysis-claim-breakdown > div:last-child .analysis-help:hover::after, .analysis-claim-breakdown > div:last-child .analysis-help:focus::after { transform: translateY(0); }
 .analysis-player dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 10px 0 0; padding-top: 8px; border-top: 1px solid #ffffff12; }
 .analysis-player dl div { display: grid; gap: 1px; padding-left: 7px; border-left: 1px solid #ffffff12; }
 .analysis-player dl div:first-child { padding-left: 0; border: 0; }

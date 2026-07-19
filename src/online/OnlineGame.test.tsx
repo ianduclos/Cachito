@@ -113,13 +113,13 @@ function enterWinner() {
     viewerPlayerId: "player-1",
   };
   const analysis: MatchAnalysis = {
-    schemaVersion: 1, generatedAt: "2026-07-18T00:00:00.000Z", rounds: 9, totalTurns: 42, winnerId: "player-1",
+    schemaVersion: 2, generatedAt: "2026-07-18T00:00:00.000Z", rounds: 9, totalTurns: 42, winnerId: "player-1",
     headline: "Ana María took the table after 9 rounds.", keyMoment: "Round 7: a correct Dudo changed the direction of the table.",
     tableAverages: { bluff: 22, aggression: 48, challenge: 36 },
     momentum: [{ round: 9, players: [{ playerId: "player-1", dice: 3, share: 100 }, { playerId: "player-2", dice: 0, share: 0 }] }],
     players: [
-      { id: "player-1", name: "Ana María", controller: "human", winner: true, verdict: "Bid patiently and picked measured moments to challenge. No confirmed bluffs reached a reveal.", scores: { bluff: { value: 18, samples: 3, earlyRead: true }, aggression: { value: 40, samples: 8, earlyRead: false }, challenge: { value: 52, samples: 4, earlyRead: false } }, stats: { bids: 18, confirmedBluffs: 0, bluffsCaught: 0, dudoAttempts: 3, dudoCorrect: 2, calzoAttempts: 1, calzoCorrect: 1, diceGained: 1, diceLost: 3, tableDicePlays: 1 } },
-      { id: "player-2", name: "Min-chi Park", controller: "bot", persona: "Bold storyteller", winner: false, verdict: "Pressed the table hard and challenged boldly. Finished with 1 confirmed bluff, 1 caught.", scores: { bluff: { value: 64, samples: 5, earlyRead: false }, aggression: { value: 72, samples: 11, earlyRead: false }, challenge: { value: 66, samples: 3, earlyRead: false } }, stats: { bids: 20, confirmedBluffs: 1, bluffsCaught: 1, dudoAttempts: 2, dudoCorrect: 1, calzoAttempts: 1, calzoCorrect: 0, diceGained: 0, diceLost: 5, tableDicePlays: 2 }, botReasoning: [{ round: 4, action: "Bid 5 Chinas", explanation: "It found a cheap moment to sell a believable story on a face it genuinely held." }] },
+      { id: "player-1", name: "Ana María", controller: "human", winner: true, verdict: "Bid patiently and picked measured moments to challenge. Every final claim held up at reveal.", scores: { bluff: { value: 18, samples: 3, earlyRead: true }, aggression: { value: 40, samples: 8, earlyRead: false }, challenge: { value: 52, samples: 4, earlyRead: false } }, stats: { bids: 18, unsupportedFinalBids: 0, unsupportedCaught: 0, unsupportedSurvived: 0, deliberatePersonaBluffs: 0, deliberateBluffsCaught: 0, deliberateBluffsSurvived: 0, forcedEscalations: 0, forcedEscalationsCaught: 0, forcedEscalationsSurvived: 0, dudoAttempts: 3, dudoCorrect: 2, calzoAttempts: 1, calzoCorrect: 1, diceGained: 1, diceLost: 3, tableDicePlays: 1 } },
+      { id: "player-2", name: "Min-chi Park", controller: "bot", persona: "Bold storyteller", winner: false, verdict: "Pressed the table hard and challenged boldly. 1 final claim was unsupported: 1 caught, 0 survived.", scores: { bluff: { value: 64, samples: 5, earlyRead: false }, aggression: { value: 72, samples: 11, earlyRead: false }, challenge: { value: 66, samples: 3, earlyRead: false } }, stats: { bids: 20, unsupportedFinalBids: 1, unsupportedCaught: 1, unsupportedSurvived: 0, deliberatePersonaBluffs: 1, deliberateBluffsCaught: 1, deliberateBluffsSurvived: 0, forcedEscalations: 2, forcedEscalationsCaught: 1, forcedEscalationsSurvived: 1, dudoAttempts: 2, dudoCorrect: 1, calzoAttempts: 1, calzoCorrect: 0, diceGained: 0, diceLost: 5, tableDicePlays: 2 }, botReasoning: [{ round: 4, action: "Bid 5 Chinas", explanation: "It found a cheap moment to sell a believable story on a face it genuinely held." }] },
     ],
   };
   act(() => {
@@ -275,7 +275,10 @@ describe("OnlineGame connection lifecycle", () => {
     expect(panel).toHaveTextContent("How the table shifted");
     expect(panel).toHaveTextContent("Bold storyteller");
     expect(panel).toHaveTextContent("Pressed the table hard");
-    expect(screen.getAllByLabelText(/aggression: How strongly and quickly/)).toHaveLength(2);
+    expect(panel).toHaveTextContent("Unsupported");
+    expect(panel).toHaveTextContent("1 caught · 1 survived");
+    expect(panel).toHaveTextContent("Intent not recorded");
+    expect(screen.getAllByLabelText(/Aggression: How strongly and quickly/)).toHaveLength(2);
     fireEvent.click(screen.getByText("What this bot was thinking"));
     expect(panel).toHaveTextContent("believable story");
     fireEvent.click(screen.getByRole("button", { name: "Back to winner" }));
