@@ -1,14 +1,14 @@
 ---
 project: Cachito
-state: active
-updated: 2026-07-17
-summary: Lab day two produced four verified experiments (exp-009 through exp-012), a persona bot that bluffs deliberately at an accepted ~2pp cost, a full replay viewer with intent panels and an end-of-game style summary, a table-dice sim fix that uncovered a product bug, and a complete integration handoff for Codex.
+state: paused
+updated: 2026-07-19
+summary: Lab day three analyzed the first real heads-up games against the shipped persona bot, quantified its exact-count Dudo weakness (exp-013), and parked a full CFR-equilibrium plan (exp-014) as the next thread; all Codex handoffs closed.
 machine: mac
 next:
-  - Codex reads docs/lab-handoff-bots-and-replay.md — bot promotion (Gen 2 + persona layer), runBotMatch table-dice bug fix, match-summary end-screen
-  - bulk room-log access from the GCS bucket (Ian) — unblocks human-style analysis at scale
-  - future bot thread when wanted, Gen 5 bid-level bluff discrimination (exp-011 defined the problem precisely)
-handoff_for: ian
+  - resume with exp-014 Phase 0/1 (CFR oracle for heads-up) — full parked plan in lab/notes/exp-014-cfr-plan.md
+  - play more online games to grow the schema-v5 corpus (ingest is one command via the fetch-room-logs skill + lab/tools/ingest.ts)
+  - if Codex replies about the held heads-up hybrid, fold its questions into exp-014 Phase 0
+handoff_for: null
 ---
 
 # Cachito — status
@@ -16,35 +16,38 @@ handoff_for: ian
 Two workstreams share this repo:
 
 - **Product** (`src/`, `server/`, `dev/`): the playable web game, maintained by
-  Codex under [AGENTS.md](AGENTS.md). Not this session's domain — but see the
-  open bug report in [HANDOFF.md](HANDOFF.md).
+  Codex under [AGENTS.md](AGENTS.md). Live release `r2026.07.18.001` promoted
+  the persona bots and postgame analysis; schema-v5 match logs; the
+  `runBotMatch` table-dice bug and the bluff-terminology issue are both fixed
+  upstream.
 - **Research lab** (`lab/`, its own nested git repo, gitignored by the parent):
   bot AI and game statistics, run by Ian + Claude Code. Charter in
   [lab/README.md](lab/README.md), full record in [lab/LOG.md](lab/LOG.md),
   plan in [lab/ROADMAP.md](lab/ROADMAP.md).
 
-## Lab state (2026-07-17, day two)
+## Lab state (2026-07-19, day three — paused here)
 
-- **Direction change (Ian, evening)**: win-rate ladder is done as a goal —
-  bots are "smart enough." New bar: intentionality without self-sabotage,
-  non-inferiority gates, human-readable end-of-game style charts, strict
-  token frugality in agent workflows.
-- **Bots**: Gen 3 "Belief Search" passed its gate (modest 1.12×; league
-  regression documented, Gen 2 stays champion). **"Persona Bluff"** wraps
-  Gen 2 with deliberate story-consistent bluffing (11.7% of bids, 94%
-  story-consistent) + intentional table dice, at an accepted ≈2pp win-share
-  cost. Gen 4 skipped per Ian.
-- **Findings**: exp-009 resolved the Dudo-accuracy scare (a polarity bug in
-  an earlier spot-check — Gen 2 is actually the best challenger); exp-010/011
-  built an online per-player style estimator and pinned its one limitation
-  (per-player rates can't identify which bid is a bluff — that's Gen 5's job).
-- **Viewer**: full replay pipeline — any logged game (sim or real room) →
-  win-probability graph, per-turn bot reasoning, public "table reads,"
-  end-of-game match summary per player. Three published artifacts (sim demo,
-  human room demo, persona demo); sources in `lab/viz/`.
-- **Infra**: headless sims now execute the table-dice mechanic (product's
-  `runBotMatch` silently dropped it — bug reported to Codex with a one-line
-  fix); schema-v4 ingest and all analysis CLIs under `lab/tools/`.
-- **Codex handoff**: [docs/lab-handoff-bots-and-replay.md](docs/lab-handoff-bots-and-replay.md)
-  covers bot promotion, difficulty tiers, the persona layer, replay/end-screen
-  integration, the bug, and the standing asks (seeded bot RNG, schema v5).
+- **First real games analyzed** (lab/LOG.md § Field observations): Ian beat
+  the shipped Gen 2 + persona bot twice heads-up. Two findings: the exp-002b
+  heads-up gate makes the persona layer inert at 2 players, and the bot loses
+  Dudos overwhelmingly to *exactly-true* bids.
+- **exp-013 baseline DONE**: the exploit is codified as a scripted benchmark
+  bot (`lab/bots/exactCount.ts`, `duel.ts --candidate exactCount`). At scale:
+  81.1% of Conservative's failed Dudos hit exactly-true bids — the signature
+  metric any heads-up successor must collapse. The script alone still loses
+  the match (31.75%): the human edge is honest bidding *plus* challenge
+  timing. Heads-up hybrid build is ON HOLD with Codex's agreement.
+- **exp-014 PARKED, fully planned**: CFR equilibrium core (oracle first,
+  player second) — subtasks, Ian-confirmation points, and sidetrack warnings
+  in [lab/notes/exp-014-cfr-plan.md](lab/notes/exp-014-cfr-plan.md). Driven
+  by Ian's revised bar (2026-07-19): perceived intelligence, adaptability,
+  and non-predictability at the table over threshold-readable internals.
+  Process note: no heavyweight gates until its promotion phase.
+- **Data pipeline complete**: GCS bucket access works (procedure = project
+  skill `.claude/skills/fetch-room-logs/`, gcloud at
+  `/opt/homebrew/share/google-cloud-sdk/bin/`); `ingest.ts` handles schema
+  v4 AND v5 (v5 verified 14/14 cross-checks on the real games).
+- Earlier history (day one/two: Gens 1–3, persona bluff, replay viewer,
+  exp-001..012) lives in lab/LOG.md and lab/ROADMAP.md.
+- Untracked in the parent root: `Cachito_Game_Rules_and_Bot_AI_Status.docx`
+  (Ian's own export, deliberately uncommitted).
