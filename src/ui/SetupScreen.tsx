@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { MAX_PLAYERS, MIN_PLAYERS } from "../engine";
 import { release } from "../release";
+import { Die } from "./Dice";
 import { GameSettings } from "./GameSettings";
 
 type Props = {
@@ -18,13 +19,34 @@ export function SetupScreen({ onStart, onOpenOnline }: Props) {
   const updateSeat = (index: number, update: Partial<LocalSeatSetup>) => setSeats((current) => current.map((seat, i) => i === index ? { ...seat, ...update } : seat));
 
   if (screen === "home") return (
-    <main className="setup-shell">
-      <section className="setup-card start-card">
+    <main className="setup-shell landing-shell">
+      <div className="landing-glow landing-glow--left" aria-hidden="true" />
+      <div className="landing-glow landing-glow--right" aria-hidden="true" />
+      <section className="landing-stage">
         <GameSettings />
-        <div className="brand-mark" aria-hidden="true"><span>●</span><span>●</span></div>
-        <h1>Cachito</h1>
-        {onOpenOnline ? <button className="button button--primary start-online-button" type="button" onClick={onOpenOnline}>Play online</button> : <p className="rules-note">Rooms are being set up.</p>}
-        <span className="release-stamp">{release}</span>
+        <div className="landing-copy">
+          <div className="landing-brand"><div className="brand-mark" aria-hidden="true"><span>●</span><span>●</span></div><span>Private tables · real-time play</span></div>
+          <p className="landing-kicker">Hidden dice. Open tells.</p>
+          <h1>Cachito</h1>
+          <p className="landing-intro">Read the table, raise the bid, and know exactly when to call the bluff.</p>
+          {onOpenOnline ? <button className="button button--primary landing-play-button" type="button" onClick={onOpenOnline}><span>Play online</span><i aria-hidden="true">→</i></button> : <p className="rules-note">Rooms are being set up.</p>}
+          <ul className="landing-proof" aria-label="Game features"><li><strong>2–8</strong><span>players</span></li><li><strong>Private</strong><span>rooms</span></li><li><strong>Live</strong><span>spectating</span></li></ul>
+        </div>
+        <div className="landing-table-scene" aria-hidden="true">
+          <div className="landing-table-rim">
+            <div className="landing-seat landing-seat--top"><span>MP</span><div><strong>Min-chi Park</strong><small>5 dice</small></div></div>
+            <div className="landing-seat landing-seat--left"><span>AN</span><div><strong>Ana</strong><small>5 dice</small></div></div>
+            <div className="landing-seat landing-seat--right landing-seat--turn"><span>MA</span><div><strong>Mateo</strong><small>Thinking</small></div></div>
+            <div className="landing-seat landing-seat--bottom"><span>YU</span><div><strong>Your seat</strong><small>5 dice</small></div></div>
+            <div className="landing-table-center">
+              <span>Mateo’s bid</span>
+              <div className="landing-bid"><strong>4</strong><i>×</i><Die value={5} small /></div>
+              <b>Chinas</b>
+            </div>
+            <div className="landing-dice-cluster"><Die value={5} /><Die value={1} /><Die value={3} /></div>
+          </div>
+        </div>
+        <footer className="landing-footer"><span>A game of nerve, memory, and five hidden dice.</span><span className="release-stamp">{release}</span></footer>
       </section>
     </main>
   );
