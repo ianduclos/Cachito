@@ -1,5 +1,6 @@
 import type { Bid, Die, PublicGameView, PublicPlayer, RandomSource } from '../engine'
 import { evaluateBidDistribution, evaluateTableDiceDistribution } from './probability'
+import { canonicalTableDiceIndices } from './tableDice'
 import { adjustSupportForOpponent, buildOpponentProfile } from './opponentModel'
 import type {
   BotActionResult,
@@ -323,10 +324,11 @@ function tableDicePlan(
   if (publicTableDice.length >= (aggression >= 0.45 ? 7 : 5)) return undefined
 
   return candidates.flatMap((candidate) => {
-    const qualifying = hand.flatMap((die, index) => die === candidate.bid.denomination || (!observation.view.paloFijo && candidate.bid.denomination !== 1 && die === 1) ? [index] : [])
-    if (!qualifying.length) return []
-    const revealCount = aggression >= 0.45 && qualifying.length >= 2 && hand.length >= 3 ? 2 : 1
-    const tableDiceIndices = qualifying.slice(0, revealCount)
+    // Canonical rule: commit every supporting private die or none. A partial
+    // reveal reads as theater and audited worse than the plain bid
+    // (lab/LOG.md exp-014); the EV gates below reprice the larger exposure.
+    const tableDiceIndices = canonicalTableDiceIndices(observation, candidate.bid)
+    if (!tableDiceIndices) return []
     const afterReroll = evaluateTableDiceDistribution(observation.view, observation.playerId, candidate.bid, tableDiceIndices)
     const exposureCost = 0.045 + publicTableDice.length * 0.012 + (tableDiceIndices.length - 1) * 0.018
     const confidenceDistance = Math.abs(afterReroll.atLeast - targetBidConfidence)

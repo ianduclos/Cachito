@@ -1,4 +1,6 @@
 export { binomialAtLeast, binomialPmf, evaluateBidDistribution, evaluateTableDiceDistribution } from './probability'
+export { assessCanonicalTableDice, canonicalTableDiceIndices, CANONICAL_TABLE_DICE_DEFAULTS } from './tableDice'
+export type { TableDiceJudgment, TableDiceOptions, TableDiceReasonCode, TableDiceRecommendation } from './tableDice'
 export { BOT_NAMES } from './names'
 export { adjustSupportForOpponent, buildOpponentProfile } from './opponentModel'
 export { collectRunChampions, mergeChampionShelf } from './championArchive'
