@@ -25,10 +25,8 @@ export function SetupScreen({ onStart, onOpenOnline }: Props) {
       <section className="landing-stage">
         <GameSettings />
         <div className="landing-copy">
-          <div className="landing-brand"><div className="brand-mark" aria-hidden="true"><span>●</span><span>●</span></div><span>Private tables · real-time play</span></div>
-          <p className="landing-kicker">Hidden dice. Open tells.</p>
+          <div className="landing-brand"><div className="brand-mark" aria-hidden="true"><span>●</span><span>●</span></div></div>
           <h1>Cachito</h1>
-          <p className="landing-intro">Read the table, raise the bid, and know exactly when to call the bluff.</p>
           {onOpenOnline ? <button className="button button--primary landing-play-button" type="button" onClick={onOpenOnline}><span>Play online</span><i aria-hidden="true">→</i></button> : <p className="rules-note">Rooms are being set up.</p>}
           <ul className="landing-proof" aria-label="Game features"><li><strong>2–8</strong><span>players</span></li><li><strong>Private</strong><span>rooms</span></li><li><strong>Live</strong><span>spectating</span></li></ul>
         </div>

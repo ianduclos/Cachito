@@ -12,7 +12,7 @@ The table is the persistent place. Normal transitions must not replace it with a
 
 - Entry point: `src/App.tsx`. Live rooms enter through **Play online**; `/table-prototype` remains the offline test harness.
 - Shared table presentation: `src/ui/TablePrototype.css`, `src/ui/tablePrototypeSeats.ts`, and `src/ui/Dice.tsx`.
-- Live online presentation: `src/online/OnlineGame.tsx` and `src/online/OnlineTable.css`. It must render only the server-provided `PublicGameView` and `LegalActions`. The waiting player may derive a provisional bid list from public bid-ordering rules for advance preparation, but submission remains turn-gated and server-authoritative.
+- Live online presentation: `src/online/OnlineGame.tsx` and `src/online/OnlineTable.css`. Shared connection and focus behavior lives in `OnlineConnectionNotice.tsx` and `OnlineModal.ts`; the winner and postgame analysis live in `OnlineGameAnalysis.tsx`. Keep new presentation responsibilities in focused modules rather than growing `OnlineGame.tsx` again. It must render only the server-provided `PublicGameView` and `LegalActions`. The waiting player may derive a provisional bid list from public bid-ordering rules for advance preparation, but submission remains turn-gated and server-authoritative.
 - Offline harness: `src/ui/TablePrototype.tsx`.
 - Rules and transitions: `src/engine/`; the prototype calls the real `getLegalActions` and `applyAction` functions.
 - Bot decisions: `src/bot/`, using restricted `projectForPlayer` observations and public history.

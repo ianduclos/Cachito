@@ -1,27 +1,16 @@
 import type { IncomingMessage } from "node:http";
-import { createHmac, randomInt, randomUUID } from "node:crypto";
-import { isIP } from "node:net";
+import { randomInt } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { Storage } from "@google-cloud/storage";
-import { applyAction, createGame, DEFAULT_GAME_RULES, forfeitPlayer, getLegalActions, MAX_PLAYERS, projectForPlayer, projectForSpectator, type Die, type GameAction, type GameRules, type GameState, type PlayerSetup } from "../src/engine";
-import { chooseBotAction, createPersonaBluffPolicy, isChoiceLegal, PERSONA_LABELS, type BotObservation, type BotPolicy, type PersonaAggression, type PublicActionEntry } from "../src/bot";
-import { createBotDecisionRecord, type BotDecisionRecord, type LoggedRoundResolution } from "../src/analytics";
-import { buildMatchAnalysis, type MatchAnalysis } from "../src/analysis";
+import { applyAction, createGame, DEFAULT_GAME_RULES, forfeitPlayer, getLegalActions, MAX_PLAYERS, projectForPlayer, projectForSpectator, type GameAction, type GameRules, type GameState, type PlayerSetup } from "../src/engine";
+import { chooseBotAction, createPersonaBluffPolicy, isChoiceLegal, PERSONA_LABELS, type BotObservation, type BotPolicy, type PersonaAggression } from "../src/bot";
+import { createBotDecisionRecord } from "../src/analytics";
+import { buildMatchAnalysis } from "../src/analysis";
 import { BOT_NAMES } from "../src/bot/names";
 import type { OnlineClientMessage, OnlineServerMessage } from "../src/online/protocol";
 import { release } from "../src/release";
-
-type RoomPlayer = { id: string; name: string; isBot: boolean; botPersona?: PersonaAggression; token?: string; socket?: WebSocket; disconnectedAt?: number };
-type RoomEvent = { type: "round-start" } | { type: "shuffle-dice" } | { type: "pause-game" } | { type: "resume-game" } | { type: "forfeit-game" };
-type Spectator = { socket: WebSocket; queuedPlayer?: RoomPlayer };
-type ConnectionContext = { connectionId: string; ipHash: string | null; ipVersion: "ipv4" | "ipv6" | "unknown"; forwardedForCount: number; userAgentHash: string | null; origin?: string; language?: string; protocol?: string; hashConfigured: boolean };
-type ConnectionEvent = ConnectionContext & { at: string; event: "room-created" | "player-joined" | "player-reconnected" | "player-queued" | "spectator-joined" | "disconnected"; role: "player" | "spectator"; playerId?: string };
-type LoggedAction = { at: string; round?: number; playerId?: string; nickname?: string; action: GameAction | RoomEvent; tableDice?: Die[]; rerolledDice?: Die[]; covered?: boolean };
-type RoundDeal = { round: number; dealtAt: string; paloFijo: boolean; starterId: string | null; hands: Array<{ playerId: string; nickname: string; dice: number[] }> };
-type TurnTiming = { round: number; playerId: string; nickname: string; controller: "human" | "bot"; startedAt: string; deadlineAt: string; finishedAt?: string; elapsedMs?: number; remainingMs?: number; outcome?: "bid" | "dudo" | "calzo" | "timeout" | "forfeit" | "interrupted" };
-type RoomRuleProposal = { rules: GameRules; proposedById: string; approvalPlayerIds: Set<string> };
-type PauseState = { pausedById: string; pausedAt: number; turnRemainingMs?: number; shuffleRemainingMs?: number; nextRoundRemainingMs?: number };
-type Room = { code: string; hostPlayerId: string; players: RoomPlayer[]; spectators: Map<WebSocket, Spectator>; connectionEvents: ConnectionEvent[]; rules: GameRules; pendingRules?: RoomRuleProposal; roundDeals: RoundDeal[]; roundResolutions: LoggedRoundResolution[]; turnTimings: TurnTiming[]; activeTurn?: TurnTiming; game?: GameState; history: string[]; botHistory: PublicActionEntry[]; botDecisions: BotDecisionRecord[]; analysis?: MatchAnalysis; announcement?: { text: string; playerId?: string }; shuffleReadyPlayerIds?: Set<string>; nextRoundReadyPlayerIds?: Set<string>; nextRoundDeadlineAt?: number; shuffleDeadlineAt?: number; paused?: PauseState; actions: LoggedAction[]; startedAt?: string; lastActivityAt: number; nextGameStarterId?: string; turnDeadlineAt?: number; turnTimer?: ReturnType<typeof setTimeout>; shuffleTimer?: ReturnType<typeof setTimeout>; nextRoundTimer?: ReturnType<typeof setTimeout>; offlineCoverTimer?: ReturnType<typeof setTimeout>; snapshotTimer?: ReturnType<typeof setTimeout>; snapshotPersisting?: boolean; snapshotQueued?: boolean; snapshotDeleteQueued?: boolean; expired?: boolean; lastSnapshotAt?: number; botShuffleTimers?: Array<ReturnType<typeof setTimeout>>; botNextRoundTimers?: Array<ReturnType<typeof setTimeout>> };
+import { createConnectionContext, hasConnectionHashSalt, isAllowedRoomOrigin, requestAddress } from "./onlineRoomSecurity";
+import type { ConnectionContext, ConnectionEvent, Room, RoomPlayer, TurnTiming } from "./onlineRoomTypes";
 const rooms = new Map<string, Room>();
 const roomCreationTimestamps = new Map<string, number[]>();
 const connectionContexts = new WeakMap<WebSocket, ConnectionContext>();
@@ -50,13 +39,6 @@ const ROOM_CREATION_LIMIT = 8;
 export const SUPPORTED_CONCURRENT_GAMES = 4;
 export function onlineLogHeader<const T extends number>(schemaVersion: T) { return { schemaVersion, gameVersion: release }; }
 const RECOVERY_CLOCK_SKEW_MS = 60_000;
-const ipHashSalt = process.env.IP_HASH_SALT;
-const configuredOrigins = new Set([
-  "https://cachito.web.app",
-  "https://cachito--ian-duclos.europe-west4.hosted.app",
-  "https://cachito.ianduclos.com",
-  ...(process.env.ONLINE_ALLOWED_ORIGINS ?? "").split(",").map((value) => value.trim()).filter(Boolean),
-]);
 
 function code() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -67,20 +49,6 @@ function code() {
 }
 function token() { return crypto.randomUUID(); }
 function touch(room: Room) { room.lastActivityAt = Date.now(); }
-function isAllowedOrigin(request: IncomingMessage) {
-  const origin = headerValue(request.headers.origin);
-  if (!origin) return true;
-  if (configuredOrigins.has(origin)) return true;
-  try {
-    const parsed = new URL(origin);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-    if (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "[::1]") return true;
-    const requestedHost = (headerValue(request.headers["x-forwarded-host"]) ?? headerValue(request.headers.host))?.split(",")[0]?.trim().toLocaleLowerCase();
-    return Boolean(requestedHost && parsed.host.toLocaleLowerCase() === requestedHost);
-  } catch {
-    return false;
-  }
-}
 function transferHost(room: Room, unavailablePlayerId?: string) {
   const current = room.players.find((candidate) => candidate.id === room.hostPlayerId);
   if (current && current.id !== unavailablePlayerId && !current.isBot && current.socket) return false;
@@ -124,26 +92,6 @@ function settleRuleProposal(room: Room) {
   if (!room.players.every((player) => proposal.approvalPlayerIds.has(player.id))) return;
   room.rules = { ...proposal.rules };
   room.pendingRules = undefined;
-}
-function headerValue(value: string | string[] | undefined) { return Array.isArray(value) ? value.join(",") : value; }
-function createConnectionContext(request: IncomingMessage): ConnectionContext {
-  const forwardedFor = (headerValue(request.headers["x-forwarded-for"]) ?? "").split(",").map((value) => value.trim()).filter(Boolean);
-  const ip = (forwardedFor[0] ?? request.socket.remoteAddress ?? "").replace(/^::ffff:/, "");
-  const userAgent = headerValue(request.headers["user-agent"]);
-  const hash = (value: string) => ipHashSalt ? createHmac("sha256", ipHashSalt).update(value).digest("base64url") : null;
-  const version = isIP(ip);
-  return {
-    connectionId: randomUUID(), ipHash: ip ? hash(`ip:v1:${ip}`) : null,
-    ipVersion: version === 4 ? "ipv4" : version === 6 ? "ipv6" : "unknown", forwardedForCount: forwardedFor.length,
-    userAgentHash: userAgent ? hash(`user-agent:v1:${userAgent}`) : null,
-    ...(headerValue(request.headers.origin) ? { origin: headerValue(request.headers.origin) } : {}),
-    ...(headerValue(request.headers["accept-language"]) ? { language: headerValue(request.headers["accept-language"])!.split(",")[0] } : {}),
-    ...(headerValue(request.headers["x-forwarded-proto"]) ? { protocol: headerValue(request.headers["x-forwarded-proto"]) } : {}), hashConfigured: Boolean(ipHashSalt),
-  };
-}
-function requestAddress(request: IncomingMessage) {
-  const forwardedFor = (headerValue(request.headers["x-forwarded-for"]) ?? "").split(",").map((value) => value.trim()).filter(Boolean);
-  return (forwardedFor[0] ?? request.socket.remoteAddress ?? "unknown").replace(/^::ffff:/, "");
 }
 function recordConnection(room: Room, socket: WebSocket, event: ConnectionEvent["event"], role: ConnectionEvent["role"], playerId?: string) {
   const context = connectionContexts.get(socket) ?? { connectionId: "unknown", ipHash: null, ipVersion: "unknown" as const, forwardedForCount: 0, userAgentHash: null, hashConfigured: false };
@@ -602,7 +550,7 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
   wss.once("close", () => clearInterval(heartbeat));
   httpServer.on("upgrade", (request: IncomingMessage, socket, head) => {
     if (new URL(request.url ?? "/", "http://localhost").pathname !== "/online") return;
-    if (!isAllowedOrigin(request)) {
+    if (!isAllowedRoomOrigin(request)) {
       socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
       socket.destroy();
       return;
@@ -1023,7 +971,7 @@ async function persistRoomSnapshotNow(room: Room) {
       ipHashAlgorithm: "HMAC-SHA-256",
       rawIpStored: false,
       rawUserAgentStored: false,
-      hashSaltConfigured: Boolean(ipHashSalt),
+      hashSaltConfigured: hasConnectionHashSalt(),
     },
     state: room.game,
   };

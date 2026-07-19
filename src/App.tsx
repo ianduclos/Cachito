@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyAction,
   createGame,
@@ -31,10 +31,15 @@ import {
 } from "./analytics";
 import { DiceRow, Die as DieFace } from "./ui/Dice";
 import { SetupScreen, type LocalSeatSetup } from "./ui/SetupScreen";
-import { TablePrototype } from "./ui/TablePrototype";
 import { playSound, useGenericButtonSounds } from "./ui/sound";
-import { OnlineGame } from "./online/OnlineGame";
 import "./styles.css";
+
+const OnlineGame = lazy(() => import("./online/OnlineGame").then((module) => ({ default: module.OnlineGame })));
+const TablePrototype = lazy(() => import("./ui/TablePrototype").then((module) => ({ default: module.TablePrototype })));
+
+function LoadingSurface() {
+  return <main className="setup-shell"><section className="setup-card"><p role="status">Loading table…</p></section></main>;
+}
 
 type LogEntry = { id: number; text: string };
 type ViewMode = "player" | "spectator" | "admin";
@@ -243,9 +248,9 @@ export default function App() {
 
   if (!game) {
     return showTablePrototype
-      ? <TablePrototype onExit={() => { window.history.replaceState({}, "", "/"); setShowTablePrototype(false); }} />
+      ? <Suspense fallback={<LoadingSurface />}><TablePrototype onExit={() => { window.history.replaceState({}, "", "/"); setShowTablePrototype(false); }} /></Suspense>
       : showOnlineGame
-      ? <OnlineGame onExit={() => { window.history.replaceState({}, "", "/"); setShowOnlineGame(false); }} />
+      ? <Suspense fallback={<LoadingSurface />}><OnlineGame onExit={() => { window.history.replaceState({}, "", "/"); setShowOnlineGame(false); }} /></Suspense>
       : <SetupScreen onStart={startGame} onOpenOnline={onlineEnabled ? () => setShowOnlineGame(true) : undefined} />;
   }
 

@@ -10,6 +10,7 @@ Project-wide rules:
 - Preserve privacy boundaries. Bots and normal players receive restricted views; hidden hands must not leak through UI state, logs, feeds, or policy inputs.
 - `/table-prototype` is additive and must not replace the current beta route until the product decision is explicit.
 - Preserve existing user work and inspect the worktree before editing. Keep unrelated changes out of a commit.
+- Keep the landing page direct and product-like, not promotional. Do not add slogans or marketing copy; the one approved atmospheric line is “A game of nerve, memory, and five hidden dice.”
 - Run `npm run lint`, `npm run build`, and `npm test -- --run` before handoff. The online-room tests open a temporary loopback WebSocket server and need an environment that permits local listening.
 - When UI behavior changes, add a regression test and perform a live 1280×720 browser pass. Check the whole interaction sequence, not only the resting screenshot.
 

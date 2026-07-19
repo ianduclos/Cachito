@@ -104,6 +104,8 @@ The automated suite includes authoritative online-room coverage for lifecycle, r
 
 ## Design
 
+For fast code navigation, the online room server is split by responsibility: `dev/onlineRooms.ts` owns room behavior and protocol handling, `dev/onlineRoomTypes.ts` owns room-state shapes, and `dev/onlineRoomSecurity.ts` owns origin and privacy-safe connection metadata. On the client, `src/online/OnlineGame.tsx` owns live table orchestration, while connection notices, modal focus behavior, and completed-game analysis have their own modules. Keep these seams intact when adding features. The online table and deprecated prototype are lazy-loaded so the opening page does not download either surface before it is needed.
+
 The engine is the sole authority on legal actions and state transitions:
 
 ```text
@@ -233,5 +235,6 @@ Realtime multiplayer is live through **Play online**. The server validates every
 - Private invitations and public matchmaking.
 - Additional bot personalities and difficulty levels.
 - Match history, accounts, rankings, cosmetics, and additional game modes.
+- A brief, skippable tutorial mode built inside the authoritative online table rather than as a separate rules implementation; see `docs/PRODUCT_IDEAS.md`.
 
 These features should follow a reliable engine and privacy-safe online architecture rather than shape the first implementation.

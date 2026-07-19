@@ -11,7 +11,8 @@ describe("SetupScreen landing page", () => {
     const { container } = render(<SetupScreen onStart={vi.fn()} onOpenOnline={onOpenOnline} />);
 
     expect(screen.getByRole("heading", { name: "Cachito" })).toBeInTheDocument();
-    expect(screen.getByText("Hidden dice. Open tells.")).toBeInTheDocument();
+    expect(screen.getByText("A game of nerve, memory, and five hidden dice.")).toBeInTheDocument();
+    expect(screen.queryByText("Hidden dice. Open tells.")).not.toBeInTheDocument();
     expect(screen.getByText("2–8")).toBeInTheDocument();
     expect(screen.getByText("Private")).toBeInTheDocument();
     expect(screen.getByText("Live")).toBeInTheDocument();
