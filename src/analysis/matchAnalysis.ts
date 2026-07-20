@@ -83,16 +83,44 @@ export interface MatchAnalysisPlayer {
   botReasoning?: Array<{ round: number; action: string; explanation: string }>
 }
 
+/** One public bid on a round's ladder. Everything here was visible at the table. */
+export interface MatchAnalysisLadderBid {
+  playerId: string
+  quantity: number
+  denomination: Die
+  /** Dice publicly committed to the table with this bid, when any. */
+  tableDice?: number
+}
+
+/** The public story of one resolved round: the ladder, the call, the reveal. */
+export interface MatchAnalysisRoundStory {
+  round: number
+  paloFijo: boolean
+  bids: MatchAnalysisLadderBid[]
+  callerId: string
+  bidderId: string
+  kind: 'dudo' | 'calzo'
+  correct: boolean
+  actualCount: number
+  /** actualCount − bid.quantity: 0 means the final bid was exactly true. */
+  margin: number
+  diceChanges: Array<{ playerId: string; delta: number }>
+}
+
 export interface MatchAnalysis {
-  schemaVersion: 2
+  schemaVersion: 3
   generatedAt: string
   rounds: number
   totalTurns: number
   winnerId: string
   headline: string
   keyMoment?: string
+  /** Dice each seat started the match with (round-0 baseline for charts). */
+  startingDice: Array<{ playerId: string; dice: number }>
   tableAverages: { bluff: number; aggression: number; challenge: number }
   momentum: Array<{ round: number; players: Array<{ playerId: string; dice: number; share: number }> }>
+  /** Public round-by-round record; contains no hidden-hand information. */
+  roundStories: MatchAnalysisRoundStory[]
   players: MatchAnalysisPlayer[]
 }
 
@@ -299,6 +327,38 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
     const total = [...dice.values()].reduce((sum, value) => sum + value, 0)
     return { round: deal.round, players: input.seats.map((seat) => ({ playerId: seat.id, dice: dice.get(seat.id) ?? 0, share: total ? Math.round(((dice.get(seat.id) ?? 0) / total) * 100) : 0 })) }
   })
+  const roundStories: MatchAnalysisRoundStory[] = input.roundDeals.flatMap((deal) => {
+    const resolvedEntry = resolutionByRound.get(deal.round)
+    if (!resolvedEntry) return []
+    const resolved = resolvedEntry.resolution
+    const bids: MatchAnalysisLadderBid[] = input.actions
+      .filter((entry) => entry.round === deal.round && entry.playerId && entry.action.type === 'bid')
+      .map((entry) => {
+        const action = entry.action as Extract<GameAction, { type: 'bid' }>
+        return {
+          playerId: entry.playerId!,
+          quantity: action.bid.quantity,
+          denomination: action.bid.denomination,
+          ...(entry.tableDice?.length ? { tableDice: entry.tableDice.length } : {}),
+        }
+      })
+    return [{
+      round: deal.round,
+      paloFijo: deal.paloFijo,
+      bids,
+      callerId: resolved.callerId,
+      bidderId: resolved.bidderId,
+      kind: resolved.kind,
+      correct: resolved.correct,
+      actualCount: resolved.actualCount,
+      margin: resolved.actualCount - resolved.bid.quantity,
+      diceChanges: resolved.diceChanges.map((change) => ({ playerId: change.playerId, delta: change.delta })),
+    }]
+  })
+  const startingDice = input.seats.map((seat) => ({
+    playerId: seat.id,
+    dice: input.roundDeals[0]?.hands.find((hand) => hand.playerId === seat.id)?.dice.length ?? 0,
+  }))
   const winner = input.seats.find((seat) => seat.id === input.finalState.winnerId)
   const keyMoment = players.map((player) => player.moment).find(Boolean)
   const publicPlayers: MatchAnalysisPlayer[] = players.map((player) => ({
@@ -307,15 +367,17 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
     ...(player.moment ? { moment: player.moment } : {}), ...(player.botReasoning ? { botReasoning: player.botReasoning } : {}),
   }))
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAt: now,
     rounds: input.finalState.round,
     totalTurns: input.actions.filter((entry) => 'playerId' in entry.action && ['bid', 'dudo', 'calzo'].includes(entry.action.type)).length,
     winnerId: input.finalState.winnerId,
     headline: `${winner?.name ?? 'The winner'} took the table after ${input.finalState.round} ${input.finalState.round === 1 ? 'round' : 'rounds'}.`,
     ...(keyMoment ? { keyMoment } : {}),
+    startingDice,
     tableAverages,
     momentum,
+    roundStories,
     players: publicPlayers,
   }
 }

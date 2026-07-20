@@ -208,7 +208,7 @@ describe("authoritative online rooms", () => {
     expect(finished.view.players.find((player) => player.name === "Guest")?.eliminated).toBe(true);
     expect(finished.view.phase === "gameOver" && finished.view.winnerId).toBe(hostJoined.playerId);
     expect(finished.history).toContain("Guest forfeited the game.");
-    expect(finished.analysis).toMatchObject({ schemaVersion: 2, winnerId: hostJoined.playerId, headline: expect.stringContaining("Host") });
+    expect(finished.analysis).toMatchObject({ schemaVersion: 3, winnerId: hostJoined.playerId, headline: expect.stringContaining("Host") });
   });
 
   it("publishes a new turn with only its fresh deadline", async () => {

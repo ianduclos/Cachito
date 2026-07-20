@@ -11,13 +11,12 @@ describe("SetupScreen landing page", () => {
     const { container } = render(<SetupScreen onStart={vi.fn()} onOpenOnline={onOpenOnline} />);
 
     expect(screen.getByRole("heading", { name: "Cachito" })).toBeInTheDocument();
-    expect(screen.getByText("A game of nerve, memory, and five hidden dice.")).toBeInTheDocument();
     expect(screen.queryByText("Hidden dice. Open tells.")).not.toBeInTheDocument();
     expect(screen.getByText("2–8")).toBeInTheDocument();
     expect(screen.getByText("Private")).toBeInTheDocument();
     expect(screen.getByText("Live")).toBeInTheDocument();
     expect(screen.getByText(release)).toBeInTheDocument();
-    expect(container.querySelectorAll(".landing-seat")).toHaveLength(4);
+    expect(container.querySelectorAll(".landing-table-scene")).toHaveLength(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Play online" }));
     expect(onOpenOnline).toHaveBeenCalledOnce();

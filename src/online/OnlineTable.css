@@ -87,8 +87,12 @@
 .online-live-table--game-over .tp-feed { visibility: hidden; }
 
 .game-analysis {
-  --analysis-player-0: #e6b85d; --analysis-player-1: #77d7ae; --analysis-player-2: #dc806c; --analysis-player-3: #81b8e7;
-  --analysis-player-4: #c99be8; --analysis-player-5: #e5d17c; --analysis-player-6: #73c9d5; --analysis-player-7: #d89a75;
+  /* Categorical player palette, validated for CVD separation, chroma, and
+     3:1 contrast against the #061d18 surface (dataviz six-checks validator).
+     Fixed seat order — never reassign colors when players drop out. */
+  --analysis-player-0: #3987e5; --analysis-player-1: #008300; --analysis-player-2: #d55181; --analysis-player-3: #c98500;
+  --analysis-player-4: #199e70; --analysis-player-5: #d95926; --analysis-player-6: #9085e9; --analysis-player-7: #e66767;
+  --analysis-surface: #061d18;
   position: fixed; z-index: 105; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); padding: 20px clamp(18px, 3vw, 48px); color: #f5ead4; background: #061d18; overflow: hidden;
 }
 .game-analysis > header { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding: 0 0 15px; border-bottom: 1px solid #ffffff1c; }
@@ -147,6 +151,58 @@
 .analysis-player summary { color: #89d6b5; font-size: .62rem; font-weight: 900; cursor: pointer; }
 .analysis-player details p { display: grid; grid-template-columns: minmax(110px, .34fr) 1fr; gap: 7px; margin: 7px 0 0; color: #adc2b9; font-size: .6rem; line-height: 1.35; }
 .analysis-player details b { color: #e7d5b3; }
+
+/* --- v3 dense analysis: stat tiles, dice-flow chart, round rail, call board --- */
+.analysis-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 0 0 14px; }
+.analysis-tiles > div { padding: 10px 12px; border: 1px solid #ffffff14; border-radius: 12px; background: #ffffff08; }
+.analysis-tiles span { display: block; color: #a9c7bb; font-size: .58rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.analysis-tiles strong { display: block; margin: 3px 0 1px; color: #f5ead4; font-size: 1.45rem; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
+.analysis-tiles small { color: #8faea2; font-size: .6rem; }
+.analysis-flow { margin: 0; }
+.analysis-flow svg { display: block; width: 100%; height: auto; }
+.analysis-flow-grid { stroke: #ffffff14; stroke-width: 1; }
+.analysis-flow-tick { fill: #8faea2; font-size: 9px; font-weight: 700; }
+.analysis-flow-hover { fill: transparent; }
+.analysis-flow-hover:hover { fill: #ffffff10; }
+.analysis-flow figcaption { margin-top: 5px; color: #8faea2; font-size: .6rem; line-height: 1.35; }
+.analysis-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; }
+.analysis-legend span { display: inline-flex; align-items: center; gap: 6px; color: #cfe2d8; font-size: .62rem; font-weight: 800; }
+.analysis-legend i { width: 10px; height: 10px; border-radius: 3px; }
+.analysis-rounds, .analysis-callboard { margin: 16px 0 0; padding: 13px 14px; border: 1px solid #ffffff14; border-radius: 14px; background: #ffffff06; }
+.analysis-rounds h3, .analysis-callboard h3 { margin: 0; color: #f2e3c4; font-size: .82rem; }
+.analysis-rounds > div > small, .analysis-callboard > div > small { color: #8faea2; font-size: .62rem; }
+.analysis-rounds ol { display: grid; gap: 8px; margin: 11px 0 0; padding: 0; list-style: none; }
+.analysis-rounds li { display: grid; grid-template-columns: 44px minmax(90px, .8fr) 2fr; align-items: center; gap: 12px; padding: 7px 9px; border: 1px solid #ffffff10; border-radius: 10px; background: #ffffff05; }
+.analysis-rounds li > b { color: #d7b36a; font-size: .72rem; font-weight: 900; }
+.analysis-rounds li > b em { color: #e4a950; font-size: .58rem; font-style: normal; }
+.analysis-ladder { display: inline-flex; align-items: flex-end; gap: 3px; min-height: 46px; }
+.analysis-ladder-bar { display: inline-flex; align-items: flex-start; justify-content: center; width: 15px; border-radius: 4px 4px 0 0; color: #061d18; font-size: .6rem; font-style: normal; line-height: 1.5; }
+.analysis-ladder-bar--table { box-shadow: 0 0 0 2px #f5ead4aa; }
+.analysis-call { display: grid; gap: 2px; }
+.analysis-call strong { font-size: .68rem; font-weight: 900; }
+.analysis-call--right strong { color: #8fd8ae; }
+.analysis-call--wrong strong { color: #f0a290; }
+.analysis-call small { color: #b9cfc5; font-size: .62rem; line-height: 1.35; }
+.analysis-callboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-top: 11px; }
+.analysis-callboard-grid article { padding: 9px 11px; border: 1px solid #ffffff10; border-radius: 10px; background: #ffffff05; }
+.analysis-callboard-grid header { display: flex; align-items: center; gap: 7px; }
+.analysis-callboard-grid header strong { color: #f2e3c4; font-size: .72rem; }
+.analysis-callboard-grid header small { margin-left: auto; color: #a9c7bb; font-size: .6rem; font-weight: 800; }
+.analysis-callboard-grid ul { display: grid; gap: 5px; margin: 8px 0 0; padding: 0; list-style: none; }
+.analysis-callchip { display: grid; gap: 1px; padding: 5px 8px; border-radius: 8px; background: #ffffff07; font-size: .6rem; }
+.analysis-callchip b { font-size: .62rem; }
+.analysis-callchip--right b { color: #8fd8ae; }
+.analysis-callchip--wrong b { color: #f0a290; }
+.analysis-callchip span { color: #b9cfc5; }
+.analysis-sparkline { display: block; width: 132px; height: 34px; margin: 2px 0 6px; }
+.analysis-faces { margin: 9px 0 2px; }
+.analysis-faces > span { color: #a9c7bb; font-size: .58rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.analysis-faces > div { display: flex; align-items: flex-end; gap: 8px; margin-top: 5px; min-height: 40px; }
+.analysis-faces > div > div { display: grid; justify-items: center; gap: 2px; }
+.analysis-faces i { width: 13px; border-radius: 3px 3px 0 0; background: var(--player-color); }
+.analysis-faces i[data-empty] { background: #ffffff1a; }
+.analysis-faces b { color: #cfe2d8; font-size: .86rem; line-height: 1; }
+.analysis-caveat { margin: 16px 0 6px; color: #8faea2; font-size: .62rem; line-height: 1.4; }
 .online-settings-anchor .settings-forfeit { border-color: #df725e70; color: #ffab9d; }
 .settings-forfeit-confirm { display: grid; gap: 6px; padding: 8px; border: 1px solid #df725e66; border-radius: 9px; background: #261410; }
 .settings-forfeit-confirm small { color: #f2c2b8; }
@@ -179,6 +235,8 @@
   .game-analysis > header strong { display: none; }
   .analysis-momentum { grid-template-columns: 1fr; gap: 8px; }
   .analysis-player-grid { grid-template-columns: 1fr; }
+  .analysis-rounds li { grid-template-columns: 34px 1fr; }
+  .analysis-rounds li .analysis-call { grid-column: 1 / -1; }
 }
 
 @media (max-height: 740px) and (min-width: 651px) {

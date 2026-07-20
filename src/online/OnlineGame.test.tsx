@@ -113,10 +113,17 @@ function enterWinner() {
     viewerPlayerId: "player-1",
   };
   const analysis: MatchAnalysis = {
-    schemaVersion: 2, generatedAt: "2026-07-18T00:00:00.000Z", rounds: 9, totalTurns: 42, winnerId: "player-1",
+    schemaVersion: 3, generatedAt: "2026-07-18T00:00:00.000Z", rounds: 9, totalTurns: 42, winnerId: "player-1",
     headline: "Ana María took the table after 9 rounds.", keyMoment: "Round 7: a correct Dudo changed the direction of the table.",
+    startingDice: [{ playerId: "player-1", dice: 5 }, { playerId: "player-2", dice: 5 }],
     tableAverages: { bluff: 22, aggression: 48, challenge: 36 },
     momentum: [{ round: 9, players: [{ playerId: "player-1", dice: 3, share: 100 }, { playerId: "player-2", dice: 0, share: 0 }] }],
+    roundStories: [{
+      round: 9, paloFijo: false,
+      bids: [{ playerId: "player-2", quantity: 4, denomination: 5, tableDice: 1 }, { playerId: "player-1", quantity: 5, denomination: 5 }],
+      callerId: "player-2", bidderId: "player-1", kind: "dudo", correct: false, actualCount: 5, margin: 0,
+      diceChanges: [{ playerId: "player-2", delta: -1 }],
+    }],
     players: [
       { id: "player-1", name: "Ana María", controller: "human", winner: true, verdict: "Bid patiently and picked measured moments to challenge. Every final claim held up at reveal.", scores: { bluff: { value: 18, samples: 3, earlyRead: true }, aggression: { value: 40, samples: 8, earlyRead: false }, challenge: { value: 52, samples: 4, earlyRead: false } }, stats: { bids: 18, unsupportedFinalBids: 0, unsupportedCaught: 0, unsupportedSurvived: 0, deliberatePersonaBluffs: 0, deliberateBluffsCaught: 0, deliberateBluffsSurvived: 0, forcedEscalations: 0, forcedEscalationsCaught: 0, forcedEscalationsSurvived: 0, dudoAttempts: 3, dudoCorrect: 2, calzoAttempts: 1, calzoCorrect: 1, diceGained: 1, diceLost: 3, tableDicePlays: 1 } },
       { id: "player-2", name: "Min-chi Park", controller: "bot", persona: "Bold storyteller", winner: false, verdict: "Pressed the table hard and challenged boldly. 1 final claim was unsupported: 1 caught, 0 survived.", scores: { bluff: { value: 64, samples: 5, earlyRead: false }, aggression: { value: 72, samples: 11, earlyRead: false }, challenge: { value: 66, samples: 3, earlyRead: false } }, stats: { bids: 20, unsupportedFinalBids: 1, unsupportedCaught: 1, unsupportedSurvived: 0, deliberatePersonaBluffs: 1, deliberateBluffsCaught: 1, deliberateBluffsSurvived: 0, forcedEscalations: 2, forcedEscalationsCaught: 1, forcedEscalationsSurvived: 1, dudoAttempts: 2, dudoCorrect: 1, calzoAttempts: 1, calzoCorrect: 0, diceGained: 0, diceLost: 5, tableDicePlays: 2 }, botReasoning: [{ round: 4, action: "Bid 5 Chinas", explanation: "It found a cheap moment to sell a believable story on a face it genuinely held." }] },
@@ -300,6 +307,53 @@ describe("OnlineGame connection lifecycle", () => {
     vi.useRealTimers();
   })
 
+  it("keeps a seat card showing the pre-resolution dice count while the result callout plays, then updates it", () => {
+    // The server view already applies the die loss the instant reveal
+    // starts. Seat cards must hold the pre-resolution count (`before`) until
+    // the 3.3s callout finishes, then switch to the live count — otherwise
+    // the die drop spoils the callout instead of following it.
+    vi.useFakeTimers();
+    render(<OnlineGame onExit={vi.fn()} />);
+    const players: PublicPlayer[] = [
+      { id: "player-1", name: "Ana María", diceCount: 5, eliminated: false, tableDice: [], hand: [1, 2, 3, 4, 5] },
+      { id: "player-2", name: "Miss Blanquita", diceCount: 4, eliminated: false, tableDice: [4, 4], hand: [4, 4, 2, 6] },
+    ];
+    act(() => {
+      socket().open();
+      socket().message({ type: "joined", roomCode: "ABCDE", playerId: "player-1", reconnectToken: "secret", hostPlayerId: "player-1" });
+      socket().message({
+        type: "state",
+        hostPlayerId: "player-1",
+        view: {
+          phase: "reveal",
+          round: 2,
+          paloFijo: false,
+          rules: { ...DEFAULT_GAME_RULES },
+          players,
+          currentPlayerId: null,
+          currentBid: { quantity: 4, denomination: 4 },
+          lastBidderId: "player-2",
+          viewerPlayerId: "player-1",
+          resolution: {
+            kind: "dudo", callerId: "player-1", bidderId: "player-2",
+            bid: { quantity: 4, denomination: 4 }, actualCount: 5, correct: false,
+            diceChanges: [{ playerId: "player-2", before: 5, after: 4, delta: -1, reason: "dudo" }], nextStarterId: "player-1", paloFijoNextRound: false,
+          },
+        },
+        history: [],
+        playerStatuses: players.map((player) => ({ id: player.id, connected: true, covered: false })),
+      });
+    });
+
+    const seat = () => screen.getByRole("article", { name: "Miss Blanquita" });
+    expect(seat().querySelectorAll(".tp-seat-dice-squares i")).toHaveLength(5);
+
+    act(() => { vi.advanceTimersByTime(3_400); });
+
+    expect(seat().querySelectorAll(".tp-seat-dice-squares i")).toHaveLength(4);
+    vi.useRealTimers();
+  })
+
   it("turns the winner ceremony into the dominant final screen", () => {
     const { container } = render(<OnlineGame onExit={vi.fn()} />);
     enterWinner();
@@ -319,7 +373,14 @@ describe("OnlineGame connection lifecycle", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Game analysis" }));
     const panel = screen.getByRole("dialog", { name: "Game analysis" });
-    expect(panel).toHaveTextContent("How the table shifted");
+    expect(panel).toHaveTextContent("The match, burning down");
+    expect(panel).toHaveTextContent("Round by round");
+    expect(panel).toHaveTextContent("Who dared to call");
+    // Round rail retells the fixture's final round in plain words with margin.
+    expect(panel).toHaveTextContent("Min-chi Park → Dudo ✗");
+    expect(panel).toHaveTextContent("was exactly true — 5 on the table");
+    expect(panel).toHaveTextContent("Knife-edge bids");
+    expect(panel).toHaveTextContent("not a chance of winning");
     expect(panel).toHaveTextContent("Bold storyteller");
     expect(panel).toHaveTextContent("Pressed the table hard");
     expect(panel).toHaveTextContent("Unsupported");

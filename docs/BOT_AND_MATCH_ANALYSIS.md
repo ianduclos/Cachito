@@ -50,6 +50,8 @@ Small samples are pulled toward population priors and labeled **Early read**. Do
 
 Momentum shows each player’s share of remaining dice after a round. It is not a win-probability graph. A defining moment is selected from verified calls or the largest revealed bluff gap. Bot reasoning is limited to the last three distinct plain-language explanations.
 
+Analysis schema v3 (2026-07-20) adds `startingDice` and `roundStories`: the public per-round record — the full bid ladder (bidder, quantity, denomination, table-dice count), the call, the revealed `actualCount`, its margin against the final bid, and dice deltas. Everything in a round story was visible at the table; it must never grow hidden-hand fields. The browser renders these as the stacked dice-flow chart, the round-by-round rail, and the call board; the player-color palette in `OnlineTable.css` is CVD-validated against the panel surface and assigned by fixed seat order.
+
 Analysis schema v2 separates three facts that must never be collapsed into “confirmed bluffs”:
 
 - `unsupportedFinalBids` records revealed outcomes (`actualCount < bid.quantity`), split into `unsupportedCaught` and `unsupportedSurvived`;
@@ -68,7 +70,7 @@ Final Cloud Storage snapshots use schema version 5 and include the visible `game
 - structured `roundResolutions` with public revealed hands;
 - privacy-safe `botDecisions`, including `plainReason`;
 - `covered: true` on timeout safety moves made for a human;
-- the exact versioned `analysis` delivered after game over (currently analysis schema v2, nested inside match-log schema v5).
+- the exact versioned `analysis` delivered after game over (currently analysis schema v3, nested inside match-log schema v5).
 
 Active recovery snapshots retain their separate schema version and may carry the in-progress arrays privately so a server restart does not erase later analysis. Deploy the room server before the browser whenever this shape or the online protocol changes.
 

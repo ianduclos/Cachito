@@ -65,6 +65,47 @@ describe('completed match analysis', () => {
     expect(analysis.momentum[0].players.find((player) => player.playerId === 'bot')?.dice).toBe(0)
   })
 
+  it('tells each round as a public story with ladder, call, and margin — and no hidden hands', () => {
+    const analysis = buildMatchAnalysis({
+      rules: { ...DEFAULT_GAME_RULES },
+      seats: [
+        { id: 'human', name: 'Ana María', controller: 'human' },
+        { id: 'bot', name: 'Min-chi Park', controller: 'bot', persona: 'Bold storyteller' },
+      ],
+      actions: [
+        { round: 1, playerId: 'bot', action: { type: 'bid', playerId: 'bot', bid: { quantity: 4, denomination: 5 } }, tableDice: [5, 5] },
+        { round: 1, playerId: 'human', action: { type: 'dudo', playerId: 'human' } },
+      ],
+      roundDeals: [{ round: 1, paloFijo: false, starterId: 'bot', hands: [{ playerId: 'human', dice: [1, 2, 3, 4, 6] }, { playerId: 'bot', dice: [5, 2, 3, 4, 6] }] }],
+      roundResolutions: [{ round: 1, paloFijo: false, resolution }],
+      botDecisions: [botDecision],
+      finalState,
+    }, '2026-07-18T00:00:00.000Z')
+
+    expect(analysis.schemaVersion).toBe(3)
+    expect(analysis.startingDice).toEqual([
+      { playerId: 'human', dice: 5 },
+      { playerId: 'bot', dice: 5 },
+    ])
+    expect(analysis.roundStories).toEqual([{
+      round: 1,
+      paloFijo: false,
+      bids: [{ playerId: 'bot', quantity: 4, denomination: 5, tableDice: 2 }],
+      callerId: 'human',
+      bidderId: 'bot',
+      kind: 'dudo',
+      correct: true,
+      actualCount: 2,
+      margin: -2,
+      diceChanges: [{ playerId: 'bot', delta: -1 }],
+    }])
+    // Privacy: the browser payload must never carry dealt or revealed hand values.
+    const serialized = JSON.stringify(analysis)
+    expect(serialized).not.toContain('"hands"')
+    expect(serialized).not.toContain('"hand"')
+    expect(serialized).not.toContain('rerolledDice')
+  })
+
   it('labels a ladder-top fallback as forced without inventing deliberate bluff intent', () => {
     const forcedDecision: BotDecisionRecord = {
       ...botDecision,

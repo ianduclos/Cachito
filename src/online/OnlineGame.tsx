@@ -375,7 +375,28 @@ function OnlineTable({ view, analysis, roomCode, history, legal, playerId, playe
   const totalDice = view.players.reduce((total, player) => total + player.diceCount, 0);
   const tableDicePlayers = view.players.filter((player) => player.tableDice.length > 0);
   const tableDice = tableDicePlayers.flatMap((player) => player.tableDice);
-  const tablePlayers = playerId ? view.players.filter((player) => player.id !== playerId) : view.players;
+  // Seat cards must not drop a die (or flip a player to "Out") until the
+  // result callout finishes playing — the server view already reflects the
+  // post-resolution counts the instant reveal starts. Hold the pre-resolution
+  // counts on the seats for the same 3.3s the callout takes, keyed to this
+  // specific reveal so reconnects/re-renders never re-trigger or flicker it.
+  const revealKey = view.phase === "reveal" && view.resolution ? `${view.round}:${view.resolution.kind}:${view.resolution.callerId}` : undefined;
+  const [settledRevealKey, setSettledRevealKey] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (!revealKey || settledRevealKey === revealKey) return;
+    const timer = window.setTimeout(() => setSettledRevealKey(revealKey), 3_300);
+    return () => window.clearTimeout(timer);
+  }, [revealKey, settledRevealKey]);
+  const revealSettled = !revealKey || settledRevealKey === revealKey;
+  const seatPlayers = useMemo(() => {
+    if (revealSettled || !view.resolution) return view.players;
+    const changeByPlayerId = new Map(view.resolution.diceChanges.map((change) => [change.playerId, change]));
+    return view.players.map((player) => {
+      const change = changeByPlayerId.get(player.id);
+      return change ? { ...player, diceCount: change.before, eliminated: false } : player;
+    });
+  }, [revealSettled, view.players, view.resolution]);
+  const tablePlayers = playerId ? seatPlayers.filter((player) => player.id !== playerId) : seatPlayers;
   const tablePositions = playerId ? seatLayoutFor(view.players.length) : spectatorSeatLayoutFor(view.players.length);
   const formattedTime = secondsLeft === undefined ? undefined : `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}`;
   const canShake = Boolean(playerId && !eliminated);
