@@ -253,6 +253,53 @@ describe("OnlineGame connection lifecycle", () => {
     expect(socket().sent.map((message) => JSON.parse(message))).toContainEqual({ type: "action", action: { type: "bid", playerId: "", bid: { quantity: 3, denomination: 6 } } });
   });
 
+  it("shows each revealed hand once, without re-adding table dice the projection already includes", () => {
+    // The reveal projection folds table dice into `hand` (projections.ts,
+    // includeTableDiceInHand). player-2 played 2 of 5 dice to the table, so
+    // the overlay must show exactly 5 dice for them — not 7.
+    vi.useFakeTimers();
+    render(<OnlineGame onExit={vi.fn()} />);
+    const players: PublicPlayer[] = [
+      { id: "player-1", name: "Ana María", diceCount: 5, eliminated: false, tableDice: [], hand: [1, 2, 3, 4, 5] },
+      { id: "player-2", name: "Miss Blanquita", diceCount: 5, eliminated: false, tableDice: [4, 4], hand: [4, 4, 2, 6, 3] },
+    ];
+    act(() => {
+      socket().open();
+      socket().message({ type: "joined", roomCode: "ABCDE", playerId: "player-1", reconnectToken: "secret", hostPlayerId: "player-1" });
+      socket().message({
+        type: "state",
+        hostPlayerId: "player-1",
+        view: {
+          phase: "reveal",
+          round: 2,
+          paloFijo: false,
+          rules: { ...DEFAULT_GAME_RULES },
+          players,
+          currentPlayerId: null,
+          currentBid: { quantity: 4, denomination: 4 },
+          lastBidderId: "player-2",
+          viewerPlayerId: "player-1",
+          resolution: {
+            kind: "dudo", callerId: "player-1", bidderId: "player-2",
+            bid: { quantity: 4, denomination: 4 }, actualCount: 5, correct: false,
+            diceChanges: [{ playerId: "player-1", delta: -1 }], nextStarterId: "player-1", paloFijoNextRound: false,
+          },
+        },
+        history: [],
+        playerStatuses: players.map((player) => ({ id: player.id, connected: true, covered: false })),
+      });
+    });
+
+    // The result card stages: verdict callout first, revealed hands at 3.3s.
+    act(() => { vi.advanceTimersByTime(3_400); });
+
+    const overlay = screen.getByRole("dialog", { name: "Round result" });
+    const hands = overlay.querySelectorAll(".revealed-hand");
+    expect(hands).toHaveLength(2);
+    for (const hand of hands) expect(hand.querySelectorAll(".die")).toHaveLength(5);
+    vi.useRealTimers();
+  })
+
   it("turns the winner ceremony into the dominant final screen", () => {
     const { container } = render(<OnlineGame onExit={vi.fn()} />);
     enterWinner();
