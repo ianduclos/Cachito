@@ -128,7 +128,11 @@
 .analysis-meter i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #498f74, #e5bd63); }
 .analysis-metric small { display: block; overflow: hidden; color: #78958a; font-size: .52rem; text-overflow: ellipsis; white-space: nowrap; }
 .analysis-help { position: relative; display: inline-grid; width: 14px; height: 14px; place-items: center; border: 1px solid #ffffff3b; border-radius: 50%; color: #bdd1c8; font-size: .52rem; font-style: normal; cursor: help; }
-.analysis-help::after { content: attr(data-tooltip); position: absolute; z-index: 3; left: 50%; bottom: calc(100% + 7px); width: 210px; padding: 8px 9px; border: 1px solid #d7b36a55; border-radius: 7px; color: #f6ead2; background: #02110e; box-shadow: 0 8px 24px #000a; font-size: .62rem; font-weight: 600; line-height: 1.35; opacity: 0; pointer-events: none; transform: translate(-50%, 3px); transition: .14s ease; }
+/* Lift the whole help marker above later-painted sibling cards while its tooltip shows. */
+.analysis-help:hover, .analysis-help:focus { z-index: 40; }
+.analysis-help::after { content: attr(data-tooltip); position: absolute; z-index: 40; left: 50%; bottom: calc(100% + 7px); width: 210px; padding: 8px 9px; border: 1px solid #d7b36a55; border-radius: 7px; color: #f6ead2; background: #02110e; box-shadow: 0 8px 24px #000a; font-size: .62rem; font-weight: 600; line-height: 1.35; opacity: 0; pointer-events: none; transform: translate(-50%, 3px); transition: .14s ease; }
+/* The tiles sit at the top of the scroll area; open their tooltips downward so they are not clipped. */
+.analysis-tiles .analysis-help::after { bottom: auto; top: calc(100% + 7px); }
 .analysis-help:hover::after, .analysis-help:focus::after { opacity: 1; transform: translate(-50%, 0); }
 .analysis-claim-breakdown { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 9px; }
 .analysis-claim-breakdown > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 5px; padding: 7px 8px; border: 1px solid #ffffff12; border-radius: 7px; background: #061f19; }
@@ -162,6 +166,8 @@
 .analysis-flow svg { display: block; width: 100%; height: auto; }
 .analysis-flow-grid { stroke: #ffffff14; stroke-width: 1; }
 .analysis-flow-tick { fill: #8faea2; font-size: 9px; font-weight: 700; }
+.analysis-flow-mark--right { fill: #8fd8ae; font-weight: 900; }
+.analysis-flow-mark--wrong { fill: #f0a290; font-weight: 900; }
 .analysis-flow-hover { fill: transparent; }
 .analysis-flow-hover:hover { fill: #ffffff10; }
 .analysis-flow figcaption { margin-top: 5px; color: #8faea2; font-size: .6rem; line-height: 1.35; }
@@ -175,7 +181,7 @@
 .analysis-rounds li { display: grid; grid-template-columns: 44px minmax(90px, .8fr) 2fr; align-items: center; gap: 12px; padding: 7px 9px; border: 1px solid #ffffff10; border-radius: 10px; background: #ffffff05; }
 .analysis-rounds li > b { color: #d7b36a; font-size: .72rem; font-weight: 900; }
 .analysis-rounds li > b em { color: #e4a950; font-size: .58rem; font-style: normal; }
-.analysis-ladder { display: inline-flex; align-items: flex-end; gap: 3px; min-height: 46px; }
+.analysis-ladder { display: inline-flex; flex-wrap: wrap; align-items: flex-end; gap: 3px; min-height: 46px; }
 .analysis-ladder-bar { display: inline-flex; align-items: flex-start; justify-content: center; width: 15px; border-radius: 4px 4px 0 0; color: #061d18; font-size: .6rem; font-style: normal; line-height: 1.5; }
 .analysis-ladder-bar--table { box-shadow: 0 0 0 2px #f5ead4aa; }
 .analysis-call { display: grid; gap: 2px; }

@@ -65,15 +65,25 @@ function DiceFlowChart({ analysis, colorOf, nameOf }: { analysis: MatchAnalysis;
   const maxTotal = Math.max(1, ...Array.from({ length: points }, (_, index) => series.reduce((sum, entry) => sum + entry.counts[index], 0)));
   const x = (index: number) => pad.left + (index / (points - 1)) * innerW;
   const y = (value: number) => pad.top + innerH - (value / maxTotal) * innerH;
-  // Cumulative stacking in seat order; each band keeps its player's color.
+  // Dice change only at round reveals, so bands hold their value across each
+  // round and step at the boundary — no ramp between counts that never
+  // existed. Cumulative stacking in seat order; each band keeps its color.
+  const stepPoints = (values: number[]) => {
+    const forward: string[] = [];
+    values.forEach((value, index) => {
+      forward.push(`${x(index)},${y(value)}`);
+      if (index < values.length - 1) forward.push(`${x(index + 1)},${y(value)}`);
+    });
+    return forward;
+  };
   const stacked = series.map((entry, seriesIndex) => {
     const lower = Array.from({ length: points }, (_, index) => series.slice(0, seriesIndex).reduce((sum, below) => sum + below.counts[index], 0));
     const upper = lower.map((value, index) => value + entry.counts[index]);
-    const forward = upper.map((value, index) => `${x(index)},${y(value)}`).join(" ");
-    const backward = lower.map((value, index) => `${x(index)},${y(value)}`).reverse().join(" ");
-    return { ...entry, path: `${forward} ${backward}` };
+    return { ...entry, path: `${stepPoints(upper).join(" ")} ${stepPoints(lower).reverse().join(" ")}` };
   });
-  const gridLines = [Math.round(maxTotal / 2), maxTotal];
+  const gridStep = maxTotal > 20 ? 10 : 5;
+  const gridLines = Array.from({ length: Math.floor(maxTotal / gridStep) }, (_, index) => (index + 1) * gridStep);
+  if (!gridLines.includes(maxTotal)) gridLines.push(maxTotal);
   const stories = new Map(analysis.roundStories.map((story) => [story.round, story]));
   return (
     <figure className="analysis-flow" role="img" aria-label={`Dice held by each player across ${points - 1} rounds`}>
@@ -85,13 +95,16 @@ function DiceFlowChart({ analysis, colorOf, nameOf }: { analysis: MatchAnalysis;
             ? "Start"
             : `After round ${index}${stories.get(index) ? ` — ${nameOf(stories.get(index)!.callerId)} called ${stories.get(index)!.kind === "dudo" ? "Dudo" : "Calzo"} (${stories.get(index)!.correct ? "right" : "wrong"})` : ""}`;
           const detail = series.map((entry) => `${nameOf(entry.playerId)}: ${entry.counts[index]}`).join(" · ");
+          const story = index > 0 ? stories.get(index) : undefined;
           return <g key={index}>
             <rect className="analysis-flow-hover" x={x(index) - innerW / (points - 1) / 2} y={pad.top} width={innerW / (points - 1)} height={innerH}><title>{`${label}\n${detail}`}</title></rect>
-            <text className="analysis-flow-tick" x={x(index)} y={height - 6} textAnchor="middle">{index === 0 ? "start" : `R${index}`}</text>
+            <text className="analysis-flow-tick" x={x(index)} y={height - 6} textAnchor="middle">{index === 0 ? "start" : `R${index}`}
+              {story && <tspan className={story.correct ? "analysis-flow-mark--right" : "analysis-flow-mark--wrong"} dx="2">{story.correct ? "✓" : "✗"}</tspan>}
+            </text>
           </g>;
         })}
       </svg>
-      <figcaption>Band height = dice that player still held. The whole shape shrinking is the match burning down. Hover a column for exact counts.</figcaption>
+      <figcaption>Band height = dice that player still held; each step is a round’s reveal. ✓/✗ under a round marks whether its call was right. Hover a column for exact counts.</figcaption>
     </figure>
   );
 }
@@ -199,7 +212,7 @@ function GameAnalysisPanel({ analysis, onClose }: { analysis: MatchAnalysis; onC
   }, [onClose]);
   const seatIndex = new Map(analysis.players.map((player, index) => [player.id, index]));
   const colorOf = (playerId: string) => `var(--analysis-player-${(seatIndex.get(playerId) ?? 0) % 8})`;
-  const nameOf = (playerId: string) => analysis.players.find((player) => player.id === playerId)?.name ?? "Someone";
+  const nameOf = (playerId: string) => analysis.players.find((player) => player.id === playerId)?.name ?? "they";
   const calls = analysis.roundStories.length;
   const rightCalls = analysis.roundStories.filter((story) => story.correct).length;
   const exactBids = analysis.roundStories.filter((story) => story.margin === 0).length;
