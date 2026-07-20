@@ -282,7 +282,7 @@ describe("OnlineGame connection lifecycle", () => {
           resolution: {
             kind: "dudo", callerId: "player-1", bidderId: "player-2",
             bid: { quantity: 4, denomination: 4 }, actualCount: 5, correct: false,
-            diceChanges: [{ playerId: "player-1", delta: -1 }], nextStarterId: "player-1", paloFijoNextRound: false,
+            diceChanges: [{ playerId: "player-1", before: 5, after: 4, delta: -1, reason: "dudo" }], nextStarterId: "player-1", paloFijoNextRound: false,
           },
         },
         history: [],
