@@ -1,17 +1,42 @@
 ---
 project: Cachito
-state: paused
-updated: 2026-07-19
-summary: Lab day three analyzed the first real heads-up games against the shipped persona bot, quantified its exact-count Dudo weakness (exp-013), and parked a full CFR-equilibrium plan (exp-014) as the next thread; all Codex handoffs closed.
+state: active
+updated: 2026-07-22
+summary: Product maintenance session shipped three fixes to production (turn-order seating, landscape-phone layout, corrected half-plus-one aces rule) at release r2026.07.22.003; lab CFR thread (exp-014) still parked.
 machine: mac
 next:
-  - resume with exp-014 Phase 0/1 (CFR oracle for heads-up) — full parked plan in lab/notes/exp-014-cfr-plan.md
-  - play more online games to grow the schema-v5 corpus (ingest is one command via the fetch-room-logs skill + lab/tools/ingest.ts)
-  - if Codex replies about the held heads-up hybrid, fold its questions into exp-014 Phase 0
+  - push both repos to origin — today's product commits (f8b4daf, 87775ea, ee5eeaa) and the lab commit (3fe182f) are unpushed
+  - resume exp-014 Phase 0/1 (CFR oracle for heads-up) — full parked plan in lab/notes/exp-014-cfr-plan.md
+  - play more online games to grow the schema-v5 corpus (fetch-room-logs skill + lab/tools/ingest.ts)
 handoff_for: null
 ---
 
 # Cachito — status
+
+## 2026-07-22 — product maintenance session (deployed)
+
+All shipped to production (Cloud Run `cachito-rooms-00042-gfp` + Firebase
+Hosting, live release `r2026.07.22.003`, verified):
+
+- **Turn-order seating fix** (`ee5eeaa`): the online table now rotates the
+  turn-ordered player list so the player who acts right after you sits on your
+  immediate left, counter-clockwise around to your right — like a real table.
+  Previously it filtered you out but kept the raw array order. Hosting-only.
+- **Landscape-phone layout** (`87775ea`): shared
+  `(orientation: landscape) and (max-height: 500px)` query shrinks seats,
+  center panel, hand and both docks (kept horizontal) — phones in landscape
+  are wider than 650px so the portrait rules never fired. Hosting-only.
+- **Aces conversion rule fix** (`f8b4daf`): the default half-plus-one rule now
+  floors the halving before adding one — `floor(prev/2)+1`, not
+  `ceil(prev/2)+1`. Coincides with plain-half for odd previous quantities,
+  differs by one for even. Shared-engine change, so it deployed to the room
+  server AND Hosting. Lab human-regression audit reconciled without editing
+  the real logs (lab `3fe182f`, `acesRuleCorrectionExtraBids`).
+
+Also reviewed the last 4 online games (all all-human tables) — findings stayed
+in chat, not written to lab/LOG.md.
+
+## Repo layout
 
 Two workstreams share this repo:
 
