@@ -67,8 +67,8 @@ function gamePlayers(viewerPlayerId?: string, eliminatedViewer = false): PublicP
   }));
 }
 
-function enterTable({ spectator = false, eliminated = false, shuffling = true }: { spectator?: boolean; eliminated?: boolean; shuffling?: boolean } = {}) {
-  const playerId = spectator ? undefined : "player-1";
+function enterTable({ spectator = false, eliminated = false, shuffling = true, viewerId = "player-1" }: { spectator?: boolean; eliminated?: boolean; shuffling?: boolean; viewerId?: string } = {}) {
+  const playerId = spectator ? undefined : viewerId;
   const players = gamePlayers(playerId, eliminated);
   const activeIds = players.filter((player) => !player.eliminated).map((player) => player.id);
   const view: PublicGameView = {
@@ -191,6 +191,20 @@ describe("OnlineGame connection lifecycle", () => {
     expect(screen.getByRole("button", { name: "Shake my dice" })).toBeEnabled();
     expect(screen.getByLabelText("Your hand and turn controls")).toHaveTextContent("Ana María’s hand");
     expect(screen.getAllByRole("article")).toHaveLength(7);
+  });
+
+  it("seats the next player in turn order to the viewer's immediate left, wrapping around", () => {
+    // The viewer is player-4 (Luciano Torres), mid-array. Turn order is
+    // player-1..8, so the player who acts right after the viewer is player-5
+    // (Pichulín) and the one right before is player-3 (Miss Blanquita). Like a
+    // real table, the next player sits on the immediate left (left-bottom) and
+    // order runs counter-clockwise around to the immediate right (right-bottom).
+    render(<OnlineGame onExit={vi.fn()} />);
+    enterTable({ viewerId: "player-4" });
+
+    expect(screen.getByRole("article", { name: "Pichulín" })).toHaveClass("tp-seat--left-bottom");
+    expect(screen.getByRole("article", { name: "Miss Blanquita" })).toHaveClass("tp-seat--right-bottom");
+    expect(screen.queryByRole("article", { name: "Luciano Torres" })).not.toBeInTheDocument();
   });
 
   it("gives a normal spectator all fixed seats without exposing a hand or shake action", () => {
