@@ -252,6 +252,21 @@
   .online-game-over-card { max-height: none; }
 }
 
+@media (orientation: landscape) and (max-height: 500px) {
+  .online-round-pill { display: none; }
+  .online-live-table .tp-seat--bottom { top: 84%; }
+  .online-live-table .round-shuffle-card { max-height: 88%; padding: 14px 16px; }
+  .online-live-table .round-shuffle-card h2 { margin-bottom: 4px; }
+  .online-live-table .round-shuffle-copy { margin-bottom: 5px; font-size: .6rem; }
+  .online-live-table .round-shuffle-players { margin: 5px 0 7px; }
+  .online-live-table .round-result-overlay .round-result { max-height: 88%; padding: 14px; }
+  .online-live-table .result-banner { margin-bottom: 7px; }
+  .online-live-table .revealed-hands { margin: 8px 0; }
+  .online-live-table .next-round-ready { margin-top: 6px; }
+  .online-palo-banner { top: 15%; padding: 5px 10px; }
+  .online-seat-announcement { max-width: 170px; padding: 5px 8px; font-size: .52rem; }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .online-game-over-card { animation: online-winner-arrival .85s cubic-bezier(.12,.82,.2,1.08) both; }
   .online-game-over-card::before { animation: online-winner-halo 6s linear infinite; }

@@ -365,6 +365,84 @@
   .tp-notification-note p { display: none; }
 }
 
+/* Landscape on a phone: wide but very short, so the max-width phone rules
+   never fire. Shrink the seats, center panel, hand and docks to reclaim the
+   scarce vertical space while keeping the docks horizontal (width is plentiful). */
+@media (orientation: landscape) and (max-height: 500px) {
+  .table-prototype-shell { min-height: 0; padding: 5px 8px 5px; }
+  .tp-header { min-height: 0; margin-bottom: 4px; gap: 6px; }
+  .tp-eyebrow { display: none; }
+  .tp-header h1 { font-size: 1.15rem; }
+  .tp-header-actions { gap: 4px; }
+  .tp-quiet-button { min-height: 29px; padding: 4px 8px; font-size: .55rem; }
+  .tp-mystery-toggle { min-height: 29px; padding: 4px 8px; font-size: .55rem; }
+  .tp-feed-toggle span { min-width: 16px; height: 16px; font-size: .47rem; }
+  .tp-player-count-control { min-height: 29px; padding: 4px 6px 4px 8px; }
+
+  .tp-table { width: min(100%, calc((100svh - 116px) * 1.62)); max-height: calc(100% - 96px); border-width: 9px; }
+  .tp-round-meta { top: 8px; font-size: .48rem; }
+
+  .tp-seat { grid-template-columns: 30px minmax(0, 1fr); gap: 6px; width: 120px; min-height: 48px; padding: 5px 7px; border-radius: 12px; }
+  .tp-seat .tp-avatar { width: 30px; height: 30px; font-size: .52rem; }
+  .tp-seat-copy strong { font-size: .6rem; -webkit-line-clamp: 1; }
+  .tp-seat-copy > div small { display: none; }
+  .tp-seat-copy > span { font-size: .48rem; }
+  .tp-seat-note { font-size: .5rem; }
+  .tp-seat-bid { padding-top: 3px; }
+  .tp-seat-bid > span { display: none; }
+  .tp-seat-bid strong { font-size: .55rem; }
+  .tp-seat-bid strong b { font-size: 1.1rem; }
+  .tp-turn-flag { top: -12px; padding: 3px 8px; font-size: .48rem; }
+  .tp-out-flag { top: 5px; right: 5px; font-size: .44rem; }
+  .tp-seat--top { top: 3%; }
+  .tp-seat--left-top { top: 23%; left: 2%; }
+  .tp-seat--left-middle { top: 45%; left: 2%; }
+  .tp-seat--left-bottom { top: 67%; left: 2%; }
+  .tp-seat--right-top { top: 23%; left: 98%; }
+  .tp-seat--right-middle { top: 45%; left: 98%; }
+  .tp-seat--right-bottom { top: 67%; left: 98%; }
+  .tp-seat--bottom { top: 84%; }
+
+  .tp-table-center { top: 43%; width: 70%; gap: 8px; grid-template-columns: minmax(0, 1.1fr) minmax(0, .95fr) minmax(0, .7fr); }
+  .tp-current-bid { min-height: 0; padding: 8px 10px; }
+  .tp-current-bid strong { font-size: 2.1rem; }
+  .tp-current-bid > div span { font-size: 1rem; }
+  .tp-current-bid b { width: 34px; height: 34px; font-size: 1.4rem; }
+  .tp-current-bid h2 { margin: 2px 0 5px; font-size: .82rem; }
+  .tp-inventory { padding: 8px 10px; }
+  .tp-inventory p { display: none; }
+  .tp-dice-group .die { width: 18px; height: 18px; padding: 2px; }
+  .tp-exposed-dice { padding: 8px 10px; }
+  .tp-exposed-dice .die { width: 26px; height: 26px; }
+
+  .tp-action-dock { min-height: 0; gap: 10px; padding: 7px 10px; grid-template-columns: minmax(210px, 1.15fr) minmax(150px, .7fr) minmax(190px, 1fr); }
+  .tp-player-hud { grid-row: auto; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; }
+  .tp-hud-owner { padding-right: 8px; }
+  .tp-hud-owner .tp-avatar { width: 30px; height: 30px; font-size: .5rem; }
+  .tp-hud-owner strong { max-width: 96px; font-size: .58rem; }
+  .tp-hud-owner span { max-width: 96px; font-size: .5rem; }
+  .tp-hand > div:first-child { display: none; }
+  .tp-hand .dice-row { justify-content: center; gap: 5px; }
+  .tp-hand .die { width: clamp(32px, 4.2vw, 42px); height: clamp(32px, 4.2vw, 42px); padding: 5px; }
+  .tp-bid-builder { gap: 6px; }
+  .tp-quantity button { height: 24px; }
+  .tp-denominations { gap: 3px; }
+  .tp-denominations button { height: 40px; }
+  .tp-face-mark { width: 24px; height: 34px; grid-template-rows: repeat(3, 1fr) 8px; }
+  .tp-actions { grid-column: auto; grid-template-rows: 35px 30px; }
+  .tp-actions button { font-size: .62rem; }
+  .tp-table-dice-action { min-height: 30px; padding: 5px 8px; font-size: .58rem; }
+
+  .tp-spectator-dock { min-height: 0; padding: 8px 12px; grid-template-columns: minmax(220px, .85fr) minmax(360px, 1.7fr) minmax(130px, .5fr); }
+  .tp-spectator-glance > div { min-height: 46px; padding: 6px 9px; }
+  .tp-spectator-icon { width: 44px; height: 44px; font-size: 1.2rem; }
+
+  .tp-feed { top: 50px; }
+  .tp-round-result, .tp-game-over, .tp-roll-overlay { max-height: 88%; padding: 14px; }
+  .tp-revealed-hands { margin: 8px 0; }
+  .tp-callout strong { font-size: clamp(4rem, 20vh, 7rem); }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .tp-seat--active .tp-turn-flag { animation: tp-turn-flag-pulse 1.8s ease-in-out infinite alternate; }
   .tp-action-dock--your-turn::after { animation: tp-dock-pulse 1.5s ease-in-out infinite alternate; }
