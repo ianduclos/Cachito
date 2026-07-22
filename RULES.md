@@ -54,15 +54,17 @@ Examples:
 
 Aces (ones) have special bid transitions in a normal round:
 
-- From a normal denomination to aces, the minimum ace quantity is `ceil(previous quantity / 2) + 1` by default. A unanimously approved online-room setting may instead use `ceil(previous quantity / 2)`.
+- From a normal denomination to aces, the minimum ace quantity is `floor(previous quantity / 2) + 1` by default. A unanimously approved online-room setting may instead use `ceil(previous quantity / 2)`.
 - From aces to a normal denomination, the minimum normal quantity is `(previous ace quantity × 2) + 1`.
 - An ace bid followed by another ace bid must increase the quantity.
 
+The two conventions coincide for odd previous quantities and differ by one for even ones.
+
 Examples:
 
-- Five Chinas → four Aces is legal under the default half-plus-one rule: `ceil(5 / 2) + 1 = 4`.
-- Six Chinas → four Aces is legal under the default half-plus-one rule: `ceil(6 / 2) + 1 = 4`.
-- With the half rule approved instead, five Chinas → three Aces is legal.
+- Five Chinas → three Aces is legal under the default half-plus-one rule: `floor(5 / 2) + 1 = 3`.
+- Six Chinas → four Aces is legal under the default half-plus-one rule: `floor(6 / 2) + 1 = 4`.
+- With the half rule approved instead, five Chinas → three Aces is also legal: `ceil(5 / 2) = 3`.
 - Three Aces → seven Dones is legal: `(3 × 2) + 1 = 7`.
 - Three Aces → six Sambas is illegal.
 

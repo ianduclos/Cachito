@@ -10,9 +10,13 @@ describe('bid ordering', () => {
     expect(isHigherBid({ quantity: 6, denomination: 4 }, { quantity: 3, denomination: 1 }, false, false)).toBe(true)
   })
 
-  it('optionally requires one extra ace when that conversion rule is selected', () => {
-    expect(isHigherBid({ quantity: 5, denomination: 4 }, { quantity: 3, denomination: 1 }, false, false, 'halfPlusOne')).toBe(false)
-    expect(isHigherBid({ quantity: 5, denomination: 4 }, { quantity: 4, denomination: 1 }, false, false, 'halfPlusOne')).toBe(true)
+  it('rounds the halving down before adding one when the half-plus-one rule is selected', () => {
+    // Even previous quantity: floor(6/2)+1 = 4, one more than the plain-half ceil of 3.
+    expect(isHigherBid({ quantity: 6, denomination: 4 }, { quantity: 3, denomination: 1 }, false, false, 'halfPlusOne')).toBe(false)
+    expect(isHigherBid({ quantity: 6, denomination: 4 }, { quantity: 4, denomination: 1 }, false, false, 'halfPlusOne')).toBe(true)
+    // Odd previous quantity: floor(5/2)+1 = 3, matching the plain-half ceil.
+    expect(isHigherBid({ quantity: 5, denomination: 4 }, { quantity: 2, denomination: 1 }, false, false, 'halfPlusOne')).toBe(false)
+    expect(isHigherBid({ quantity: 5, denomination: 4 }, { quantity: 3, denomination: 1 }, false, false, 'halfPlusOne')).toBe(true)
   })
 
   it('requires double plus one when changing aces to a normal denomination', () => {

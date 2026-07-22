@@ -24,7 +24,12 @@ export function isHigherBid(previous: Bid, next: Bid, paloFijo: boolean, bidderH
   }
 
   if (next.denomination === 1) {
-    return next.quantity >= Math.ceil(previous.quantity / 2) + (acesConversion === 'halfPlusOne' ? 1 : 0)
+    // Half rounds the halving up; half-plus-one rounds it down first, then adds one.
+    // They coincide for odd previous quantities and differ by one for even ones.
+    const minimumAces = acesConversion === 'halfPlusOne'
+      ? Math.floor(previous.quantity / 2) + 1
+      : Math.ceil(previous.quantity / 2)
+    return next.quantity >= minimumAces
   }
 
   return next.quantity > previous.quantity ||
