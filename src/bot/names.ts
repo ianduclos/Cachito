@@ -19,4 +19,7 @@ export const BOT_NAMES = [
   "La Del Burro",
   "Tachi Cabrera",
   "Mark Vito",
+  "Cori Soldevilla",
+  "Diego Exebio Lozt",
+  "Melchorita",
 ] as const;
