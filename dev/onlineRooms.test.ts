@@ -211,6 +211,53 @@ describe("authoritative online rooms", () => {
     expect(finished.analysis).toMatchObject({ schemaVersion: 3, winnerId: hostJoined.playerId, headline: expect.stringContaining("Host") });
   });
 
+  it("lets a non-host player return the finished table to the same lobby, seats intact", async () => {
+    const host = await connect();
+    host.send({ type: "create-room", name: "Host" });
+    const hostJoined = await host.take(isJoined);
+    const guest = await connect();
+    guest.send({ type: "join-room", roomCode: hostJoined.roomCode, name: "Guest" });
+    const guestJoined = await guest.take(isJoined);
+    await host.take((message) => message.type === "lobby" && message.players.length === 2);
+    host.send({ type: "start-game" });
+    await host.take((message) => message.type === "state" && message.view.phase === "playing");
+    guest.send({ type: "forfeit-game" });
+    await guest.take((message) => message.type === "state" && message.view.phase === "gameOver");
+
+    // The guest is neither the host nor still holding dice, and can still put
+    // everyone back in the lobby for another game at the same table.
+    guest.send({ type: "return-to-lobby" });
+    // The lobby published when the guest first joined was already taken above, so
+    // this one can only be the reset that followed the finished game.
+    const lobby = await host.take((message): message is Extract<OnlineServerMessage, { type: "lobby" }> => message.type === "lobby" && message.players.length === 2);
+
+    expect(lobby.roomCode).toBe(hostJoined.roomCode);
+    expect(lobby.hostPlayerId).toBe(hostJoined.playerId);
+    expect(lobby.players.map((player) => player.id)).toEqual([hostJoined.playerId, guestJoined.playerId]);
+    await expect(guest.take((message) => message.type === "lobby" && message.players.length === 2)).resolves.toMatchObject({ roomCode: hostJoined.roomCode });
+  });
+
+  it("keeps spectators from returning a finished table to the lobby", async () => {
+    const host = await connect();
+    host.send({ type: "create-room", name: "Host" });
+    const hostJoined = await host.take(isJoined);
+    const guest = await connect();
+    guest.send({ type: "join-room", roomCode: hostJoined.roomCode, name: "Guest" });
+    await guest.take(isJoined);
+    await host.take((message) => message.type === "lobby" && message.players.length === 2);
+    host.send({ type: "start-game" });
+    await host.take((message) => message.type === "state" && message.view.phase === "playing");
+    const watcher = await connect();
+    watcher.send({ type: "join-room", roomCode: hostJoined.roomCode, spectator: true });
+    await watcher.take(isJoined);
+    guest.send({ type: "forfeit-game" });
+    await watcher.take((message) => message.type === "state" && message.view.phase === "gameOver");
+
+    watcher.send({ type: "return-to-lobby" });
+
+    await expect(watcher.take(isError)).resolves.toMatchObject({ message: "Only a player at this finished table can return it to the lobby." });
+  });
+
   it("publishes a new turn with only its fresh deadline", async () => {
     const host = await connect();
     host.send({ type: "create-room", name: "Host" });

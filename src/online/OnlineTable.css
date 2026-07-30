@@ -67,7 +67,10 @@
 .online-live-table .next-round-ready .button { min-height: 38px; padding: 7px 18px; }
 
 .online-live-table .game-paused-overlay { inset: auto; top: 49%; left: 50%; width: min(64%, 520px); min-height: 190px; border: 1px solid #d7b36a66; border-radius: 14px; background: #08251f; backdrop-filter: none; box-shadow: 0 22px 55px #0009; transform: translate(-50%, -50%); }
-.online-game-over-card { position: fixed; z-index: 101; inset: 0; top: 0; left: 0; width: 100vw; height: 100svh; max-height: none; align-content: center; gap: 8px; overflow: hidden; padding: clamp(24px, 5vh, 58px) clamp(20px, 7vw, 110px); border: 0; border-radius: 0; background: radial-gradient(circle at 50% 40%, #356e54 0, #0c372c 27%, #041c17 63%, #020d0b 100%); box-shadow: inset 0 0 120px #000c; transform: none; }
+/* The winner card owns the whole viewport, so its actions — "Play again" above
+   all — must stay reachable at any height: never clip, and keep centring safe so
+   a tall card scrolls from its top instead of hiding it above the fold. */
+.online-game-over-card { position: fixed; z-index: 101; inset: 0; top: 0; left: 0; width: 100vw; height: 100svh; max-height: none; align-content: center; align-content: safe center; gap: 8px; overflow: hidden auto; padding: clamp(24px, 5vh, 58px) clamp(20px, 7vw, 110px); border: 0; border-radius: 0; background: radial-gradient(circle at 50% 40%, #356e54 0, #0c372c 27%, #041c17 63%, #020d0b 100%); box-shadow: inset 0 0 120px #000c; transform: none; }
 .online-game-over-card::before, .online-game-over-card::after { content: ""; position: absolute; z-index: 0; left: 50%; top: 43%; width: min(96vmin, 940px); aspect-ratio: 1; border: 2px solid #e8bf6650; border-radius: 50%; box-shadow: 0 0 0 24px #e8bf6608, 0 0 0 80px #e8bf6606, 0 0 140px #e8bf663d; transform: translate(-50%, -50%); pointer-events: none; }
 .online-game-over-card::after { width: min(68vmin, 680px); border-style: double; border-width: 7px; opacity: .7; }
 .online-game-over-card > * { position: relative; z-index: 1; }
@@ -81,6 +84,7 @@
 .online-game-over-card .game-over-actions { width: min(620px, 90vw); }
 .online-game-over-card .game-over-actions .button { min-height: 48px; padding: 10px 18px; font-size: .75rem; }
 .online-game-over-card .game-analysis-button { border: 1px solid #75d8ae; background: #123d31; color: #c9ffe5; }
+.online-game-over-card .game-over-hint { margin-top: 6px; color: #a9c4b8; font-size: .62rem; letter-spacing: .04em; }
 .online-live-table .tp-confetti { position: fixed; z-index: 102; inset: 0; }
 .online-live-table--game-over > .online-table-header,
 .online-live-table--game-over > .online-connection-notice,
@@ -265,6 +269,19 @@
   .online-live-table .next-round-ready { margin-top: 6px; }
   .online-palo-banner { top: 15%; padding: 5px 10px; }
   .online-seat-announcement { max-width: 170px; padding: 5px 8px; font-size: .52rem; }
+  /* A landscape phone is ~390px tall: at full size the crown, name and standings
+     alone push the actions past the fold. Shrink the celebration so "Play again"
+     and "Leave game" land on screen without scrolling. */
+  .online-game-over-card { gap: 5px; padding: 10px 16px; }
+  .online-game-over-card .tp-winner-crown { margin-bottom: 0; font-size: 2.6rem; }
+  .online-game-over-card > p { font-size: .6rem; letter-spacing: .12em; }
+  .online-game-over-card > h2 { font-size: clamp(1.7rem, 5vw, 2.7rem); }
+  .online-game-over-card > strong { margin-bottom: 2px; font-size: .72rem; }
+  .online-game-over-card .summary-standings { max-height: 26vh; margin: 2px 0; padding: 5px; border-radius: 12px; }
+  .online-game-over-card .summary-standings li { min-height: 30px; padding: 4px 9px; }
+  .online-game-over-card .summary-last-call { margin: 0 !important; font-size: .58rem; }
+  .online-game-over-card .game-over-actions .button { min-height: 38px; padding: 7px 14px; font-size: .66rem; }
+  .online-game-over-card .game-over-hint { margin-top: 2px; font-size: .55rem; }
 }
 
 @media (prefers-reduced-motion: no-preference) {

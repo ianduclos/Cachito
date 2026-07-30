@@ -98,7 +98,8 @@ function enterTable({ spectator = false, eliminated = false, shuffling = true, v
   return view;
 }
 
-function enterWinner() {
+function enterWinner({ viewerId = "player-1", spectator = false }: { viewerId?: string; spectator?: boolean } = {}) {
+  const playerId = spectator ? undefined : viewerId;
   const players = gamePlayers("player-1").map((player, index) => ({ ...player, diceCount: index === 0 ? 3 : 0, eliminated: index !== 0 }));
   const view: PublicGameView = {
     phase: "gameOver",
@@ -110,7 +111,7 @@ function enterWinner() {
     currentBid: null,
     lastBidderId: null,
     winnerId: "player-1",
-    viewerPlayerId: "player-1",
+    ...(playerId ? { viewerPlayerId: playerId } : {}),
   };
   const analysis: MatchAnalysis = {
     schemaVersion: 3, generatedAt: "2026-07-18T00:00:00.000Z", rounds: 9, totalTurns: 42, winnerId: "player-1",
@@ -131,7 +132,7 @@ function enterWinner() {
   };
   act(() => {
     socket().open();
-    socket().message({ type: "joined", roomCode: "ABCDE", playerId: "player-1", reconnectToken: "secret", hostPlayerId: "player-1" });
+    socket().message({ type: "joined", roomCode: "ABCDE", ...(playerId ? { playerId, reconnectToken: "secret" } : {}), hostPlayerId: "player-1" });
     socket().message({
       type: "state",
       hostPlayerId: "player-1",
@@ -379,6 +380,26 @@ describe("OnlineGame connection lifecycle", () => {
     expect(winner).toHaveTextContent("9 rounds");
     expect(container.querySelectorAll(".tp-confetti i")).toHaveLength(132);
     expect(screen.queryByLabelText("Your hand and turn controls")).not.toBeInTheDocument();
+  });
+
+  it("lets any seated player — not just the host — take the finished table back to its lobby", () => {
+    render(<OnlineGame onExit={vi.fn()} />);
+    // Min-chi Park is neither the host (player-1) nor the winner, and is out of
+    // dice: the player most likely to be stuck on the winner screen.
+    enterWinner({ viewerId: "player-2" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Play again · same lobby" }));
+
+    expect(socket().sent.map((message) => JSON.parse(message))).toContainEqual({ type: "return-to-lobby" });
+  });
+
+  it("offers no play-again action to spectators, who never held a seat", () => {
+    render(<OnlineGame onExit={vi.fn()} />);
+    enterWinner({ spectator: true });
+
+    expect(screen.getByRole("dialog", { name: "Game winner" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Play again · same lobby" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Leave game" })).toBeInTheDocument();
   });
 
   it("opens a dense, plain-language completed-game analysis from the winner screen", () => {
