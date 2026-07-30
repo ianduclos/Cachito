@@ -98,7 +98,7 @@ function enterTable({ spectator = false, eliminated = false, shuffling = true, v
   return view;
 }
 
-function enterWinner({ viewerId = "player-1", spectator = false }: { viewerId?: string; spectator?: boolean } = {}) {
+function enterWinner({ viewerId = "player-1", spectator = false, shortfall = false }: { viewerId?: string; spectator?: boolean; shortfall?: boolean } = {}) {
   const playerId = spectator ? undefined : viewerId;
   const players = gamePlayers("player-1").map((player, index) => ({ ...player, diceCount: index === 0 ? 3 : 0, eliminated: index !== 0 }));
   const view: PublicGameView = {
@@ -119,10 +119,15 @@ function enterWinner({ viewerId = "player-1", spectator = false }: { viewerId?: 
     startingDice: [{ playerId: "player-1", dice: 5 }, { playerId: "player-2", dice: 5 }],
     tableAverages: { bluff: 22, aggression: 48, challenge: 36 },
     momentum: [{ round: 9, players: [{ playerId: "player-1", dice: 3, share: 100 }, { playerId: "player-2", dice: 0, share: 0 }] }],
-    roundStories: [{
+    roundStories: [...(shortfall ? [{
+      round: 8, paloFijo: false,
+      bids: [{ playerId: "player-2", quantity: 6, denomination: 5 as const }],
+      callerId: "player-1", bidderId: "player-2", kind: "dudo" as const, correct: true, actualCount: 2, margin: -4,
+      diceChanges: [{ playerId: "player-2", delta: -1 }],
+    }] : []), {
       round: 9, paloFijo: false,
       bids: [{ playerId: "player-2", quantity: 4, denomination: 5, tableDice: 1 }, { playerId: "player-1", quantity: 5, denomination: 5 }],
-      callerId: "player-2", bidderId: "player-1", kind: "dudo", correct: false, actualCount: 5, margin: 0,
+      callerId: "player-2", bidderId: "player-1", kind: "dudo" as const, correct: false, actualCount: 5, margin: 0,
       diceChanges: [{ playerId: "player-2", delta: -1 }],
     }],
     players: [
@@ -275,6 +280,32 @@ describe("OnlineGame connection lifecycle", () => {
     expect(socket().sent.map((message) => JSON.parse(message))).toContainEqual({ type: "action", action: { type: "bid", playerId: "", bid: { quantity: 3, denomination: 6 } } });
   });
 
+  it("opens a new round at quantity 1 instead of carrying the last one's climb over", () => {
+    render(<OnlineGame onExit={vi.fn()} />);
+    const view = enterTable({ shuffling: false });
+
+    // Climb to a high claim during the round the way a player would.
+    for (let step = 0; step < 5; step += 1) fireEvent.click(screen.getByRole("button", { name: "Increase quantity" }));
+    expect(screen.getByRole("button", { name: /^Prepar(ed|ing) 9 / })).toBeInTheDocument();
+
+    // The next round opens with nothing to beat, so every quantity is legal —
+    // the builder must still come back to 1 rather than sitting on 8.
+    act(() => socket().message({
+      type: "state",
+      hostPlayerId: "player-1",
+      view: { ...view, round: 2, currentPlayerId: "player-1", currentBid: null, lastBidderId: null },
+      // The climbed-to bid is itself legal as an opening claim — which is exactly
+      // why keeping it selected was dangerous.
+      legalActions: { bids: [{ quantity: 1, denomination: 2 }, { quantity: 9, denomination: 2 }, { quantity: 1, denomination: 5 }], canDudo: false, canCalzo: false, canPutDiceOnTable: true },
+      history: [],
+      playerStatuses: view.players.map((player) => ({ id: player.id, connected: true, covered: false })),
+      turnDeadlineAt: Date.now() + 60_000,
+    }));
+
+    expect(screen.getByRole("button", { name: "Bid 1 Dones" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Bid 9 Dones" })).not.toBeInTheDocument();
+  });
+
   it("shows each revealed hand once, without re-adding table dice the projection already includes", () => {
     // The reveal projection folds table dice into `hand` (projections.ts,
     // includeTableDiceInHand). player-2 played 2 of 5 dice to the table, so
@@ -388,9 +419,34 @@ describe("OnlineGame connection lifecycle", () => {
     // dice: the player most likely to be stuck on the winner screen.
     enterWinner({ viewerId: "player-2" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Play again · same lobby" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to lobby" }));
 
     expect(socket().sent.map((message) => JSON.parse(message))).toContainEqual({ type: "return-to-lobby" });
+  });
+
+  it("crowns the biggest liar from the widest revealed shortfall", () => {
+    render(<OnlineGame onExit={vi.fn()} />);
+    enterWinner({ shortfall: true });
+
+    fireEvent.click(screen.getByRole("button", { name: "Game analysis" }));
+    const panel = screen.getByRole("dialog", { name: "Game analysis" });
+
+    // Min-chi claimed six Chinas in round 8 with two there — four short, the
+    // widest gap of the match, so the crown and the tile both name them.
+    expect(panel).toHaveTextContent("Biggest liar");
+    expect(panel).toHaveTextContent("♛ Min-chi Park");
+    expect(panel).toHaveTextContent("Round 8: claimed 6 Chinas, 2 there");
+    const crown = screen.getByLabelText("Biggest liar: round 8, claimed 6 with 2 on the table");
+    expect(crown.closest(".analysis-player")).toHaveTextContent("Min-chi Park");
+  });
+
+  it("hands out no liar's crown when every revealed claim held up", () => {
+    render(<OnlineGame onExit={vi.fn()} />);
+    enterWinner();
+
+    fireEvent.click(screen.getByRole("button", { name: "Game analysis" }));
+
+    expect(screen.getByRole("dialog", { name: "Game analysis" })).not.toHaveTextContent("Biggest liar");
   });
 
   it("offers no play-again action to spectators, who never held a seat", () => {
@@ -398,7 +454,7 @@ describe("OnlineGame connection lifecycle", () => {
     enterWinner({ spectator: true });
 
     expect(screen.getByRole("dialog", { name: "Game winner" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Play again · same lobby" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Back to lobby" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Leave game" })).toBeInTheDocument();
   });
 

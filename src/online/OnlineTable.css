@@ -84,6 +84,8 @@
 .online-game-over-card .game-over-actions { width: min(620px, 90vw); }
 .online-game-over-card .game-over-actions .button { min-height: 48px; padding: 10px 18px; font-size: .75rem; }
 .online-game-over-card .game-analysis-button { border: 1px solid #75d8ae; background: #123d31; color: #c9ffe5; }
+/* Peer of Game analysis and Leave game — three offers, no default action. */
+.online-game-over-card .game-lobby-button { border: 1px solid #e8bf66; background: #3a2f14; color: #f6e2b4; }
 .online-game-over-card .game-over-hint { margin-top: 6px; color: #a9c4b8; font-size: .62rem; letter-spacing: .04em; }
 .online-live-table .tp-confetti { position: fixed; z-index: 102; inset: 0; }
 .online-live-table--game-over > .online-table-header,
@@ -122,7 +124,9 @@
 .analysis-player > header > div { min-width: 0; display: flex; align-items: center; gap: 7px; }
 .analysis-player-dot { width: 9px; height: 9px; flex: none; border-radius: 50%; background: var(--player-color); }
 .analysis-player h3 { overflow: hidden; margin: 0; font-size: .92rem; text-overflow: ellipsis; white-space: nowrap; }
-.analysis-player header b { padding: 3px 6px; border-radius: 999px; color: #08251f; background: #e5bd63; font-size: .52rem; letter-spacing: .08em; text-transform: uppercase; }
+.analysis-player header b { flex: none; padding: 3px 6px; border-radius: 999px; color: #08251f; background: #e5bd63; font-size: .52rem; letter-spacing: .08em; text-transform: uppercase; }
+/* The liar's crown reads as a roast, not an accolade — sits apart from the gold. */
+.analysis-player header b.analysis-liar-crown { color: #ffe4d3; background: #a03f28; }
 .analysis-player header small { flex: none; color: #95baaa; font-size: .58rem; }
 .analysis-player > p { min-height: 2.3em; margin: 7px 0 10px; color: #c7d7d0; font-size: .69rem; line-height: 1.35; }
 .analysis-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
@@ -166,6 +170,8 @@
 .analysis-tiles span { display: block; color: #a9c7bb; font-size: .58rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .analysis-tiles strong { display: block; margin: 3px 0 1px; color: #f5ead4; font-size: 1.45rem; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
 .analysis-tiles small { color: #8faea2; font-size: .6rem; }
+/* A name, not a number: smaller and free to wrap so long names stay inside. */
+.analysis-tiles > div.analysis-tile--liar strong { overflow-wrap: anywhere; color: #ffc9b4; font-size: 1rem; line-height: 1.15; }
 .analysis-flow { margin: 0; }
 .analysis-flow svg { display: block; width: 100%; height: auto; }
 .analysis-flow-grid { stroke: #ffffff14; stroke-width: 1; }

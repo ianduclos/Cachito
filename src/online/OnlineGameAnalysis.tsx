@@ -203,6 +203,26 @@ function FaceBars({ playerId, analysis }: { playerId: string; analysis: MatchAna
   </div>;
 }
 
+/**
+ * The match's biggest liar: the single revealed claim that fell furthest below the
+ * dice actually on the table. An outcome, never a confession — the player may have
+ * been cornered — but the table still gets to hand out the crown. Read from the
+ * public round stories, so it needs nothing the browser was not already given.
+ */
+function biggestLiar(analysis: MatchAnalysis) {
+  const shortfalls = analysis.roundStories.filter((story) => story.margin < 0);
+  if (!shortfalls.length) return undefined;
+  const worst = shortfalls.reduce((best, story) => story.margin < best.margin ? story : best);
+  return {
+    playerId: worst.bidderId,
+    gap: -worst.margin,
+    round: worst.round,
+    quantity: worst.actualCount - worst.margin,
+    denomination: worst.bids.at(-1)?.denomination,
+    actualCount: worst.actualCount,
+  };
+}
+
 function GameAnalysisPanel({ analysis, onClose }: { analysis: MatchAnalysis; onClose: () => void }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalFocus(dialogRef);
@@ -219,17 +239,20 @@ function GameAnalysisPanel({ analysis, onClose }: { analysis: MatchAnalysis; onC
   const exactBids = analysis.roundStories.filter((story) => story.margin === 0).length;
   const tableDicePlays = analysis.players.reduce((sum, player) => sum + player.stats.tableDicePlays, 0);
   const series = diceSeries(analysis);
-  const tiles = [
+  const liar = biggestLiar(analysis);
+  const liarName = liar ? nameOf(liar.playerId) : undefined;
+  const tiles: Array<{ label: string; value: string; note: string; help?: string; className?: string }> = [
     { label: "Rounds", value: String(analysis.rounds), note: `${analysis.totalTurns} turns` },
     { label: "Calls", value: `${rightCalls}/${calls}`, note: "ended right", help: "Every round ends with a Dudo or Calzo. This is how many of those calls were correct." },
     { label: "Knife-edge bids", value: String(exactBids), note: "exactly true", help: "Final bids where the revealed count matched the claim exactly — the boldest true bids in the game." },
     { label: "Table dice", value: String(tableDicePlays), note: "public commitments", help: "Times a player revealed part of their hand to back a bid and rerolled the rest." },
+    ...(liar ? [{ label: "Biggest liar", className: "analysis-tile--liar", value: `♛ ${liarName}`, note: `Round ${liar.round}: claimed ${liar.quantity}${liar.denomination ? ` ${denominationNames[liar.denomination]}` : ""}, ${liar.actualCount} there`, help: `The claim that fell furthest below the dice on the table — ${liar.gap} short. An outcome, not a confession: a cornered player has to say something.` }] : []),
   ];
   return <section className="game-analysis" role="dialog" aria-modal="true" aria-label="Game analysis" tabIndex={-1} ref={dialogRef}>
     <header><div><p>Completed match · {analysis.rounds} {analysis.rounds === 1 ? "round" : "rounds"}</p><h2>Game analysis</h2><strong>{analysis.headline}</strong></div><button className="button button--ghost" type="button" onClick={onClose}>Back to winner</button></header>
     <div className="analysis-scroll">
       <section className="analysis-tiles" aria-label="Match at a glance">
-        {tiles.map((tile) => <div key={tile.label}><span>{tile.label}{tile.help && <> <Help label={tile.label} text={tile.help} /></>}</span><strong>{tile.value}</strong><small>{tile.note}</small></div>)}
+        {tiles.map((tile) => <div key={tile.label} className={tile.className}><span>{tile.label}{tile.help && <> <Help label={tile.label} text={tile.help} /></>}</span><strong>{tile.value}</strong><small>{tile.note}</small></div>)}
       </section>
       {analysis.keyMoment && <section className="analysis-key-moment"><span>Turning point</span><strong>{analysis.keyMoment}</strong></section>}
       <section className="analysis-momentum"><div><h3>The match, burning down</h3><small>Dice each player still held after every round — raw counts, not a chance of winning.</small></div>
@@ -239,7 +262,7 @@ function GameAnalysisPanel({ analysis, onClose }: { analysis: MatchAnalysis; onC
       <RoundRail analysis={analysis} colorOf={colorOf} nameOf={nameOf} />
       <CallBoard analysis={analysis} colorOf={colorOf} nameOf={nameOf} />
       <section className="analysis-player-grid">{analysis.players.map((player, index) => <article className={`analysis-player${player.winner ? " analysis-player--winner" : ""}`} key={player.id} style={{ "--player-color": `var(--analysis-player-${index % 8})` } as CSSProperties}>
-        <header><div><span className="analysis-player-dot" /><h3>{player.name}</h3>{player.winner && <b>Winner</b>}</div>{player.controller === "bot" && <small>{player.persona ?? "Bot"}</small>}</header>
+        <header><div><span className="analysis-player-dot" /><h3>{player.name}</h3>{player.winner && <b>Winner</b>}{liar?.playerId === player.id && <b className="analysis-liar-crown" aria-label={`Biggest liar: round ${liar.round}, claimed ${liar.quantity} with ${liar.actualCount} on the table`}>♛ Biggest liar</b>}</div>{player.controller === "bot" && <small>{player.persona ?? "Bot"}</small>}</header>
         <DiceSparkline counts={series.find((entry) => entry.playerId === player.id)?.counts ?? []} color={`var(--analysis-player-${index % 8})`} />
         <p>{player.verdict}</p>
         <div className="analysis-metrics"><AnalysisMetric name="bluff" player={player} /><AnalysisMetric name="aggression" player={player} /><AnalysisMetric name="challenge" player={player} /></div>
@@ -264,5 +287,5 @@ export function GameSummary({ view, analysis, history, connected, canReturnToLob
     const distance = 18 + (index % 11) * 7;
     return <i key={index} style={{ "--burst-x": `${Math.cos(angle) * distance}vw`, "--burst-y": `${Math.sin(angle) * distance * .62}vh`, "--drift": `${((index * 19) % 27) - 13}vw`, "--spin": `${540 + (index % 8) * 135}deg`, "--delay": `${(index % 24) * .028}s`, "--duration": `${2.9 + (index % 6) * .17}s`, width: `${5 + (index % 6)}px`, height: `${7 + (index % 8)}px` } as CSSProperties} />;
   });
-  return <>{!showAnalysis && <><div className="tp-confetti" aria-hidden="true">{confetti}</div><section className="tp-game-over online-game-over-card" role="dialog" aria-label="Game winner"><ConnectionNotice connected={connected} context="game" /><p>Champion of the table</p><span className="tp-winner-crown" aria-hidden="true">♛</span><h2>{winner?.name} wins!</h2><strong>The table is theirs · {view.round} {view.round === 1 ? "round" : "rounds"}</strong><ol className="summary-standings">{standings.map((player, index) => <li key={player.id}><span>{index + 1}</span><strong>{player.name}</strong><em>{player.id === view.winnerId ? "Winner" : player.diceCount ? `${player.diceCount} dice left` : "Out"}</em></li>)}</ol>{lastCall && <p className="summary-last-call">Last call: {lastCall}</p>}<div className="game-over-actions">{analysis && <button className="button game-analysis-button" onClick={() => setShowAnalysis(true)}>Game analysis</button>}{canReturnToLobby && <button className="button button--primary" disabled={!connected} onClick={onReturnToLobby}>Play again · same lobby</button>}<button className="button button--ghost" disabled={!connected} onClick={onExit}>Leave game</button></div>{canReturnToLobby && <small className="game-over-hint">Playing again keeps this room, its players, bots and rules.</small>}</section></>}{showAnalysis && analysis && <GameAnalysisPanel analysis={analysis} onClose={() => setShowAnalysis(false)} />}</>;
+  return <>{!showAnalysis && <><div className="tp-confetti" aria-hidden="true">{confetti}</div><section className="tp-game-over online-game-over-card" role="dialog" aria-label="Game winner"><ConnectionNotice connected={connected} context="game" /><p>Champion of the table</p><span className="tp-winner-crown" aria-hidden="true">♛</span><h2>{winner?.name} wins!</h2><strong>The table is theirs · {view.round} {view.round === 1 ? "round" : "rounds"}</strong><ol className="summary-standings">{standings.map((player, index) => <li key={player.id}><span>{index + 1}</span><strong>{player.name}</strong><em>{player.id === view.winnerId ? "Winner" : player.diceCount ? `${player.diceCount} dice left` : "Out"}</em></li>)}</ol>{lastCall && <p className="summary-last-call">Last call: {lastCall}</p>}<div className="game-over-actions">{analysis && <button className="button game-analysis-button" onClick={() => setShowAnalysis(true)}>Game analysis</button>}{canReturnToLobby && <button className="button game-lobby-button" disabled={!connected} onClick={onReturnToLobby}>Back to lobby</button>}<button className="button button--ghost" disabled={!connected} onClick={onExit}>Leave game</button></div>{canReturnToLobby && <small className="game-over-hint">The lobby keeps this room, its players, bots and rules for another game.</small>}</section></>}{showAnalysis && analysis && <GameAnalysisPanel analysis={analysis} onClose={() => setShowAnalysis(false)} />}</>;
 }
