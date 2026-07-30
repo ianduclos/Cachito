@@ -235,6 +235,11 @@ describe("authoritative online rooms", () => {
     expect(lobby.hostPlayerId).toBe(hostJoined.playerId);
     expect(lobby.players.map((player) => player.id)).toEqual([hostJoined.playerId, guestJoined.playerId]);
     await expect(guest.take((message) => message.type === "lobby" && message.players.length === 2)).resolves.toMatchObject({ roomCode: hostJoined.roomCode });
+
+    // Players leave the winner screen one at a time, so the host asking after the
+    // guest already reset the room is ordinary — and must not raise an error.
+    host.send({ type: "return-to-lobby" });
+    await expect(host.take(isError, 200)).rejects.toThrow(/Timed out/);
   });
 
   it("keeps spectators from returning a finished table to the lobby", async () => {

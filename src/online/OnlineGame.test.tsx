@@ -449,6 +449,33 @@ describe("OnlineGame connection lifecycle", () => {
     expect(screen.getByRole("dialog", { name: "Game analysis" })).not.toHaveTextContent("Biggest liar");
   });
 
+  it("keeps a player on the winner screen after someone else takes the room back to its lobby", () => {
+    render(<OnlineGame onExit={vi.fn()} />);
+    enterWinner({ viewerId: "player-2" });
+
+    // Another player pressed first: the room resets, but this player is still
+    // reading the summary and decides for themselves when to leave it.
+    act(() => socket().message({
+      type: "lobby",
+      roomCode: "ABCDE",
+      hostPlayerId: "player-1",
+      players: [{ id: "player-1", name: "Ana María", connected: true, isBot: false }, { id: "player-2", name: "Min-chi Park", connected: true, isBot: false }],
+      spectatorCount: 0,
+      rules: { ...DEFAULT_GAME_RULES },
+    }));
+
+    expect(screen.getByRole("dialog", { name: "Game winner" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Game winner" })).toHaveTextContent("already back in its lobby");
+    expect(screen.queryByRole("button", { name: "Start game" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to lobby" }));
+
+    expect(screen.queryByRole("dialog", { name: "Game winner" })).not.toBeInTheDocument();
+    expect(screen.getByText("ABCDE")).toBeInTheDocument();
+    // The room was already reset, so nothing needed to be asked of the server.
+    expect(socket().sent.map((message) => JSON.parse(message))).not.toContainEqual({ type: "return-to-lobby" });
+  });
+
   it("offers no play-again action to spectators, who never held a seat", () => {
     render(<OnlineGame onExit={vi.fn()} />);
     enterWinner({ spectator: true });

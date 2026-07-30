@@ -22,4 +22,5 @@ export const BOT_NAMES = [
   "Cori Soldevilla",
   "Diego Exebio Lozt",
   "Melchorita",
+  "Renata Canepa",
 ] as const;

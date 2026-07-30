@@ -730,11 +730,15 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           const otherPlayers = room.players.filter((candidate) => candidate.id !== starter.id).sort(() => Math.random() - .5);
           room.game = createGame([starter, ...otherPlayers].map(({ id, name }): PlayerSetup => ({ id, name })), Math.random, room.rules); room.startedAt = new Date().toISOString(); room.history = [`Round 1 begins — ${starter.name} starts.`]; room.botHistory = []; room.botDecisions = []; room.analysis = undefined; room.actions = [{ at: room.startedAt, round: 1, action: { type: "round-start" } }]; room.roundDeals = []; room.roundResolutions = []; room.turnTimings = []; room.activeTurn = undefined; recordRoundDeal(room); touch(room); startRoundShuffle(room); void persistRoomSnapshot(room); publish(room);
         } else if (message.type === "return-to-lobby") {
-          // Any player still at the finished table can take everyone back to the
-          // lobby for another game — waiting on the host left the rest of the
-          // table with no way back to it. Queued spectators are not seated, so
-          // they stay out of it and get promoted by the reset below.
-          if (!player || room.game?.phase !== "gameOver" || !room.players.some((candidate) => candidate.id === player!.id)) throw new Error("Only a player at this finished table can return it to the lobby.");
+          // Any player still at the finished table can take the room back to the
+          // lobby — waiting on the host left the rest of the table with no way
+          // back to it. Queued spectators are not seated, so they stay out of it
+          // and get promoted by the reset below. Each player leaves the winner
+          // screen on their own schedule, so two of them asking is normal: the
+          // second request finds the room already reset and is simply done.
+          if (!player || !room.players.some((candidate) => candidate.id === player!.id)) throw new Error("Only a player at this finished table can return it to the lobby.");
+          if (!room.game) return;
+          if (room.game.phase !== "gameOver") throw new Error("This game is still running.");
           promoteQueuedSpectators(room); room.game = undefined; room.history = []; room.botHistory = []; room.botDecisions = []; room.analysis = undefined; room.announcement = undefined; room.paused = undefined; room.shuffleReadyPlayerIds = undefined; room.nextRoundReadyPlayerIds = undefined; room.nextRoundDeadlineAt = undefined; room.shuffleDeadlineAt = undefined; if (room.shuffleTimer) clearTimeout(room.shuffleTimer); room.shuffleTimer = undefined; for (const timer of room.botShuffleTimers ?? []) clearTimeout(timer); room.botShuffleTimers = []; if (room.nextRoundTimer) clearTimeout(room.nextRoundTimer); room.nextRoundTimer = undefined; for (const timer of room.botNextRoundTimers ?? []) clearTimeout(timer); room.botNextRoundTimers = []; if (room.turnTimer) clearTimeout(room.turnTimer); room.turnTimer = undefined; room.turnDeadlineAt = undefined; room.actions = []; room.roundDeals = []; room.roundResolutions = []; room.turnTimings = []; room.activeTurn = undefined; room.startedAt = undefined; touch(room); void persistRoomSnapshot(room); publish(room);
         } else if (message.type === "toggle-pause") {
           if (!player || !room.game || room.game.phase === "gameOver" || !room.players.some((candidate) => candidate.id === player!.id)) throw new Error("Only a player at this table can pause or resume the game.");
