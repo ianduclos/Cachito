@@ -5,12 +5,12 @@ import { ConnectionNotice } from "./OnlineConnectionNotice";
 import { useModalFocus } from "./OnlineModal";
 
 const metricHelp = {
-  bluff: "How often a final claim was unsupported when the dice were revealed. This describes the outcome, not whether the player meant to bluff. Early scores lean toward the table baseline.",
+  bluff: "Averaged over every bid they made, the chance the claim was false at the moment they made it, judged from their own dice. High means they kept claiming past what their hand supported. It measures the risk they took, not whether they meant to bluff — the revealed outcomes are counted separately below.",
   aggression: "How strongly and quickly someone raised: bolder raises into uncertain bids score higher.",
   challenge: "How much risk someone accepted by calling Dudo or Calzo. Call accuracy is shown separately.",
 } as const;
 
-const metricLabels = { bluff: "Unsupported", aggression: "Aggression", challenge: "Challenge" } as const;
+const metricLabels = { bluff: "Claim risk", aggression: "Aggression", challenge: "Challenge" } as const;
 const denominationNames: Record<Die, string> = { 1: "Aces", 2: "Dones", 3: "Trenes", 4: "Cuadras", 5: "Chinas", 6: "Sambas" };
 const dieGlyphs: Record<Die, string> = { 1: "⚀", 2: "⚁", 3: "⚂", 4: "⚃", 5: "⚄", 6: "⚅" };
 
@@ -33,12 +33,13 @@ function AnalysisMetric({ name, player }: { name: keyof MatchAnalysisPlayer["sco
 
 function ClaimBreakdown({ player }: { player: MatchAnalysisPlayer }) {
   const stat = (name: keyof MatchAnalysisPlayer["stats"]) => player.stats[name] ?? 0;
+  const revealed = stat("verifiedFinalBids");
   const rows = [
-    { label: "Unsupported", help: "The final bid was above the number revealed. This is an outcome, not proof of intent.", total: stat("unsupportedFinalBids"), caught: stat("unsupportedCaught"), survived: stat("unsupportedSurvived") },
-    { label: "Deliberate", help: "The persona bot explicitly chose a bluffing play. Human intent is not inferred.", total: player.controller === "bot" ? stat("deliberatePersonaBluffs") : undefined, caught: stat("deliberateBluffsCaught"), survived: stat("deliberateBluffsSurvived") },
-    { label: "Forced raise", help: "No legal raise could be fully covered by that player’s own dice at the time.", total: stat("forcedEscalations"), caught: stat("forcedEscalationsCaught"), survived: stat("forcedEscalationsSurvived") },
+    { label: "Unsupported", help: "The final bid was above the number revealed. This is an outcome, not proof of intent.", total: stat("unsupportedFinalBids"), of: revealed, caught: stat("unsupportedCaught"), survived: stat("unsupportedSurvived") },
+    { label: "Deliberate", help: "The persona bot explicitly chose a bluffing play. Human intent is not inferred.", total: player.controller === "bot" ? stat("deliberatePersonaBluffs") : undefined, of: undefined, caught: stat("deliberateBluffsCaught"), survived: stat("deliberateBluffsSurvived") },
+    { label: "Forced raise", help: "No legal raise could be fully covered by that player’s own dice at the time.", total: stat("forcedEscalations"), of: undefined, caught: stat("forcedEscalationsCaught"), survived: stat("forcedEscalationsSurvived") },
   ];
-  return <section className="analysis-claim-breakdown" aria-label={`${player.name} final bid breakdown`}>{rows.map((row) => <div key={row.label}><span>{row.label} <Help label={row.label} text={row.help} /></span><strong>{row.total ?? "—"}</strong><small>{row.total === undefined ? "Intent not recorded" : `${row.caught} caught · ${row.survived} survived`}</small></div>)}</section>;
+  return <section className="analysis-claim-breakdown" aria-label={`${player.name} final bid breakdown`}>{rows.map((row) => <div key={row.label}><span>{row.label} <Help label={row.label} text={row.help} /></span><strong>{row.total ?? "—"}</strong><small>{row.total === undefined ? "Intent not recorded" : `${row.of === undefined ? "" : `of ${row.of} revealed · `}${row.caught} caught · ${row.survived} survived`}</small></div>)}</section>;
 }
 
 /** Dice each player held after every round, as one absolute-count series per player. */

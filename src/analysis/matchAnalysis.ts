@@ -62,6 +62,8 @@ export interface MatchAnalysisPlayer {
   }
   stats: {
     bids: number
+    /** Final bids of this player's that actually reached a reveal — the denominator for `unsupportedFinalBids`. */
+    verifiedFinalBids: number
     unsupportedFinalBids: number
     unsupportedCaught: number
     unsupportedSurvived: number
@@ -108,7 +110,7 @@ export interface MatchAnalysisRoundStory {
 }
 
 export interface MatchAnalysis {
-  schemaVersion: 3
+  schemaVersion: 4
   generatedAt: string
   rounds: number
   totalTurns: number
@@ -125,9 +127,9 @@ export interface MatchAnalysis {
 }
 
 type MutablePlayer = MatchAnalysisPlayer & {
+  claimValues: number[]
   aggressionValues: number[]
   challengeValues: number[]
-  verifiedBids: number
 }
 
 interface FinalBidClassification {
@@ -163,6 +165,17 @@ function facingRisk(view: PublicGameView, playerId: string, bid: Bid, kind: 'rai
   return 1 - distribution.exact
 }
 
+/**
+ * The table as the bidder themselves saw it: the public view plus their own dice,
+ * but only when the round's rules let them look. During blind Palo Fijo a player
+ * holding more than one die bids without seeing their hand, so scoring that claim
+ * against it would credit them with knowledge they never had.
+ */
+function bidderView(view: PublicGameView, playerId: string, hand: Die[], paloFijo: boolean, rules: GameRules): PublicGameView {
+  if (paloFijo && rules.paloFijoBlindDice && hand.length > 1) return view
+  return { ...view, players: view.players.map((player) => player.id === playerId ? { ...player, hand: [...hand] } : player) }
+}
+
 function sameBid(left: Bid, right: Bid) {
   return left.quantity === right.quantity && left.denomination === right.denomination
 }
@@ -191,10 +204,14 @@ function verdict(player: MutablePlayer, averages: MatchAnalysis['tableAverages']
   const challenge = player.scores.challenge.value - averages.challenge
   const style = aggression > 8 ? 'Pressed the table hard' : aggression < -8 ? 'Bid patiently' : 'Kept a balanced bidding pace'
   const nerve = challenge > 8 ? 'and challenged boldly' : challenge < -8 ? 'and chose calls carefully' : 'and picked measured moments to challenge'
+  const risk = player.scores.bluff.value - averages.bluff
+  const reach = risk > 12 ? ' Claims regularly ran past what their own dice supported.' : risk < -12 ? ' Claims stayed close to what their own dice supported.' : ''
   const claims = player.stats.unsupportedFinalBids
-    ? ` ${player.stats.unsupportedFinalBids} final ${player.stats.unsupportedFinalBids === 1 ? 'claim was' : 'claims were'} unsupported: ${player.stats.unsupportedCaught} caught, ${player.stats.unsupportedSurvived} survived.`
-    : ' Every final claim held up at reveal.'
-  return `${style} ${nerve}.${claims}`
+    ? ` ${player.stats.unsupportedFinalBids} of ${player.stats.verifiedFinalBids} revealed ${player.stats.verifiedFinalBids === 1 ? 'claim' : 'claims'} fell short: ${player.stats.unsupportedCaught} caught, ${player.stats.unsupportedSurvived} survived.`
+    : player.stats.verifiedFinalBids
+      ? ' Every claim that reached a reveal held up.'
+      : ' No claim of theirs ever reached a reveal.'
+  return `${style} ${nerve}.${reach}${claims}`
 }
 
 export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().toISOString()): MatchAnalysis {
@@ -203,9 +220,9 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
     ...seat,
     winner: seat.id === input.finalState.winnerId,
     verdict: '',
-    scores: { bluff: score(priors.bluffRate, 0, 4), aggression: score(priors.aggressionMean, 0, 3), challenge: score(priors.challengeMean, 0, 2) },
-    stats: { bids: 0, unsupportedFinalBids: 0, unsupportedCaught: 0, unsupportedSurvived: 0, deliberatePersonaBluffs: 0, deliberateBluffsCaught: 0, deliberateBluffsSurvived: 0, forcedEscalations: 0, forcedEscalationsCaught: 0, forcedEscalationsSurvived: 0, dudoAttempts: 0, dudoCorrect: 0, calzoAttempts: 0, calzoCorrect: 0, diceGained: 0, diceLost: 0, tableDicePlays: 0 },
-    aggressionValues: [], challengeValues: [], verifiedBids: 0,
+    scores: { bluff: score(0, 0, 4), aggression: score(priors.aggressionMean, 0, 3), challenge: score(priors.challengeMean, 0, 2) },
+    stats: { bids: 0, verifiedFinalBids: 0, unsupportedFinalBids: 0, unsupportedCaught: 0, unsupportedSurvived: 0, deliberatePersonaBluffs: 0, deliberateBluffsCaught: 0, deliberateBluffsSurvived: 0, forcedEscalations: 0, forcedEscalationsCaught: 0, forcedEscalationsSurvived: 0, dudoAttempts: 0, dudoCorrect: 0, calzoAttempts: 0, calzoCorrect: 0, diceGained: 0, diceLost: 0, tableDicePlays: 0 },
+    claimValues: [], aggressionValues: [], challengeValues: [],
   }]))
 
   for (const deal of input.roundDeals) {
@@ -231,6 +248,11 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
         if (decision) usedBotDecisions.add(decision.sequence)
         const stateBeforeBid: PlayingState = { phase: 'playing', round: deal.round, paloFijo: deal.paloFijo, rules: input.rules, players, currentPlayerId: actor.id, currentBid, lastBidderId }
         actor.stats.bids += 1
+        // Claim risk: the chance this player's own claim was false at the moment they
+        // made it, judged from their own dice. Every bid counts — including openings
+        // and claims nobody ever challenged — which is what makes it readable where
+        // the revealed-outcome count has one or two samples a match.
+        actor.claimValues.push(facingRisk(bidderView(view, actor.id, handsById.get(actor.id) ?? [], deal.paloFijo, input.rules), actor.id, action.bid, 'raise'))
         if (currentBid) actor.aggressionValues.push(facingRisk(view, actor.id, currentBid, 'raise'))
         if (entry.tableDice?.length) { actor.stats.tableDicePlays += 1; tableDiceById.set(actor.id, [...entry.tableDice]) }
         finalBidClassification = {
@@ -260,7 +282,7 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
       if (resolved.kind === 'calzo' && resolved.correct) caller.stats.calzoCorrect += 1
     }
     if (bidder) {
-      bidder.verifiedBids += 1
+      bidder.stats.verifiedFinalBids += 1
       const caught = resolved.kind === 'dudo' && resolved.correct
       const matchingFinalBid = finalBidClassification?.bidderId === resolved.bidderId && sameBid(finalBidClassification.bid, resolved.bid)
         ? finalBidClassification
@@ -298,9 +320,11 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
 
   const mean = (values: number[], prior: number, strength: number) => (prior * strength + values.reduce((sum, value) => sum + value, 0)) / (strength + values.length)
   for (const player of mutable.values()) {
-    const bluffMean = (priors.bluffRate * priors.bluffPriorStrength + player.stats.unsupportedFinalBids) / (priors.bluffPriorStrength + player.verifiedBids)
+    // No population prior here: claim risk has one sample per bid, so a match's own
+    // bids carry it. Priors stay on aggression and challenge, which have fewer.
+    const claimRisk = player.claimValues.length ? player.claimValues.reduce((sum, value) => sum + value, 0) / player.claimValues.length : 0
     player.scores = {
-      bluff: score(bluffMean, player.verifiedBids, 4),
+      bluff: score(claimRisk, player.claimValues.length, 4),
       aggression: score(mean(player.aggressionValues, priors.aggressionMean, 5), player.aggressionValues.length, 3),
       challenge: score(mean(player.challengeValues, priors.challengeMean, 5), player.challengeValues.length, 2),
     }
@@ -367,7 +391,7 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
     ...(player.moment ? { moment: player.moment } : {}), ...(player.botReasoning ? { botReasoning: player.botReasoning } : {}),
   }))
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     generatedAt: now,
     rounds: input.finalState.round,
     totalTurns: input.actions.filter((entry) => 'playerId' in entry.action && ['bid', 'dudo', 'calzo'].includes(entry.action.type)).length,

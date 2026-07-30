@@ -65,6 +65,66 @@ describe('completed match analysis', () => {
     expect(analysis.momentum[0].players.find((player) => player.playerId === 'bot')?.dice).toBe(0)
   })
 
+  it('scores claim risk per bid from the bidder’s own dice, not from the reveal', () => {
+    const analysis = buildMatchAnalysis({
+      rules: { ...DEFAULT_GAME_RULES },
+      seats: [
+        { id: 'human', name: 'Ana María', controller: 'human' },
+        { id: 'bot', name: 'Min-chi Park', controller: 'bot', persona: 'Bold storyteller' },
+      ],
+      actions: [
+        // Ana holds a Dones and a wild ace, so one Dones is a claim she covers alone.
+        { round: 1, playerId: 'human', action: { type: 'bid', playerId: 'human', bid: { quantity: 1, denomination: 2 } } },
+        // Min-chi holds one China of the ten dice on the table and claims four.
+        { round: 1, playerId: 'bot', action: { type: 'bid', playerId: 'bot', bid: { quantity: 4, denomination: 5 } } },
+        { round: 1, playerId: 'human', action: { type: 'dudo', playerId: 'human' } },
+      ],
+      roundDeals: [{ round: 1, paloFijo: false, starterId: 'human', hands: [{ playerId: 'human', dice: [1, 2, 3, 4, 6] }, { playerId: 'bot', dice: [5, 2, 3, 4, 6] }] }],
+      roundResolutions: [{ round: 1, paloFijo: false, resolution }],
+      botDecisions: [botDecision],
+      finalState,
+    }, '2026-07-18T00:00:00.000Z')
+
+    const human = analysis.players.find((player) => player.id === 'human')!
+    const bot = analysis.players.find((player) => player.id === 'bot')!
+    expect(human.scores.bluff.value).toBe(0)
+    expect(bot.scores.bluff.value).toBeGreaterThan(70)
+    // One sample per bid made — not per reveal, which is what left the old score
+    // sitting on its prior all match.
+    expect(human.scores.bluff.samples).toBe(1)
+    expect(bot.scores.bluff.samples).toBe(1)
+    // Only Min-chi's claim was challenged, so only Min-chi's has a denominator.
+    expect(bot.stats.verifiedFinalBids).toBe(1)
+    expect(human.stats.verifiedFinalBids).toBe(0)
+    expect(human.verdict).toContain('No claim of theirs ever reached a reveal.')
+    expect(bot.verdict).toContain('1 of 1 revealed claim fell short')
+  })
+
+  it('never scores a blind Palo Fijo claim against dice the bidder could not see', () => {
+    const blindInput = {
+      rules: { ...DEFAULT_GAME_RULES, paloFijoBlindDice: true },
+      seats: [
+        { id: 'human', name: 'Ana María', controller: 'human' as const },
+        { id: 'bot', name: 'Min-chi Park', controller: 'bot' as const, persona: 'Bold storyteller' },
+      ],
+      actions: [
+        { round: 1, playerId: 'bot', action: { type: 'bid' as const, playerId: 'bot', bid: { quantity: 4, denomination: 5 } } },
+        { round: 1, playerId: 'human', action: { type: 'dudo' as const, playerId: 'human' } },
+      ],
+      roundDeals: [{ round: 1, paloFijo: true, starterId: 'bot', hands: [{ playerId: 'human', dice: [1, 2, 3, 4, 6] }, { playerId: 'bot', dice: [5, 5, 5, 5, 5] }] }],
+      roundResolutions: [{ round: 1, paloFijo: true, resolution }],
+      botDecisions: [botDecision],
+      finalState,
+    }
+    const blind = buildMatchAnalysis(blindInput, '2026-07-18T00:00:00.000Z')
+    const sighted = buildMatchAnalysis({ ...blindInput, rules: { ...DEFAULT_GAME_RULES, paloFijoBlindDice: false } }, '2026-07-18T00:00:00.000Z')
+
+    // Five Chinas in hand makes "four Chinas" a certainty — but only to a player
+    // allowed to look. Blind, the same claim is scored on the public table alone.
+    expect(sighted.players.find((player) => player.id === 'bot')!.scores.bluff.value).toBe(0)
+    expect(blind.players.find((player) => player.id === 'bot')!.scores.bluff.value).toBeGreaterThan(70)
+  })
+
   it('tells each round as a public story with ladder, call, and margin — and no hidden hands', () => {
     const analysis = buildMatchAnalysis({
       rules: { ...DEFAULT_GAME_RULES },
@@ -82,7 +142,7 @@ describe('completed match analysis', () => {
       finalState,
     }, '2026-07-18T00:00:00.000Z')
 
-    expect(analysis.schemaVersion).toBe(3)
+    expect(analysis.schemaVersion).toBe(4)
     expect(analysis.startingDice).toEqual([
       { playerId: 'human', dice: 5 },
       { playerId: 'bot', dice: 5 },

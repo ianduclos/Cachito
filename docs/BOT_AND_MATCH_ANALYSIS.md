@@ -42,15 +42,17 @@ Bot decision records remain private during play. The browser receives analysis o
 
 The three 0–100 style coefficients are descriptive, not skill ratings:
 
-- **Unsupported** — how often the player’s final challenged claim exceeded the revealed count. The wire-format key remains `scores.bluff` for rollout compatibility, but the product label and prose must say **Unsupported** because this is an outcome fact, not evidence of intent.
+- **Claim risk** — averaged over *every* bid the player made, the probability that the claim was false when they made it, evaluated from their own dice plus the public table (`evaluateBidDistribution` on a view carrying only that bidder's hand). The wire-format key remains `scores.bluff`. It replaced a smoothed unsupported-outcome rate whose 20-strength prior swamped the one or two verified samples a match produces, so every player scored the same baseline. Two invariants: a player blind to their own hand (multi-die seat in blind Palo Fijo) is scored on the public view alone, never on dice they could not see; and the label and prose must stay about risk taken, never about intent. Revealed outcomes remain a separate count — see the final-bid breakdown below.
 - **Aggression** — how strongly a player raised into a claim that looked uncertain from the public table. Higher means bolder pressure, not necessarily better play.
 - **Challenge** — how much risk the player accepted by calling Dudo or Calzo. Accuracy is shown separately as correct calls / attempts.
 
-Small samples are pulled toward population priors and labeled **Early read**. Do not present these values as psychological traits, rankings, or precise probabilities. Hover/focus help for all three definitions is required in the UI.
+Aggression and challenge pull small samples toward population priors; claim risk does not, because it has one sample per bid rather than per reveal. All three are labeled **Early read** below their sample threshold. Do not present these values as psychological traits, rankings, or precise probabilities. Hover/focus help for all three definitions is required in the UI.
 
 Momentum shows each player’s share of remaining dice after a round. It is not a win-probability graph. A defining moment is selected from verified calls or the largest revealed bluff gap. Bot reasoning is limited to the last three distinct plain-language explanations.
 
 Analysis schema v3 (2026-07-20) adds `startingDice` and `roundStories`: the public per-round record — the full bid ladder (bidder, quantity, denomination, table-dice count), the call, the revealed `actualCount`, its margin against the final bid, and dice deltas. Everything in a round story was visible at the table; it must never grow hidden-hand fields. The browser renders these as the stacked dice-flow chart, the round-by-round rail, and the call board; the player-color palette in `OnlineTable.css` is CVD-validated against the panel surface and assigned by fixed seat order.
+
+Analysis schema v4 (2026-07-30) redefines `scores.bluff` as claim risk (above) and adds `stats.verifiedFinalBids`, the count of that player's final bids that actually reached a reveal — the denominator the browser shows beside `unsupportedFinalBids` so a "1 unsupported" reads as "1 of 4 revealed" rather than a bare tally.
 
 Analysis schema v2 separates three facts that must never be collapsed into “confirmed bluffs”:
 
