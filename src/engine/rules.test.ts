@@ -35,6 +35,20 @@ describe('bid ordering', () => {
     expect(isHigherBid({ quantity: 2, denomination: 4 }, { quantity: 3, denomination: 4 }, true, false)).toBe(true)
     expect(isHigherBid({ quantity: 2, denomination: 4 }, { quantity: 3, denomination: 2 }, true, true)).toBe(true)
   })
+
+  it('lets a one-die palo-fijo player swap to aces at the same quantity, and no further at it', () => {
+    // Aces top the equal-quantity ladder in Palo Fijo, so two Cuadras becomes two
+    // Aces without raising the quantity — but only for the one-die privilege.
+    expect(isHigherBid({ quantity: 2, denomination: 4 }, { quantity: 2, denomination: 1 }, true, true)).toBe(true)
+    expect(isHigherBid({ quantity: 2, denomination: 6 }, { quantity: 2, denomination: 1 }, true, true)).toBe(true)
+    expect(isHigherBid({ quantity: 2, denomination: 4 }, { quantity: 2, denomination: 1 }, true, false)).toBe(false)
+    // From aces the only way up is the quantity — never back down to a face at
+    // the same quantity, which would let two players raise in circles.
+    expect(isHigherBid({ quantity: 2, denomination: 1 }, { quantity: 2, denomination: 6 }, true, true)).toBe(false)
+    expect(isHigherBid({ quantity: 2, denomination: 1 }, { quantity: 2, denomination: 1 }, true, true)).toBe(false)
+    expect(isHigherBid({ quantity: 2, denomination: 1 }, { quantity: 3, denomination: 2 }, true, true)).toBe(true)
+    expect(isHigherBid({ quantity: 2, denomination: 1 }, { quantity: 3, denomination: 1 }, true, true)).toBe(true)
+  })
 })
 
 describe('legal action generation', () => {
@@ -51,6 +65,20 @@ describe('legal action generation', () => {
       { id: 'b', name: 'B', diceCount: 2, hand: [2, 2], tableDice: [], tableDiceUsed: false, paloFijoTriggered: false },
     ],
   }
+
+  it('offers a one-die palo-fijo player the same-quantity ace switch, and denies it to the table', () => {
+    const paloState: PlayingState = {
+      ...state,
+      paloFijo: true,
+      players: [
+        { id: 'a', name: 'A', diceCount: 3, hand: [1, 4, 4], tableDice: [], tableDiceUsed: false, paloFijoTriggered: false },
+        { id: 'b', name: 'B', diceCount: 1, hand: [4], tableDice: [], tableDiceUsed: false, paloFijoTriggered: false },
+      ],
+    }
+
+    expect(getLegalActions(paloState, 'b').bids).toContainEqual({ quantity: 2, denomination: 1 })
+    expect(getLegalActions({ ...paloState, currentPlayerId: 'a', lastBidderId: 'b' }, 'a').bids).not.toContainEqual({ quantity: 2, denomination: 1 })
+  })
 
   it('only offers actions to the current player', () => {
     expect(getLegalActions(state, 'a')).toEqual({ bids: [], canDudo: false, canCalzo: false, canPutDiceOnTable: false })

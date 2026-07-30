@@ -134,7 +134,7 @@ Palo Fijo is a special round triggered the first time each distinct player is re
 - A player who is already at one die still receives the one-die privileges below whenever somebody else's Palo Fijo round occurs.
 - A player who goes directly from two dice to zero does not trigger Palo Fijo.
 - During Palo Fijo, aces are not wild.
-- Ones are an ordinary denomination for Palo Fijo bid ordering; the normal-round ace conversion formulas do not apply.
+- Aces do not convert during Palo Fijo: the normal-round ace conversion formulas do not apply. For bid ordering they sit at the top of the denomination ladder, above Sambas, so at equal quantity Aces are the highest bid available and a bid of Aces can only be raised by increasing the quantity.
 - By default, only players holding exactly one die may view their own hand. Players holding more than one die bid without seeing their dice during that round. An online room may unanimously disable blind dice, allowing every player to see their own hand during Palo Fijo.
 - Players holding more than one die must keep the current bid's denomination when raising.
 - Any player holding exactly one die may change the denomination when making a legal ordinary raise; the privilege is not limited to the player whose loss triggered Palo Fijo. An ordinary raise increases the quantity with any denomination, or keeps the quantity and increases the denomination.
@@ -144,7 +144,8 @@ Examples:
 - If Ana falls from two dice to one while Ana, Bruno, and Carla remain active, the next round is Palo Fijo and Ana starts it because she lost the die.
 - If only Ana and Bruno remain active when Ana falls to one die, the next round is a normal round; Palo Fijo is disabled heads-up.
 - Ana opens with two Cuadras. Bruno has three dice, so he cannot view his hand and may raise to three Cuadras but may not change the denomination. Carla has one die, so she may view her die and has the privilege to change the denomination as part of a legal higher bid.
-- In that round, Carla may raise two Cuadras to two Sambas or three Aces. She may not raise it to two Aces, because at the same quantity Ace is a lower denomination. The normal-round Ace conversion rule is not used.
+- In that round, Carla may raise two Cuadras to two Sambas, two Aces, or three of anything. Two Aces is legal because Aces top the Palo Fijo ladder at equal quantity, and it is a one-die privilege: Bruno, holding three dice, must stay on Cuadras. The normal-round Ace conversion rule is not used.
+- Once the bid is two Aces, nobody may answer with two of a face denomination. The next legal bid is three of something, from a one-die player, or three Aces.
 - A table containing two Chinas and two Aces counts as two Chinas during Palo Fijo, not four.
 - If Bruno later returns to one die after already triggering Palo Fijo once, he does not trigger another Palo Fijo round. He still has denomination-change privileges during any Palo Fijo round triggered by another player.
 
