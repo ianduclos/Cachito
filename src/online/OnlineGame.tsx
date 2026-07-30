@@ -397,9 +397,9 @@ function OnlineTable({ view, analysis, roomCode, history, legal, playerId, playe
     });
   }, [revealSettled, view.players, view.resolution]);
   // Seat the table like a real one: the player whose turn follows yours sits on
-  // your immediate left, and turn order runs counter-clockwise around to the
-  // player right before you on your right. view.players is in turn order, so
-  // rotate it to start just after your own seat before filtering yourself out.
+  // your immediate left, and turn order sweeps up the left side and down the right
+  // to the player right before you on your right. view.players is in turn order,
+  // so rotate it to start just after your own seat before filtering yourself out.
   const ownSeatIndex = playerId ? seatPlayers.findIndex((player) => player.id === playerId) : -1;
   const tablePlayers = ownSeatIndex >= 0
     ? [...seatPlayers.slice(ownSeatIndex + 1), ...seatPlayers.slice(0, ownSeatIndex)]

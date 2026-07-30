@@ -26,12 +26,32 @@ describe("TablePrototype", () => {
     expect(seatLayoutFor(2)).toEqual(["top"]);
     expect(seatLayoutFor(3)).toEqual(["left-middle", "right-middle"]);
     expect(seatLayoutFor(4)).toEqual(["left-middle", "top", "right-middle"]);
-    expect(seatLayoutFor(5)).toEqual(["left-top", "left-bottom", "right-top", "right-bottom"]);
-    expect(seatLayoutFor(6)).toEqual(["left-top", "left-bottom", "top", "right-top", "right-bottom"]);
-    expect(seatLayoutFor(7)).toEqual(["left-top", "left-middle", "left-bottom", "right-top", "right-middle", "right-bottom"]);
+    expect(seatLayoutFor(5)).toEqual(["left-bottom", "left-top", "right-top", "right-bottom"]);
+    expect(seatLayoutFor(6)).toEqual(["left-bottom", "left-top", "top", "right-top", "right-bottom"]);
+    expect(seatLayoutFor(7)).toEqual(["left-bottom", "left-middle", "left-top", "right-top", "right-middle", "right-bottom"]);
     expect(seatLayoutFor(8)).toEqual(["left-bottom", "left-middle", "left-top", "top", "right-top", "right-middle", "right-bottom"]);
     expect(spectatorSeatLayoutFor(2)).toEqual(["left-middle", "right-middle"]);
     expect(spectatorSeatLayoutFor(8)).toEqual(["left-bottom", "left-middle", "left-top", "top", "right-top", "right-middle", "right-bottom", "bottom"]);
+  });
+
+  it("walks every seat map once around the table so turn order never jumps across it", () => {
+    // One sweep from the viewer's immediate left, up the left side, over the top,
+    // down the right side, back to the viewer's own seat at the bottom. Every
+    // layout must be this ring in order, or consecutive players end up opposite
+    // each other instead of side by side.
+    const ring = ["left-bottom", "left-middle", "left-top", "top", "right-top", "right-middle", "right-bottom", "bottom"];
+    const walksTheRing = (layout: readonly string[]) => layout.every((seat, index) => index === 0 || ring.indexOf(seat) > ring.indexOf(layout[index - 1]));
+
+    for (let playerCount = 2; playerCount <= 8; playerCount += 1) {
+      const seats = seatLayoutFor(playerCount);
+      expect(seats, `${playerCount}-player seats`).toHaveLength(playerCount - 1);
+      expect(seats.includes("bottom"), `${playerCount}-player seats keep the bottom seat for the viewer`).toBe(false);
+      expect(walksTheRing(seats), `${playerCount}-player seats walk the ring: ${seats.join(", ")}`).toBe(true);
+
+      const spectatorSeats = spectatorSeatLayoutFor(playerCount);
+      expect(spectatorSeats, `${playerCount}-player spectator seats`).toHaveLength(playerCount);
+      expect(walksTheRing(spectatorSeats), `${playerCount}-player spectator seats walk the ring: ${spectatorSeats.join(", ")}`).toBe(true);
+    }
   });
 
   it("keeps eliminated players visibly seated as spectators", () => {

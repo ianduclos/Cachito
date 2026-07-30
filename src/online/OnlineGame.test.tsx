@@ -198,7 +198,7 @@ describe("OnlineGame connection lifecycle", () => {
     // player-1..8, so the player who acts right after the viewer is player-5
     // (Pichulín) and the one right before is player-3 (Miss Blanquita). Like a
     // real table, the next player sits on the immediate left (left-bottom) and
-    // order runs counter-clockwise around to the immediate right (right-bottom).
+    // order sweeps around the table to the immediate right (right-bottom).
     render(<OnlineGame onExit={vi.fn()} />);
     enterTable({ viewerId: "player-4" });
 
