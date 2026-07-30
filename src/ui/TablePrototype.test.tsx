@@ -163,18 +163,26 @@ describe("TablePrototype", () => {
     expect(onExit).toHaveBeenCalledOnce();
   });
 
-  it("lets the named player select table dice while keeping one die private", async () => {
+  it("offers only the dice that count toward the bid, and keeps one die private", async () => {
     vi.useFakeTimers();
     vi.spyOn(Math, "random").mockReturnValue(0);
     render(<TablePrototype onExit={vi.fn()} />);
     await finishManualRoll();
 
     fireEvent.click(screen.getByRole("button", { name: "Put dice on table" }));
-    fireEvent.click(screen.getByRole("button", { name: "Choose die 1 for the table" }));
-    fireEvent.click(screen.getByRole("button", { name: "Choose die 2 for the table" }));
-    fireEvent.click(screen.getByRole("button", { name: "Bid & put 2 on table" }));
+    // The builder opens on a Dones bid, so Dones and wild aces may go down and
+    // nothing else can — a die that does not back the claim is not selectable.
+    const refused = screen.getAllByRole("button", { name: /does not count toward Dones$/ });
+    const offered = screen.getAllByRole("button", { name: /^Choose die \d+ for the table$/ });
+    expect(refused.length).toBeGreaterThan(0);
+    expect(offered.length).toBeGreaterThan(0);
+    for (const button of refused) expect(button).toBeDisabled();
 
-    expect(screen.getByText("Ian bid 1 Dones and put 2 on the table")).toBeInTheDocument();
+    fireEvent.click(refused[0]);
+    fireEvent.click(offered[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Bid & put 1 on table" }));
+
+    expect(screen.getByText("Ian bid 1 Dones and put 1 on the table")).toBeInTheDocument();
     expect(screen.getByText("Ian", { selector: ".tp-exposed-dice small" })).toBeInTheDocument();
     expect(document.querySelector(".tp-hand .dice-row--table-reroll")).toBeInTheDocument();
   });

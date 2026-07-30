@@ -84,6 +84,7 @@ During Palo Fijo, aces are not wild. Every die counts only as its printed denomi
 When the room enables **Put dice on table** (the default), a player with at least two visible private dice may use it once during a round as part of their bid.
 
 - The player selects one or more dice to put on the table, while keeping at least one die private.
+- Only dice that count toward the bid being made may go on the table: its own denomination, plus aces when they are wild for that bid (that is, outside Palo Fijo and outside ace bids). Table dice back the claim up; they are not a way to dump dice that have nothing to do with it. A player with no qualifying die cannot use the option for that bid.
 - The bid and selected dice are committed together. Selected dice remain public in the Table dice area until the round ends.
 - Immediately after the bid, the player's remaining private dice reroll before the next player takes their turn.
 - Public table dice and private dice both count toward every bid.

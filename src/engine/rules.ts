@@ -46,12 +46,19 @@ export function isHigherBid(previous: Bid, next: Bid, paloFijo: boolean, bidderH
     (next.quantity === previous.quantity && next.denomination > previous.denomination)
 }
 
+/**
+ * Whether one die counts toward a bid: its own denomination always, plus wild
+ * aces outside Palo Fijo and outside ace bids. Single definition — bid counting
+ * and the table-dice rule both ask this, so they can never drift apart.
+ */
+export function countsTowardBid(die: Die, bid: Bid, paloFijo: boolean): boolean {
+  if (die === bid.denomination) return true
+  return !paloFijo && bid.denomination !== 1 && die === 1
+}
+
 export function countBid(state: GameState, bid: Bid): number {
   const dice = state.players.flatMap((player) => [...player.hand, ...player.tableDice])
-  if (state.paloFijo || bid.denomination === 1) {
-    return dice.filter((die) => die === bid.denomination).length
-  }
-  return dice.filter((die) => die === bid.denomination || die === 1).length
+  return dice.filter((die) => countsTowardBid(die, bid, state.paloFijo)).length
 }
 
 export function getLegalActions(state: GameState, playerId: string): LegalActions {

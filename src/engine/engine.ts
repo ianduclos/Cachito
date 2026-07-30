@@ -1,5 +1,5 @@
 import { rollHand } from './random'
-import { countBid, isHigherBid, isValidOpeningBid } from './rules'
+import { countBid, countsTowardBid, isHigherBid, isValidOpeningBid } from './rules'
 import { DEFAULT_GAME_RULES, MAX_PLAYERS, MIN_PLAYERS } from './types'
 import type {
   Bid,
@@ -121,6 +121,11 @@ function placeBid(state: PlayingState, playerId: string, bid: Bid, tableDiceIndi
       throw new GameRuleError('INVALID_BID', 'Choose at least one die to show and keep at least one private')
     }
     const selected = selectedIndices.map((index) => player.hand[index])
+    // Table dice back up the claim being made, so only dice that count toward it
+    // may go down — the bid's own denomination, plus wild aces where they count.
+    if (selected.some((die) => !countsTowardBid(die, bid, state.paloFijo))) {
+      throw new GameRuleError('INVALID_BID', 'Only dice that count toward your bid may go on the table')
+    }
     const selectedSet = new Set(selectedIndices)
     const remaining = player.hand.filter((_, index) => !selectedSet.has(index))
     const updatedPlayer: EnginePlayer = { ...player, hand: rollHand(remaining.length, random), tableDice: [...player.tableDice, ...selected], tableDiceUsed: true }

@@ -3,6 +3,7 @@ import {
   applyAction,
   createGame,
   createSeededRandom,
+  countsTowardBid,
   DEFAULT_GAME_RULES,
   getLegalActions,
   MAX_PLAYERS,
@@ -293,6 +294,9 @@ export function TablePrototype({ onExit }: { onExit: () => void }) {
   const startingTotal = playerCount * 5;
   const selectedTableDice = tableDiceIndices.map((index) => user.hand[index]);
   const selectedBid: Bid = { quantity, denomination };
+  // Only dice that count toward the claim may be shown, so the selection follows
+  // the chosen denomination (and wild aces, where those count).
+  const tableDieEligible = useCallback((value: number) => countsTowardBid(value as DieValue, { quantity, denomination }, game.paloFijo), [denomination, game.paloFijo, quantity]);
   const chosenLegal = legal.bids.some((bid) => bid.quantity === quantity && bid.denomination === denomination);
   const maxQuantity = totalDice;
   const secondsLeft = turnDeadlineAt ? Math.max(0, Math.ceil((turnDeadlineAt - clock) / 1_000)) : undefined;
@@ -587,10 +591,10 @@ export function TablePrototype({ onExit }: { onExit: () => void }) {
     tumble();
   };
 
-  const toggleTableDie = (_value: number, index: number) => {
+  const toggleTableDie = (value: number, index: number) => {
     setTableDiceIndices((current) => current.includes(index)
       ? current.filter((entry) => entry !== index)
-      : current.length < user.hand.length - 1 ? [...current, index] : current);
+      : tableDieEligible(value) && current.length < user.hand.length - 1 ? [...current, index] : current);
   };
 
   const stepQuantity = (direction: -1 | 1) => {
@@ -710,10 +714,10 @@ export function TablePrototype({ onExit }: { onExit: () => void }) {
           {isSpectating ? <SpectatorDock user={user} currentPlayerName={currentPlayer?.name ?? (game.phase === "reveal" ? "Round result" : game.phase === "gameOver" ? "Game complete" : "Table")} currentBid={game.currentBid} round={game.round} totalDice={totalDice} formattedTime={formattedTime} eliminated={user.diceCount === 0} onReturn={() => { setSpectatorMode(false); prepareControls(); }} onActivity={() => setFeedOpen(true)} /> : <section className={`tp-action-dock${isYourActionTurn ? " tp-action-dock--your-turn" : ""}`} aria-label="Your hand and turn controls">
             <div className="tp-player-hud">
               <div className="tp-hud-owner"><div className="tp-avatar" aria-hidden="true">{initials(user.name)}</div><div><strong>{user.name}</strong><small>Your seat</small><span>{userStatus}</span></div></div>
-              <div className="tp-hand"><div><p>{user.name}’s hand</p></div><DiceRow dice={visibleHand} className={`${roundRoll.userRolling ? "dice-row--shuffling" : ""}${tableRerolling ? " dice-row--table-reroll" : ""}`.trim()} selectedIndices={tableDiceMode ? tableDiceIndices : undefined} onDieClick={isYourActionTurn ? tableDiceMode ? toggleTableDie : (value) => chooseDenomination(value as DieValue) : undefined} getDieButtonLabel={(value, index, selected) => tableDiceMode ? `${selected ? "Remove" : "Choose"} die ${index + 1} for the table` : `Choose ${denominationNames[value as DieValue]} from die ${index + 1}`} />{tableDiceMode && <small className="tp-table-selection-help">Select up to {Math.max(1, user.hand.length - 1)} dice; one must stay private.</small>}</div>
+              <div className="tp-hand"><div><p>{user.name}’s hand</p></div><DiceRow dice={visibleHand} className={`${roundRoll.userRolling ? "dice-row--shuffling" : ""}${tableRerolling ? " dice-row--table-reroll" : ""}`.trim()} selectedIndices={tableDiceMode ? tableDiceIndices : undefined} onDieClick={isYourActionTurn ? tableDiceMode ? toggleTableDie : (value) => chooseDenomination(value as DieValue) : undefined} isDieDisabled={tableDiceMode ? (value) => !tableDieEligible(value) : undefined} getDieButtonLabel={(value, index, selected) => tableDiceMode ? tableDieEligible(value) ? `${selected ? "Remove" : "Choose"} die ${index + 1} for the table` : `Die ${index + 1} does not count toward ${denominationNames[denomination]}` : `Choose ${denominationNames[value as DieValue]} from die ${index + 1}`} />{tableDiceMode && <small className="tp-table-selection-help">Only {denominationNames[denomination]}{!game.paloFijo && denomination !== 1 ? " and Aces" : ""} count for this bid; keep at least one die private.</small>}</div>
             </div>
             <div className="tp-bid-builder"><div className="tp-quantity"><span>Quantity</span><div><button type="button" aria-label="Decrease quantity" disabled={controlsDisabled || quantity <= 1} onClick={() => stepQuantity(-1)}>−</button><strong>{quantity}</strong><button type="button" aria-label="Increase quantity" disabled={controlsDisabled || quantity >= maxQuantity} onClick={() => stepQuantity(1)}>+</button></div></div><div className="tp-denominations" aria-label="Choose denomination">{([1, 2, 3, 4, 5, 6] as DieValue[]).map((value) => <button type="button" key={value} aria-label={`Choose ${denominationNames[value]}`} aria-pressed={denomination === value} disabled={controlsDisabled || !minimumBidFor(value)} onClick={() => chooseDenomination(value)}><DenominationFace value={value} /></button>)}</div></div>
-            <div className="tp-actions"><button className="tp-call tp-call--dudo" type="button" disabled={controlsDisabled || !legal.canDudo} onClick={() => call("dudo")}>Dudo</button><button className="tp-call tp-call--calzo" type="button" disabled={controlsDisabled || !legal.canCalzo} onClick={() => call("calzo")}>Calzo</button><button className="tp-table-dice-action" type="button" aria-pressed={tableDiceMode} disabled={controlsDisabled || !legal.canPutDiceOnTable && !tableDiceMode} onClick={() => { setTableDiceMode((active) => !active); setTableDiceIndices([]); safePlaySound("tableDice"); }}>{tableDiceMode ? "Cancel table dice" : user.tableDiceUsed ? "Dice already on table" : "Put dice on table"}</button><button className="tp-raise" type="button" disabled={controlsDisabled || !chosenLegal || tableDiceMode && !selectedTableDice.length} onClick={bid}>{tableDiceMode ? `Bid & put ${selectedTableDice.length || "…"} on table` : game.currentBid ? `Raise to ${quantity} ${denominationNames[denomination]}` : `Bid ${quantity} ${denominationNames[denomination]}`}</button></div>
+            <div className="tp-actions"><button className="tp-call tp-call--dudo" type="button" disabled={controlsDisabled || !legal.canDudo} onClick={() => call("dudo")}>Dudo</button><button className="tp-call tp-call--calzo" type="button" disabled={controlsDisabled || !legal.canCalzo} onClick={() => call("calzo")}>Calzo</button><button className="tp-table-dice-action" type="button" aria-pressed={tableDiceMode} disabled={controlsDisabled || !tableDiceMode && !(legal.canPutDiceOnTable && user.hand.some((die) => tableDieEligible(die)))} onClick={() => { setTableDiceMode((active) => !active); setTableDiceIndices([]); safePlaySound("tableDice"); }}>{tableDiceMode ? "Cancel table dice" : user.tableDiceUsed ? "Dice already on table" : "Put dice on table"}</button><button className="tp-raise" type="button" disabled={controlsDisabled || !chosenLegal || tableDiceMode && !selectedTableDice.length} onClick={bid}>{tableDiceMode ? `Bid & put ${selectedTableDice.length || "…"} on table` : game.currentBid ? `Raise to ${quantity} ${denominationNames[denomination]}` : `Bid ${quantity} ${denominationNames[denomination]}`}</button></div>
             {error && <p className="tp-engine-error" role="alert">{error}</p>}
           </section>}
         </section>

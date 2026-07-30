@@ -319,6 +319,10 @@ h1 { font: 800 clamp(3.2rem, 9vw, 5rem)/.95 "Fraunces", Georgia, serif; text-ali
 .dice-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; }
 .die-button { padding: 0; border: 0; background: transparent; line-height: 0; }
 .die-button:hover .die, .die-button:focus-visible .die { outline: 3px solid var(--gold); outline-offset: 3px; transform: translateY(-4px) rotate(3deg); }
+/* A die that cannot go on the table for the current bid: dimmed, still readable. */
+.die-button:disabled { cursor: not-allowed; }
+.die-button:disabled .die { opacity: .34; filter: saturate(.4); }
+.die-button:disabled:hover .die, .die-button:disabled:focus-visible .die { outline: 0; transform: none; }
 .die { width: 62px; height: 62px; display: grid; grid-template-columns: repeat(3,1fr); grid-template-rows: repeat(3,1fr); padding: 8px; border-radius: 13px; background: var(--cream); box-shadow: inset -3px -3px 0 #dacda9, 0 6px 10px #0005; transform: rotate(-1.5deg); }
 .die--highlighted { outline: 3px solid var(--gold); outline-offset: 3px; box-shadow: inset -3px -3px 0 #dacda9, 0 0 0 5px #f2bd5a25, 0 7px 15px #0007; }
 .die--selected { outline: 3px solid #74d39f; outline-offset: 4px; box-shadow: inset -3px -3px 0 #dacda9, 0 0 0 6px #74d39f24, 0 7px 15px #0007; transform: translateY(-5px) rotate(2deg); }

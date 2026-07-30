@@ -102,6 +102,22 @@ describe('counting and round resolution', () => {
     expect(() => applyAction(backToA, { type: 'bid', playerId: 'a', bid: { quantity: 2, denomination: 5 }, tableDiceIndices: [0] })).toThrowError(/not available/i)
   })
 
+  it('only lets dice that count toward the bid go on the table', () => {
+    const state = playing({ a: [5, 2, 1], b: [4, 6] })
+
+    // A Dones does nothing for a Chinas claim, so it cannot be shown.
+    expect(() => applyAction(state, { type: 'bid', playerId: 'a', bid: { quantity: 2, denomination: 5 }, tableDiceIndices: [1] })).toThrowError(/count toward your bid/i)
+    // The wild ace does count, so it may go down beside the China.
+    const shown = applyAction(state, { type: 'bid', playerId: 'a', bid: { quantity: 2, denomination: 5 }, tableDiceIndices: [0, 2] }, () => 0)
+    expect(shown.players.find((player) => player.id === 'a')?.tableDice).toEqual([5, 1])
+    // An ace bid takes aces only — the China no longer qualifies.
+    expect(() => applyAction(state, { type: 'bid', playerId: 'a', bid: { quantity: 2, denomination: 1 }, tableDiceIndices: [0] })).toThrowError(/count toward your bid/i)
+    // In Palo Fijo an ace is just an ace, so the wild-ace selection is refused.
+    const paloState = playing({ a: [5, 2, 1], b: [4, 6] }, { paloFijo: true, rules: { ...DEFAULT_GAME_RULES, paloFijoBlindDice: false } })
+    expect(() => applyAction(paloState, { type: 'bid', playerId: 'a', bid: { quantity: 2, denomination: 5 }, tableDiceIndices: [0, 2] })).toThrowError(/count toward your bid/i)
+    expect(applyAction(paloState, { type: 'bid', playerId: 'a', bid: { quantity: 2, denomination: 5 }, tableDiceIndices: [0] }, () => 0).players.find((player) => player.id === 'a')?.tableDice).toEqual([5])
+  })
+
   it('counts ones as wild in normal rounds but not for ace bids or palo fijo', () => {
     const state = playing({ a: [1, 5, 5], b: [1, 2] })
     expect(countBid(state, { quantity: 4, denomination: 5 })).toBe(4)
