@@ -10,6 +10,8 @@ export interface MatchAnalysisAction {
   tableDice?: Die[]
   /** Private post-reroll hand, retained by the server and never included in the browser payload. */
   rerolledDice?: Die[]
+  /** A timeout safety move made for a human; visible in the story but not attributed as their strategy. */
+  covered?: boolean
 }
 
 export interface MatchAnalysisRound {
@@ -135,6 +137,7 @@ type MutablePlayer = MatchAnalysisPlayer & {
 interface FinalBidClassification {
   bidderId: string
   bid: Bid
+  covered: boolean
   deliberatePersonaBluff: boolean
   forcedEscalation: boolean
 }
@@ -216,6 +219,7 @@ function verdict(player: MutablePlayer, averages: MatchAnalysis['tableAverages']
 
 export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().toISOString()): MatchAnalysis {
   const resolutionByRound = new Map(input.roundResolutions.map((entry) => [entry.round, entry]))
+  const coveredCallByRound = new Map<number, boolean>()
   const mutable = new Map<string, MutablePlayer>(input.seats.map((seat) => [seat.id, {
     ...seat,
     winner: seat.id === input.finalState.winnerId,
@@ -247,17 +251,21 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
         const decision = input.botDecisions.find((candidate) => !usedBotDecisions.has(candidate.sequence) && candidate.round === deal.round && candidate.playerId === actor.id && candidate.chosenAction.type === 'bid' && sameBid(candidate.chosenAction.bid, action.bid))
         if (decision) usedBotDecisions.add(decision.sequence)
         const stateBeforeBid: PlayingState = { phase: 'playing', round: deal.round, paloFijo: deal.paloFijo, rules: input.rules, players, currentPlayerId: actor.id, currentBid, lastBidderId }
-        actor.stats.bids += 1
-        // Claim risk: the chance this player's own claim was false at the moment they
-        // made it, judged from their own dice. Every bid counts — including openings
-        // and claims nobody ever challenged — which is what makes it readable where
-        // the revealed-outcome count has one or two samples a match.
-        actor.claimValues.push(facingRisk(bidderView(view, actor.id, handsById.get(actor.id) ?? [], deal.paloFijo, input.rules), actor.id, action.bid, 'raise'))
-        if (currentBid) actor.aggressionValues.push(facingRisk(view, actor.id, currentBid, 'raise'))
-        if (entry.tableDice?.length) { actor.stats.tableDicePlays += 1; tableDiceById.set(actor.id, [...entry.tableDice]) }
+        if (!entry.covered) {
+          actor.stats.bids += 1
+          // Claim risk: the chance this player's own claim was false at the moment they
+          // made it, judged from their own dice. Every player-made bid counts — including
+          // openings and claims nobody challenged. Timeout safety moves remain visible in
+          // the round story but are not attributed as that human's strategy.
+          actor.claimValues.push(facingRisk(bidderView(view, actor.id, handsById.get(actor.id) ?? [], deal.paloFijo, input.rules), actor.id, action.bid, 'raise'))
+          if (currentBid) actor.aggressionValues.push(facingRisk(view, actor.id, currentBid, 'raise'))
+          if (entry.tableDice?.length) actor.stats.tableDicePlays += 1
+        }
+        if (entry.tableDice?.length) tableDiceById.set(actor.id, [...entry.tableDice])
         finalBidClassification = {
           bidderId: actor.id,
           bid: action.bid,
+          covered: entry.covered === true,
           deliberatePersonaBluff: decision?.trace?.settings?.personaBluffFired === 1,
           forcedEscalation: Boolean(currentBid && !fullySupportedRaiseExists(stateBeforeBid, actor.id)),
         }
@@ -265,11 +273,17 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
         lastBidderId = actor.id
         if (entry.rerolledDice) handsById.set(actor.id, [...entry.rerolledDice])
       } else if (action.type === 'dudo' && currentBid) {
-        actor.stats.dudoAttempts += 1
-        actor.challengeValues.push(facingRisk(view, actor.id, currentBid, 'dudo'))
+        coveredCallByRound.set(deal.round, entry.covered === true)
+        if (!entry.covered) {
+          actor.stats.dudoAttempts += 1
+          actor.challengeValues.push(facingRisk(view, actor.id, currentBid, 'dudo'))
+        }
       } else if (action.type === 'calzo' && currentBid) {
-        actor.stats.calzoAttempts += 1
-        actor.challengeValues.push(facingRisk(view, actor.id, currentBid, 'calzo'))
+        coveredCallByRound.set(deal.round, entry.covered === true)
+        if (!entry.covered) {
+          actor.stats.calzoAttempts += 1
+          actor.challengeValues.push(facingRisk(view, actor.id, currentBid, 'calzo'))
+        }
       }
     }
 
@@ -277,16 +291,17 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
     if (!resolved) continue
     const caller = mutable.get(resolved.callerId)
     const bidder = mutable.get(resolved.bidderId)
-    if (caller) {
+    const coveredCall = coveredCallByRound.get(deal.round) === true
+    if (caller && !coveredCall) {
       if (resolved.kind === 'dudo' && resolved.correct) caller.stats.dudoCorrect += 1
       if (resolved.kind === 'calzo' && resolved.correct) caller.stats.calzoCorrect += 1
     }
-    if (bidder) {
+    const matchingFinalBid = finalBidClassification?.bidderId === resolved.bidderId && sameBid(finalBidClassification.bid, resolved.bid)
+      ? finalBidClassification
+      : undefined
+    if (bidder && !matchingFinalBid?.covered) {
       bidder.stats.verifiedFinalBids += 1
       const caught = resolved.kind === 'dudo' && resolved.correct
-      const matchingFinalBid = finalBidClassification?.bidderId === resolved.bidderId && sameBid(finalBidClassification.bid, resolved.bid)
-        ? finalBidClassification
-        : undefined
       if (resolved.actualCount < resolved.bid.quantity) {
         bidder.stats.unsupportedFinalBids += 1
         if (caught) bidder.stats.unsupportedCaught += 1
@@ -312,7 +327,9 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
       if (!changed) continue
       if (change.delta > 0) changed.stats.diceGained += change.delta
       else changed.stats.diceLost += Math.abs(change.delta)
-      if (caller?.id === changed.id && resolved.correct && !changed.moment) {
+      // A defining moment describes a choice, so a timeout safety call never earns
+      // one — the dice change above is a match fact, this is attribution.
+      if (caller?.id === changed.id && resolved.correct && !coveredCall && !changed.moment) {
         changed.moment = `Round ${deal.round}: the ${resolved.kind === 'dudo' ? 'Dudo' : 'Calzo'} call was right and changed the direction of the table.`
       }
     }

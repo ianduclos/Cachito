@@ -151,30 +151,73 @@ export function buildBeliefContext(observation: BotObservation, model: Likelihoo
   const activeOpponentPlayers = activePlayers.filter((candidate) => candidate.id !== playerId)
   const totalDice = activePlayers.reduce((sum, candidate) => sum + candidate.diceCount, 0)
 
-  const posteriors = new Map<string, Float64Array>()
-  for (const opponent of activeOpponentPlayers) posteriors.set(opponent.id, initialPosterior(opponent.diceCount))
+  // Every player starts a round with all dice private. A table-dice action
+  // fixes the selected dice publicly and rerolls the remainder, so the
+  // bidder's old-hand posterior must be discarded at that point.
+  const posteriors = new Map<string, { k: number; posterior: Float64Array }>()
+  for (const opponent of activeOpponentPlayers) {
+    posteriors.set(opponent.id, {
+      k: opponent.diceCount,
+      posterior: initialPosterior(opponent.diceCount),
+    })
+  }
 
   const roundEntries = observation.history.filter((entry) => entry.round === view.round)
   let runningBid: Bid | null = null
+  const publicDice: Die[] = []
   for (const entry of roundEntries) {
     if (entry.action.type !== 'bid') break // round-ending action; should not precede an in-progress decision, but fail safe rather than throw
-    const posterior = posteriors.get(entry.playerId)
-    const bidderDice = activeOpponentPlayers.find((candidate) => candidate.id === entry.playerId)?.diceCount
-    if (posterior && bidderDice !== undefined) {
-      const unknown = totalDice - bidderDice
-      posteriors.set(entry.playerId, applyBidObservation(posterior, bidderDice, paloFijo, entry.action.bid.denomination, runningBid, unknown, model))
+    const belief = posteriors.get(entry.playerId)
+    if (belief) {
+      const unknown = totalDice - publicDice.length - belief.k
+      posteriors.set(entry.playerId, {
+        k: belief.k,
+        posterior: applyBidObservation(
+          belief.posterior,
+          belief.k,
+          paloFijo,
+          entry.action.bid.denomination,
+          runningBid,
+          unknown,
+          model,
+          countsFromDice(publicDice),
+        ),
+      })
+    }
+    if (entry.action.tableDiceIndices?.length) {
+      const bidder = view.players.find((candidate) => candidate.id === entry.playerId)
+      const revealed = bidder?.tableDice ?? []
+      publicDice.push(...revealed)
+      if (belief && bidder) {
+        const privateDice = Math.max(0, bidder.diceCount - revealed.length)
+        posteriors.set(entry.playerId, {
+          k: privateDice,
+          posterior: initialPosterior(privateDice),
+        })
+      }
     }
     runningBid = entry.action.bid
   }
 
   const ownHandKnown = player.hand !== undefined
-  const ownCounts: FaceCounts = ownHandKnown ? countsFromDice(player.hand!) : [0, 0, 0, 0, 0, 0]
-  const opponents: OpponentBelief[] = activeOpponentPlayers.map((candidate) => ({
-    playerId: candidate.id,
-    k: candidate.diceCount,
-    posterior: posteriors.get(candidate.id)!,
-  }))
-  if (!ownHandKnown) opponents.push({ playerId, k: player.diceCount, posterior: initialPosterior(player.diceCount) })
+  const visibleDice = [
+    ...(ownHandKnown ? player.hand! : []),
+    ...activePlayers.flatMap((candidate) => candidate.tableDice),
+  ]
+  const ownCounts: FaceCounts = countsFromDice(visibleDice)
+  const opponents: OpponentBelief[] = activeOpponentPlayers.map((candidate) => {
+    const privateDice = Math.max(0, candidate.diceCount - candidate.tableDice.length)
+    const belief = posteriors.get(candidate.id)!
+    // Defensive compatibility for an older/truncated history that contains
+    // current public table dice but not the reveal action that created them.
+    return belief.k === privateDice
+      ? { playerId: candidate.id, ...belief }
+      : { playerId: candidate.id, k: privateDice, posterior: initialPosterior(privateDice) }
+  })
+  if (!ownHandKnown) {
+    const privateDice = Math.max(0, player.diceCount - player.tableDice.length)
+    opponents.push({ playerId, k: privateDice, posterior: initialPosterior(privateDice) })
+  }
 
   return { ownCounts, ownHandKnown, opponents }
 }
@@ -377,7 +420,7 @@ export function createBeliefEquityPolicy(options: BeliefEquityPolicyOptions): Bo
         .filter((candidate) => candidate.id !== playerId && candidate.id !== bidderId && candidate.diceCount > 0)
         .map((candidate) => candidate.diceCount)
       const equityAfterBidderLoses = bidderAfter <= 0
-        ? (othersExcludingBidder.length === 0 ? 1 : lookupEquity(table, player.diceCount, othersExcludingBidder, false, playerCount, minSamples))
+        ? (othersExcludingBidder.length === 0 ? 1 : lookupEquity(table, player.diceCount, othersExcludingBidder, true, playerCount, minSamples))
         : lookupEquity(table, player.diceCount, [...othersExcludingBidder, bidderAfter], false, playerCount, minSamples)
 
       const selfAfter = player.diceCount - 1

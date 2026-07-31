@@ -204,4 +204,108 @@ describe('completed match analysis', () => {
       forcedEscalationsSurvived: 0,
     })
   })
+
+  it('keeps covered moves in the public story without attributing them as human strategy', () => {
+    const coveredResolution: RoundResolution = {
+      ...resolution,
+      callerId: 'bot',
+      bidderId: 'human',
+      bid: { quantity: 4, denomination: 5 },
+      actualCount: 2,
+      correct: true,
+      diceChanges: [{ playerId: 'human', before: 5, after: 4, delta: -1, reason: 'dudo' }],
+    }
+    const analysis = buildMatchAnalysis({
+      rules: { ...DEFAULT_GAME_RULES },
+      seats: [
+        { id: 'human', name: 'Ana María', controller: 'human' },
+        { id: 'bot', name: 'Min-chi Park', controller: 'bot' },
+      ],
+      actions: [
+        {
+          round: 1,
+          playerId: 'human',
+          action: { type: 'bid', playerId: 'human', bid: { quantity: 4, denomination: 5 } },
+          covered: true,
+        },
+        { round: 1, playerId: 'bot', action: { type: 'dudo', playerId: 'bot' } },
+      ],
+      roundDeals: [{
+        round: 1,
+        paloFijo: false,
+        starterId: 'human',
+        hands: [
+          { playerId: 'human', dice: [1, 2, 3, 4, 6] },
+          { playerId: 'bot', dice: [5, 2, 3, 4, 6] },
+        ],
+      }],
+      roundResolutions: [{ round: 1, paloFijo: false, resolution: coveredResolution }],
+      botDecisions: [],
+      finalState,
+    })
+
+    const human = analysis.players.find((player) => player.id === 'human')!
+    const bot = analysis.players.find((player) => player.id === 'bot')!
+    expect(human.stats).toMatchObject({
+      bids: 0,
+      verifiedFinalBids: 0,
+      unsupportedFinalBids: 0,
+      forcedEscalations: 0,
+    })
+    expect(human.scores.bluff.samples).toBe(0)
+    expect(bot.stats).toMatchObject({ dudoAttempts: 1, dudoCorrect: 1 })
+    expect(analysis.roundStories[0].bids).toEqual([
+      { playerId: 'human', quantity: 4, denomination: 5 },
+    ])
+  })
+
+  it('never writes a defining moment for a covered call, but still records its dice', () => {
+    // A correct Calzo is the one resolution whose dice change names the CALLER, so
+    // it is the only path that can hand a timeout safety move to a human as their
+    // defining moment. Ana's ace plus Min-chi's two Chinas make the claim exact.
+    const calzoResolution: RoundResolution = {
+      kind: 'calzo', callerId: 'human', bidderId: 'bot', bid: { quantity: 3, denomination: 5 },
+      actualCount: 3, correct: true,
+      diceChanges: [{ playerId: 'human', before: 4, after: 5, delta: 1, reason: 'calzo-correct' }],
+      nextStarterId: 'human', paloFijoNextRound: false,
+    }
+    const build = (covered: boolean) => buildMatchAnalysis({
+      rules: { ...DEFAULT_GAME_RULES },
+      seats: [
+        { id: 'human', name: 'Ana María', controller: 'human' },
+        { id: 'bot', name: 'Min-chi Park', controller: 'bot' },
+      ],
+      actions: [
+        { round: 1, playerId: 'bot', action: { type: 'bid', playerId: 'bot', bid: { quantity: 3, denomination: 5 } } },
+        { round: 1, playerId: 'human', action: { type: 'calzo', playerId: 'human' }, ...(covered ? { covered: true } : {}) },
+      ],
+      roundDeals: [{
+        round: 1,
+        paloFijo: false,
+        starterId: 'bot',
+        hands: [
+          { playerId: 'human', dice: [1, 2, 3, 4] },
+          { playerId: 'bot', dice: [5, 5, 2, 3, 6] },
+        ],
+      }],
+      roundResolutions: [{ round: 1, paloFijo: false, resolution: calzoResolution }],
+      botDecisions: [],
+      finalState,
+    })
+
+    const coveredHuman = build(true).players.find((player) => player.id === 'human')!
+    expect(coveredHuman.moment).toBeUndefined()
+    expect(build(true).keyMoment).toBeUndefined()
+    expect(coveredHuman.stats).toMatchObject({ calzoAttempts: 0, calzoCorrect: 0 })
+    // The die really was won, so the match fact survives the attribution filter.
+    expect(coveredHuman.stats.diceGained).toBe(1)
+    expect(build(true).roundStories[0]).toMatchObject({ callerId: 'human', kind: 'calzo', correct: true })
+    // The bot's real bid is still verified against the reveal.
+    expect(build(true).players.find((player) => player.id === 'bot')!.stats.verifiedFinalBids).toBe(1)
+
+    // Control: the same call made by the human earns the moment and the credit.
+    const realHuman = build(false).players.find((player) => player.id === 'human')!
+    expect(realHuman.moment).toContain('Calzo call was right')
+    expect(realHuman.stats).toMatchObject({ calzoAttempts: 1, calzoCorrect: 1 })
+  })
 })

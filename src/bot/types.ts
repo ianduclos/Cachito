@@ -15,7 +15,7 @@ export interface PublicRoundOutcome {
   kind: 'dudo' | 'calzo'
   bidderId: string
   bid: Bid
-  /** Whether the bid met the challenged condition. */
+  /** Whether the Dudo or Calzo caller was correct. */
   correct: boolean
   /**
    * The revealed count of qualifying dice, announced to the whole table at the

@@ -5,8 +5,8 @@ This is the maintainer contract for the online bot policy and the **Game analysi
 ## Product status
 
 - Online rooms are the product. `/table-prototype` is a deprecated, local regression harness and is not a second bot product.
-- Every production bot uses **Gen 2 + Persona**. Gen 2 combines the promoted belief filter with equity-aware Dudo/Calzo decisions. The Persona wrapper adds occasional, legible bid stories and deliberate table-dice use without changing challenge decisions.
-- At two active seats, the wrapper delegates completely to the proven Conservative heads-up path. Do not add persona bluffing back into heads-up play without a new measured gate.
+- Every production bot uses **Respect gate → Persona → Gen 2 → Conservative**. Gen 2 combines the promoted belief filter with equity-aware Dudo/Calzo decisions. The Persona wrapper adds occasional, legible bid stories and deliberate table-dice use without changing challenge decisions. The outer respect gate can replace a marginal Dudo after repeated public evidence that the bidder's challenged bids hold.
+- Matches that began with two seats delegate the Gen 2 and Persona layers completely to the proven Conservative heads-up path; the respect gate still wraps it. A larger match reduced to two active players does not take this fallback. Do not add persona bluffing back into original heads-up play without a new measured gate.
 - **Heads-up policy hold (exp-013):** the Exact Count Prober confirmed that failed Dudos against exactly true bids are a structural Conservative weakness, but the probe still lost most matches. Do not retune Calzo or build a heads-up hybrid from this result. Wait for the exp-014 CFR handoff before changing the two-seat policy; use the exp-013 margin-zero failure share as a regression signature, not as a tuning target by itself.
 - Lobby bots receive a recorded persona at creation. Current weighted assignment is 30% Patient reader, 45% Measured storyteller, and 25% Bold storyteller. The persona is persisted through room recovery and written to the private final log.
 - Bot timing remains presentation: a fresh random 3–8 second pause each turn. Policy computation itself is immediate.
@@ -40,6 +40,14 @@ Bot decision records remain private during play. The browser receives analysis o
 
 `buildMatchAnalysis` creates a compact, versioned summary after game over. It uses public actions, dealt-hand records, structured revealed-round resolutions, safe bot explanations, and the final state. The resulting browser payload deliberately omits raw hands and probability diagnostics.
 
+Actions marked `covered: true` remain in the public round story because they
+really happened, but they are excluded from the covered human's strategy
+counts, scores, final-bid breakdown, table-dice metrics and **defining moment**.
+Match facts such as dice gained/lost remain authoritative. The moment is the easy
+one to miss: only a correct Calzo names the caller in `diceChanges`, so that is
+the single path by which a timeout safety call could be written up as a human's
+defining play — and from there reach the match headline through `keyMoment`.
+
 The three 0–100 style coefficients are descriptive, not skill ratings:
 
 - **Claim risk** — averaged over *every* bid the player made, the probability that the claim was false when they made it, evaluated from their own dice plus the public table (`evaluateBidDistribution` on a view carrying only that bidder's hand). The wire-format key remains `scores.bluff`. It replaced a smoothed unsupported-outcome rate whose 20-strength prior swamped the one or two verified samples a match produces, so every player scored the same baseline. Two invariants: a player blind to their own hand (multi-die seat in blind Palo Fijo) is scored on the public view alone, never on dice they could not see; and the label and prose must stay about risk taken, never about intent. Revealed outcomes remain a separate count — see the final-bid breakdown below.
@@ -72,10 +80,16 @@ Final Cloud Storage snapshots use schema version 5 and include the visible `game
 - structured `roundResolutions` with public revealed hands;
 - privacy-safe `botDecisions`, including `plainReason`;
 - `covered: true` on timeout safety moves made for a human;
-- the exact versioned `analysis` delivered after game over (currently analysis schema v3, nested inside match-log schema v5).
+- the exact versioned `analysis` delivered after game over (currently analysis schema v4, nested inside match-log schema v5).
 
 Active recovery snapshots retain their separate schema version and may carry the in-progress arrays privately so a server restart does not erase later analysis. Deploy the room server before the browser whenever this shape or the online protocol changes.
 
 ## Required checks
 
-Add focused tests for policy legality, heads-up fallback, table-dice forwarding, analysis math/privacy, winner-panel behavior, and server delivery. Then run the standard lint/build/full-test gate and inspect a completed online room at 1280×720. Confirm the winner ceremony, analysis opening/closing, hover/focus definitions, long names, eight-player density, early-read labels, and bot reasoning.
+Add focused tests for policy legality, heads-up fallback, table-dice forwarding, analysis math/privacy, winner-panel behavior, and server delivery. Probability-sensitive policy changes also require semantic truth tests for Dudo/Calzo outcome interpretation, fixed public table dice plus reroll resets, and next-round starter pricing. Use cover-safe real-game and one-step counterfactual checks alongside self-play; do not infer a counterfactual winner after the first changed action.
+
+A semantic truth test must be able to fail. A belief test written against a uniform likelihood model exercises bookkeeping only — the posterior update is an identity there — and a test whose expected value is also what the defensive compatibility branch produces proves nothing. Delete the code path and confirm the test goes red before trusting it.
+
+**Pre-deploy gate (open as of 2026-07-31).** The uncommitted correctness packet changes shipped behavior in two places that self-play has not measured: the opponent-reliability fix feeds `createProbabilityPolicy`, and Conservative is a `createProbabilityPolicy` instance, so it moves the whole original-heads-up path; and the Gen 2 table-dice belief fix flips 11 of 26 table-dice verdicts on real multiplayer states (lab exp-020). Neither may deploy before a fresh untouched-seed 2/4/6/8 non-inferiority run. Semantic correctness is not a strength argument.
+
+Then run the standard lint/build/full-test gate. When the UI changes, inspect a completed online room at 1280×720 and confirm the winner ceremony, analysis opening/closing, hover/focus definitions, long names, eight-player density, early-read labels, and bot reasoning.

@@ -18,9 +18,21 @@ export function buildOpponentProfile(history: readonly PublicActionEntry[], play
   let trueBids = 0
   let falseBids = 0
   for (const entry of history) {
-    if (entry.outcome?.bidderId !== playerId) continue
-    if (entry.outcome.correct) trueBids += 1
-    else falseBids += 1
+    const outcome = entry.outcome
+    if (outcome?.bidderId !== playerId) continue
+    // `correct` describes the caller, not the bid. Prefer the publicly
+    // announced count whenever present. In legacy histories, a failed Dudo
+    // means the bid held and a correct Calzo means it held exactly; a failed
+    // Calzo is directionally ambiguous and must not be guessed.
+    const held = outcome.actualCount !== undefined
+      ? outcome.actualCount >= outcome.bid.quantity
+      : outcome.kind === 'dudo'
+        ? !outcome.correct
+        : outcome.correct
+          ? true
+          : undefined
+    if (held === true) trueBids += 1
+    else if (held === false) falseBids += 1
   }
   const evidence = trueBids + falseBids
   return {

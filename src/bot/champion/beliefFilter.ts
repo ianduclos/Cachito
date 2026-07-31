@@ -82,6 +82,10 @@ export function countsFromDice(dice: readonly Die[]): FaceCounts {
   return counts as unknown as FaceCounts
 }
 
+function addCounts(left: FaceCounts, right: FaceCounts): FaceCounts {
+  return left.map((count, index) => count + right[index]) as unknown as FaceCounts
+}
+
 /** Literal count of face `denomination` in a hand — never wild, regardless of Palo Fijo. */
 export function printedCount(counts: FaceCounts, denomination: Die): number {
   return counts[denomination - 1]
@@ -206,6 +210,7 @@ export function applyBidObservation(
   priorBid: Bid | null,
   unknownDiceExcludingThisOpponent: number,
   model: LikelihoodModel,
+  publicCounts: FaceCounts = [0, 0, 0, 0, 0, 0],
 ): Float64Array {
   const hands = enumerateHands(k)
   if (hands.length !== posterior.length) throw new Error(`Posterior length ${posterior.length} does not match enumerateHands(${k}) length ${hands.length}`)
@@ -220,7 +225,12 @@ export function applyBidObservation(
       weight *= table.m[bucket]
     }
     if (priorBid) {
-      const support = supportProbability(hands[i].counts, priorBid, paloFijo, unknownDiceExcludingThisOpponent)
+      const support = supportProbability(
+        addCounts(hands[i].counts, publicCounts),
+        priorBid,
+        paloFijo,
+        unknownDiceExcludingThisOpponent,
+      )
       const bucket = supportBucket(support)
       weight *= model.raiseVsChallenge.buckets[bucket].bid
     }
