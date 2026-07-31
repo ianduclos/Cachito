@@ -16,8 +16,7 @@
 //   so replays can show exactly why the challenge was withheld.
 
 import { evaluateBidDistribution } from './probability'
-import type { BotActionResult, BotObservation, BotPolicy } from './types'
-import type { Bid } from '../engine'
+import type { BotActionResult, BotCandidateTrace, BotDecisionTrace, BotObservation, BotPolicy } from './types'
 import { deriveOpponentRespect, type RespectOptions, type OpponentRespectRead } from './respect'
 
 export interface RespectGateOptions {
@@ -49,14 +48,35 @@ function dudoSlack(trace: BotActionResult['trace']): { slack: number; unit: 'pro
   return undefined
 }
 
-/** Most supportable legal raise; cheapest wins ties. Undefined when no bid is legal. */
-function safestRaise(observation: BotObservation): Bid | undefined {
-  let best: { bid: Bid; atLeast: number } | undefined
-  for (const bid of observation.legalActions.bids) {
-    const atLeast = evaluateBidDistribution(observation.view, observation.playerId, bid).atLeast
-    if (!best || atLeast > best.atLeast + 1e-12) best = { bid, atLeast }
-  }
-  return best?.bid
+/** How many of the gate's own ranked raises to publish in the trace. */
+const SHORTLIST_SIZE = 8
+
+/**
+ * Most supportable legal raise; cheapest wins ties. Undefined when no bid is
+ * legal. Returns the ranked shortlist too: the wrapped policy's candidate list
+ * describes the Dudo branch it was on, so a trace that kept it would be
+ * describing a decision the gate did not make.
+ */
+function safestRaise(observation: BotObservation): { best: BotCandidateTrace; shortlist: BotCandidateTrace[] } | undefined {
+  const scored: BotCandidateTrace[] = observation.legalActions.bids.map((bid) => {
+    const distribution = evaluateBidDistribution(observation.view, observation.playerId, bid)
+    return {
+      bid: { ...bid },
+      supportProbability: distribution.atLeast,
+      exactProbability: distribution.exact,
+      // The gate ranks on support alone, so the score IS the support and the
+      // Conservative-shaped components stay zero rather than being invented.
+      score: distribution.atLeast,
+      scoreComponents: { confidenceDistance: 0, quantityPenalty: 0, visiblePreference: 0 },
+    }
+  })
+  if (scored.length === 0) return undefined
+  const best = scored.reduce((champion, candidate) =>
+    (candidate.supportProbability > champion.supportProbability + 1e-12 ? candidate : champion))
+  const shortlist = [...scored]
+    .sort((left, right) => right.supportProbability - left.supportProbability)
+    .slice(0, SHORTLIST_SIZE)
+  return { best, shortlist }
 }
 
 export interface RespectGateDecisionNote {
@@ -112,12 +132,20 @@ export function createRespectGatedPolicy(base: BotPolicy, options: RespectGateOp
     if (!raise) return result
     note.overrode = true
     if (trace) {
-      const annotated = trace as { respectGate?: RespectGateDecisionNote; plainReason?: string; settings?: Record<string, number> }
+      const annotated = trace as BotDecisionTrace & { respectGate?: RespectGateDecisionNote }
       annotated.respectGate = note
       annotated.plainReason = `${read.explanation} It raised instead of paying to test them again.`
       annotated.settings = { ...(annotated.settings ?? {}), respectGateOverride: 1 }
+      // The action is now a raise, so every field that describes the choice has
+      // to describe THIS raise. Leaving the wrapped policy's Dudo reason and
+      // candidate list behind made the postgame explanation and any replay
+      // metric keyed on `decisionReason` describe a Dudo that never happened.
+      annotated.decisionReason = 'supported_bid'
+      annotated.candidateCount = observation.legalActions.bids.length
+      annotated.consideredCandidates = raise.shortlist
+      annotated.selectedCandidate = { rank: 1, score: raise.best.score }
     }
-    return { choice: { type: 'bid', bid: { ...raise } }, ...(trace ? { trace } : {}) }
+    return { choice: { type: 'bid', bid: { ...raise.best.bid } }, ...(trace ? { trace } : {}) }
   }
 
   return {
