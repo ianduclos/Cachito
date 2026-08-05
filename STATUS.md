@@ -2,17 +2,46 @@
 project: Cachito
 state: active
 updated: 2026-08-05
-summary: Stage 0 verification run complete — Wave 1 fixes survive skeptical review and property tests, but the corrected champion FAILS the multiplayer non-inferiority league (-1.2 to -1.9pp at 4/6/8 seats, 16k games); a load-bearing wrong contract must be isolated, and a 6%-accuracy heads-up Calzo trap was found and diagnosed.
+summary: Stage 0.5 attribution complete — the outcome-semantics correction is the entire exp-023 regression, but the mechanism is the lab panel's reads improving around an unchanged champion (moving-baseline artifact); recommendation is to deploy all three corrections, awaiting Ian's call.
 machine: mac
 next:
-  - Session B (Stage 0.5): component-attribution leagues at p6 + ground-truth calibration scoring per corrected contract, verdicts presented with both metrics (calibration vs self-play conflicts decided case by case) — lab/ROADMAP.md stage table
-  - Ian: play heads-up games on the current build whenever easy — pipeline verified and ready; activates Stage 1 (Calzo-trap human test + exp-002b gate retest)
-  - decide the respect gate's fate with exp-022 evidence: 58% of multiplayer overrides convert winning Dudos; a third of replacement raises sit at support <0.25 and lose a die 46% within the round
-  - production still runs the pre-correction bots; do not deploy f8eeadd behavior until attribution resolves the regression
-handoff_for: null
+  - Ian: confirm the deploy-all-three call (exp-025 evidence: gate failure is a baseline artifact; B is production-inert online and fixes local-table bots' inverted read of human bluffs) — then run the deploy skill
+  - Ian: play heads-up games on the current build whenever easy — activates Stage 1 (Calzo-trap human test + exp-002b gate retest)
+  - Stage 2/3 follow-up now motivated: persona bluff adaptivity vs outcome-reading opponents is the honest route back to the old win number
+  - remove ../Cachito-attr-{A,B,C} worktrees once the deploy decision lands
+handoff_for: ian
 ---
 
 # Cachito — status
+
+## 2026-08-05 (session B) — Stage 0.5 attribution + mechanism (lab-only, nothing deployed)
+
+Three lab commits (`cdb06be`, `925653f`, `d11dd06`); product untouched except
+a root `opencode.json` (`permission: allow`, Ian's request, uncommitted —
+takes effect on opencode restart). Lab suite green 122/122.
+
+- **exp-024 attribution (16k games p6, seed 9001, single-revert worktrees):**
+  reverting the outcome-semantics correction alone recovers the full exp-023
+  gap (+2.00pp, CI excludes corrected); table-dice-beliefs revert inert;
+  starter-pricing revert within noise. Paired ground-truth calibration (new
+  `lab/tools/componentCalibration.ts`, 133k decision joins): table-dice
+  beliefs decisively more accurate in their active region (Brier 0.167 vs
+  0.218); keep all three corrections.
+- **exp-025 mechanism (new `bluffPunishmentAudit.ts`, `opponentModelFit.ts`):**
+  the champion's own play is identical across versions and it never consumes
+  the corrected signal — the correction strengthens the probability-policy
+  PANEL's bluff reads (legacy reliability ≈ 1 − corrected; a caught bluff
+  used to raise trust). The gate failure is a moving-baseline artifact.
+  Consumer retune proven non-executable (standing hold in ROADMAP).
+- **Deploy picture:** production rooms seat only the champion stack, so the
+  correction is online-inert; it fixes the LOCAL-table bots' inverted read
+  of human bluffs. Recommendation: deploy all three. Awaiting Ian.
+- **Paper trail:** `lab/notes/exp-024-025-outcome-semantics-attribution.md`
+  (methods, controls, limitations, decision record, reproducibility commands).
+- Gate-design lesson recorded in ROADMAP: future candidate leagues pin the
+  panel and compare within one codebase.
+
+## 2026-08-05 — bot Stage 0 verification run (lab-focused, not deployed)
 
 ## 2026-08-05 — bot Stage 0 verification run (lab-focused, not deployed)
 
