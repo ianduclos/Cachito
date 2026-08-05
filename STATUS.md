@@ -1,18 +1,54 @@
 ---
 project: Cachito
 state: active
-updated: 2026-07-30
-summary: Product session shipped nine commits to production at release r2026.07.30.003 — two rule changes (palo fijo ace switch, table dice must match the bid), a rebuilt bluff stat with a biggest-liar crown, per-player lobby return, six bot names and two UI fixes; lab CFR thread (exp-014) still parked.
+updated: 2026-08-05
+summary: Stage 0 verification run complete — Wave 1 fixes survive skeptical review and property tests, but the corrected champion FAILS the multiplayer non-inferiority league (-1.2 to -1.9pp at 4/6/8 seats, 16k games); a load-bearing wrong contract must be isolated, and a 6%-accuracy heads-up Calzo trap was found and diagnosed.
 machine: mac
 next:
-  - play on the new build and confirm the two rule changes feel right at a real table (palo fijo ace switch, table-dice restriction)
-  - decide whether the analysis "Claim risk" metric stays as the headline bluff stat or wants a different framing
-  - look at bot Tachi Cabrera's 11 shortfalls in 28 rounds (24 dice of overclaim) in the 2026-07-30T01-09 log — possible unsupported-bid regression
-  - resume exp-014 Phase 0/1 (CFR oracle for heads-up) — full parked plan in lab/notes/exp-014-cfr-plan.md
+  - component-attribution leagues at p6: three variants each reverting exactly one f8eeadd correction (table-dice beliefs / opponent outcome semantics / eliminating-Dudo starter pricing), same seeds, to find the load-bearing contract — see lab/LOG.md exp-023
+  - Ian: play ~12 heads-up games on the current build to unblock Stage 1 (exp-002b gate retest), which now also owns the heads-up Calzo trap
+  - decide the respect gate's fate with exp-022 evidence: 58% of multiplayer overrides convert winning Dudos; a third of replacement raises sit at support <0.25 and lose a die 46% within the round
+  - production still runs the pre-correction bots; do not deploy f8eeadd behavior until attribution resolves the regression
 handoff_for: null
 ---
 
 # Cachito — status
+
+## 2026-08-05 — bot Stage 0 verification run (lab-focused, not deployed)
+
+Five K2.7 worker rounds orchestrated via kimi-router; all work reviewed and
+committed (product `d30f4aa`; lab `8b8b854`, `0e74983`, `1013a65`,
+`7c5bcf0`). Full suite green 3/3 consecutively (two load-flaky sim tests
+given explicit timeouts).
+
+- **Skeptical review of Wave 1 (f8eeadd, d3f5d83): PASS.** The belief fix
+  cannot double-count (engine allows one reveal per player per round), the
+  eliminating-Dudo starter pricing matches engine semantics exactly, and the
+  online room history carries `tableDiceIndices`/`actualCount`, so the
+  corrected paths are live in production.
+- **exp-022 respect audit:** 329 sim overrides — 41.9% converted vs a ~50%
+  thin-margin baseline overall, but 58.0% converted multiplayer; a third of
+  replacement raises sit at support <0.25 and lose a die 46% within the
+  round. Corpus side reproduces exp-020 exactly (locked as a test).
+- **Packet C:** 14/14 brute-force property tests on the corrected table-dice
+  belief path (uniform-likelihood bookkeeping only).
+- **exp-023 non-inferiority league: GATE FAILED.** New
+  `lab/tools/championLeague.ts` (seats the exact shipped stack; runs
+  verbatim against a pre-correction worktree at 6765d62). 16k games/size:
+  −1.23pp p4, −1.86pp p6, −1.32pp p8 (CIs exclude 0); p2 inconclusive.
+  One of the three corrected contracts was load-bearing → component-
+  attribution leagues at p6 are the next step (lab/LOG.md exp-023).
+- **Heads-up Calzo trap found and diagnosed:** the p2 champion calls Calzo
+  at ~6% accuracy (72/72 sampled calls on opponent ace bids; estimated
+  P(exact) 0.797 vs 4.2% realized) — Conservative's binomial `exact` ignores
+  the opponent's bid, soft `riskCost` lets Calzo win ladder-top argmaxes,
+  wrong Calzo costs two dice. Exactly Ian's 2026-07-31 commitment trap;
+  feeds Stage 1, unpatched by design.
+- **lab/ROADMAP.md rewritten** as the stage-gated program (stages 0–5,
+  standing holds, note index).
+
+Pre-correction A/B worktree: `../Cachito-precorr` (detached at 6765d62,
+node_modules symlinked) — keep it until attribution finishes.
 
 ## 2026-07-30 — product session (deployed, r2026.07.30.003)
 
