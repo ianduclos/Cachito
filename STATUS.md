@@ -5,8 +5,8 @@ updated: 2026-08-05
 summary: Stage 0 verification run complete — Wave 1 fixes survive skeptical review and property tests, but the corrected champion FAILS the multiplayer non-inferiority league (-1.2 to -1.9pp at 4/6/8 seats, 16k games); a load-bearing wrong contract must be isolated, and a 6%-accuracy heads-up Calzo trap was found and diagnosed.
 machine: mac
 next:
-  - component-attribution leagues at p6: three variants each reverting exactly one f8eeadd correction (table-dice beliefs / opponent outcome semantics / eliminating-Dudo starter pricing), same seeds, to find the load-bearing contract — see lab/LOG.md exp-023
-  - Ian: play ~12 heads-up games on the current build to unblock Stage 1 (exp-002b gate retest), which now also owns the heads-up Calzo trap
+  - Session B (Stage 0.5): component-attribution leagues at p6 + ground-truth calibration scoring per corrected contract, verdicts presented with both metrics (calibration vs self-play conflicts decided case by case) — lab/ROADMAP.md stage table
+  - Ian: play heads-up games on the current build whenever easy — pipeline verified and ready; activates Stage 1 (Calzo-trap human test + exp-002b gate retest)
   - decide the respect gate's fate with exp-022 evidence: 58% of multiplayer overrides convert winning Dudos; a third of replacement raises sit at support <0.25 and lose a die 46% within the round
   - production still runs the pre-correction bots; do not deploy f8eeadd behavior until attribution resolves the regression
 handoff_for: null
