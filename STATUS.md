@@ -1,18 +1,27 @@
 ---
 project: Cachito
 state: active
-updated: 2026-08-05
-summary: Stage 0.5 attribution complete — the outcome-semantics correction is the entire exp-023 regression, but the mechanism is the lab panel's reads improving around an unchanged champion (moving-baseline artifact); recommendation is to deploy all three corrections, awaiting Ian's call.
+updated: 2026-08-06
+summary: Deploy call confirmed and shipped — all three corrected bot contracts (f8eeadd) live in production as r2026.08.06.001; Stage 1 activates when Ian's heads-up games land.
 machine: mac
 next:
-  - Ian: confirm the deploy-all-three call (exp-025 evidence: gate failure is a baseline artifact; B is production-inert online and fixes local-table bots' inverted read of human bluffs) — then run the deploy skill
   - Ian: play heads-up games on the current build whenever easy — activates Stage 1 (Calzo-trap human test + exp-002b gate retest)
   - Stage 2/3 follow-up now motivated: persona bluff adaptivity vs outcome-reading opponents is the honest route back to the old win number
-  - remove ../Cachito-attr-{A,B,C} worktrees once the deploy decision lands
 handoff_for: ian
 ---
 
 # Cachito — status
+
+## 2026-08-06 — deploy: corrected bot contracts live (r2026.08.06.001)
+
+Ian confirmed the Stage 0.5 deploy call. Shipped all three f8eeadd
+corrections (opponent outcome semantics, table-dice beliefs, eliminating-Dudo
+starter pricing) to production: Cloud Run room server first, then Firebase
+Hosting, per `.claude/skills/deploy/`. Pre-flight green (302 tests, lint,
+build); live stamp verified in the served bundle. The attr-A/B/C worktrees
+were removed after the deploy. Docs updated: ROADMAP (Stage 0.5 row,
+dependencies), LOG (decision entry), BOT_AND_MATCH_ANALYSIS (pre-deploy gate
+resolved).
 
 ## 2026-08-05 (session B) — Stage 0.5 attribution + mechanism (lab-only, nothing deployed)
 
