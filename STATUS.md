@@ -2,26 +2,35 @@
 project: Cachito
 state: active
 updated: 2026-08-06
-summary: Deploy call confirmed and shipped — all three corrected bot contracts (f8eeadd) live in production as r2026.08.06.001; Stage 1 activates when Ian's heads-up games land.
+summary: Heads-up bot promotion live — the exp-002b gate is lifted (full Gen 2 belief stack plays two-seat games) with the exp-027 Calzo mode guard, shipped as r2026.08.06.002 after passing the 10k-game league (86.8% vs the gated champion) and the human replay gate. Earlier same day: the three corrected probability contracts deployed as r2026.08.06.001.
 machine: mac
 next:
-  - Ian: play heads-up games on the current build whenever easy — activates Stage 1 (Calzo-trap human test + exp-002b gate retest)
+  - Ian: play heads-up on the new build — the bot now tracks bid evidence and calls Calzo; exact-count traps are halved, not dead
   - Stage 2/3 follow-up now motivated: persona bluff adaptivity vs outcome-reading opponents is the honest route back to the old win number
 handoff_for: ian
 ---
 
 # Cachito — status
 
-## 2026-08-06 — deploy: corrected bot contracts live (r2026.08.06.001)
+## 2026-08-06 (evening) — heads-up Gen 2 promotion live (r2026.08.06.002)
 
-Ian confirmed the Stage 0.5 deploy call. Shipped all three f8eeadd
-corrections (opponent outcome semantics, table-dice beliefs, eliminating-Dudo
-starter pricing) to production: Cloud Run room server first, then Firebase
-Hosting, per `.claude/skills/deploy/`. Pre-flight green (302 tests, lint,
-build); live stamp verified in the served bundle. The attr-A/B/C worktrees
-were removed after the deploy. Docs updated: ROADMAP (Stage 0.5 row,
-dependencies), LOG (decision entry), BOT_AND_MATCH_ANALYSIS (pre-deploy gate
-resolved).
+Same-day follow-up to the corrections deploy. Ian's four real heads-up games
+(8JW7N, KJBHC, HHXPM ×2 — "Agus Calchetti"/"Gustavo Dudamel"/"n" are all Ian)
+drove Stage 1 to completion in one session:
+
+- **exp-026** (new `ungatedHeadsUpReplay.ts`): replaying all 67 logged bot
+  decisions through the shipped stack with `twoPlayerGate: false` — 39%
+  diverge, every foregone Dudo correctly foregone, Calzo activates 4/7 exact.
+- **exp-027**: the 3 wrong Calzos share a q-vs-(q+1) adjacency miss; repaired
+  with the constant-free mode guard (P(q) ≥ breakeven AND P(q) > P(q+1)).
+- **exp-028** (new `twoSeatGateLeague.ts`): 10k fresh-seed H2H — ungated
+  84.2% vs gated champion; 86.8% with the guard. Calzo 77.8% accurate,
+  Dudo accuracy 31% → 59%, respect overrides 0.66 → 0.04/game.
+- **Product:** `dev/onlineRooms.ts` constructs the stack with
+  `twoPlayerGate: false`; mode guard in `src/bot/champion/beliefEquity.ts` +
+  4 falsifiable tests (delete-the-guard-goes-red verified). Persona stays
+  exp-017-gated heads-up. Suite 329/329, lint/build clean; Cloud Run
+  `cachito-rooms-00047-zxs` + Hosting, live stamp verified.
 
 ## 2026-08-05 (session B) — Stage 0.5 attribution + mechanism (lab-only, nothing deployed)
 
