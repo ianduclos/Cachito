@@ -389,6 +389,8 @@ export function createBeliefEquityPolicy(options: BeliefEquityPolicyOptions): Bo
 
     const supportProbability = beliefBidProbability(belief.ownCounts, currentBid, paloFijo, belief.opponents)
     const exactProbability = beliefExactProbability(belief.ownCounts, currentBid, paloFijo, belief.opponents)
+    // exp-027 mode guard: refuse "exactly q" when the posterior ranks q+1 at least as likely.
+    const nextCountProbability = beliefExactProbability(belief.ownCounts, { ...currentBid, quantity: currentBid.quantity + 1 }, paloFijo, belief.opponents)
 
     const playerCount = view.players.length
     const others = activeOtherStacks(view, playerId)
@@ -406,8 +408,8 @@ export function createBeliefEquityPolicy(options: BeliefEquityPolicyOptions): Bo
       const breakeven = breakevenFromEquities(equityNow, afterLoss, afterGain, calzoMargin)
       calzoChoice = {
         threshold: breakeven.threshold,
-        worthwhile: exactProbability >= breakeven.threshold,
-        detail: { ...breakeven, now: equityNow, afterLoss, afterGain, exactProbability },
+        worthwhile: exactProbability >= breakeven.threshold && exactProbability > nextCountProbability,
+        detail: { ...breakeven, now: equityNow, afterLoss, afterGain, exactProbability, nextCountProbability },
       }
     }
 

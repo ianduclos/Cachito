@@ -294,3 +294,110 @@ describe('belief filter public-dice evidence', () => {
     expect([...folded]).not.toEqual([...shiftedByHand])
   })
 })
+
+
+
+describe('exp-027 Calzo mode guard', () => {
+  // The one-off pocket: the pre-guard policy called Calzo on quantity q while its own
+  // posterior ranked q+1 at least as likely (measured on real heads-up games; see
+  // lab/notes/exp-027-calzo-one-off-repair.md). These tests pin the guard: each one
+  // goes red if the guard comparison is deleted or inverted. States below were probed
+  // against the real policy: exact/threshold values are engine- and model-derived.
+  const guardedPolicy = () => createBeliefEquityPolicy({ twoPlayerGate: false, minSamples: 0 })
+  type CalzoTrace = { belief?: { calzo?: { threshold: number; exactProbability: number; nextCountProbability: number } } }
+
+  function facingBid(
+    players: Array<{ id: string; hand: Die[] }>,
+    bidderId: string,
+    bid: Bid,
+  ): BotObservation {
+    const state = playing(players, {
+      currentPlayerId: 'self',
+      currentBid: bid,
+      lastBidderId: bidderId,
+    })
+    return observation(state, 'self', [{
+      round: 1,
+      playerId: bidderId,
+      action: { type: 'bid', bid },
+    }])
+  }
+
+  it('refuses Calzo when the posterior mode sits at q+1 even above the breakeven threshold', () => {
+    // Self at 1 die holding a 5; opponent at 1 die opens 1x5. The bid-conditioned
+    // posterior puts P(count==2) above P(count==1) while the low-dice breakeven is
+    // cheap enough that bare P(exact) would have fired pre-guard.
+    const input = facingBid(
+      [{ id: 'self', hand: [5] }, { id: 'opp', hand: [4] }],
+      'opp',
+      { quantity: 1, denomination: 5 },
+    )
+    const result = guardedPolicy().chooseActionWithTrace!(input, () => 0.5)
+    const calzo = (result.trace as CalzoTrace).belief?.calzo
+
+    // The pre-guard fire condition must genuinely hold — otherwise this test proves
+    // nothing about the guard (deleting the guard flips the choice to Calzo: red).
+    expect(calzo?.exactProbability).toBeGreaterThanOrEqual(calzo?.threshold ?? 1)
+    expect(calzo?.nextCountProbability).toBeGreaterThanOrEqual(calzo?.exactProbability ?? 1)
+    expect(result.choice.type).not.toBe('calzo')
+  })
+
+  it('still fires Calzo when the posterior mode sits at q', () => {
+    // Self at 1 die holding a 5; opponent at 2 dice bids 2x5: P(count==2) is high,
+    // the mode is genuinely at q, and the guard must not silence a real Calzo.
+    const input = facingBid(
+      [{ id: 'self', hand: [5] }, { id: 'opp', hand: [4, 4] }],
+      'opp',
+      { quantity: 2, denomination: 5 },
+    )
+    const result = guardedPolicy().chooseActionWithTrace!(input, () => 0.5)
+    const calzo = (result.trace as CalzoTrace).belief?.calzo
+
+    expect(calzo?.exactProbability).toBeGreaterThanOrEqual(calzo?.threshold ?? 1)
+    expect(calzo?.nextCountProbability ?? 1).toBeLessThan(calzo?.exactProbability ?? 0)
+    expect(result.choice.type).toBe('calzo')
+  })
+
+  it('records nextCountProbability honestly and the choice follows the guarded rule', () => {
+    // One refusal state and one fire state: the observable choice must match
+    // exact >= threshold && exact > next in both directions.
+    const refusal = guardedPolicy().chooseActionWithTrace!(facingBid(
+      [{ id: 'self', hand: [5] }, { id: 'opp', hand: [4] }],
+      'opp',
+      { quantity: 1, denomination: 5 },
+    ), () => 0.5)
+    const refusalCalzo = (refusal.trace as CalzoTrace).belief?.calzo
+    expect(typeof refusalCalzo?.nextCountProbability).toBe('number')
+    expect(refusal.choice.type === 'calzo').toBe(
+      (refusalCalzo?.exactProbability ?? 0) >= (refusalCalzo?.threshold ?? 1)
+        && (refusalCalzo?.exactProbability ?? 0) > (refusalCalzo?.nextCountProbability ?? 1),
+    )
+
+    const fire = guardedPolicy().chooseActionWithTrace!(facingBid(
+      [{ id: 'self', hand: [5] }, { id: 'opp', hand: [4, 4] }],
+      'opp',
+      { quantity: 2, denomination: 5 },
+    ), () => 0.5)
+    const fireCalzo = (fire.trace as CalzoTrace).belief?.calzo
+    expect(typeof fireCalzo?.nextCountProbability).toBe('number')
+    expect(fire.choice.type === 'calzo').toBe(
+      (fireCalzo?.exactProbability ?? 0) >= (fireCalzo?.threshold ?? 1)
+        && (fireCalzo?.exactProbability ?? 0) > (fireCalzo?.nextCountProbability ?? 1),
+    )
+  })
+
+  it('applies the same guard multiplayer — a mode-at-q Calzo still fires at 3 seats', () => {
+    const input = facingBid(
+      [{ id: 'self', hand: [5] }, { id: 'opp', hand: [4, 4] }, { id: 'third', hand: [6] }],
+      'opp',
+      { quantity: 2, denomination: 5 },
+    )
+    const result = createBeliefEquityPolicy({ minSamples: 0 })
+      .chooseActionWithTrace!(input, () => 0.5)
+    const calzo = (result.trace as CalzoTrace).belief?.calzo
+
+    expect(calzo?.exactProbability).toBeGreaterThanOrEqual(calzo?.threshold ?? 1)
+    expect(calzo?.nextCountProbability ?? 1).toBeLessThan(calzo?.exactProbability ?? 0)
+    expect(result.choice.type).toBe('calzo')
+  })
+})

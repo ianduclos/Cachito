@@ -141,7 +141,10 @@ function personaPolicy(persona: PersonaAggression) {
   if (!policy) {
     // Respect gate (lab exp-016, gated promotion): a marginal Dudo against a
     // bidder whose revealed bids keep holding becomes a supportable raise.
-    policy = createRespectGatedPolicy(createPersonaBluffPolicy({ name: `Gen 2 · ${PERSONA_LABELS[persona]}`, aggression: persona }));
+    // twoPlayerGate lifted 2026-08-06 (lab exp-026/028): the belief stack plays
+    // heads-up itself — 84.2% vs the gated Conservative delegate over 10k
+    // fresh-seed games, plus the exp-026 human-replay gate.
+    policy = createRespectGatedPolicy(createPersonaBluffPolicy({ name: `Gen 2 · ${PERSONA_LABELS[persona]}`, aggression: persona, twoPlayerGate: false }));
     personaPolicies.set(persona, policy);
   }
   return policy;

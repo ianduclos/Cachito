@@ -73,6 +73,8 @@ export interface CalzoDetail extends BreakevenResult {
   afterLoss: number
   afterGain: number
   exactProbability: number
+  /** P(count == q+1) — the adjacency the exp-027 mode guard compares against. */
+  nextCountProbability: number
 }
 
 export interface DudoDetail {
