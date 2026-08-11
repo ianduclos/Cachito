@@ -40,17 +40,23 @@ describe('completed match analysis', () => {
         { round: 1, playerId: 'bot', action: { type: 'bid', playerId: 'bot', bid: { quantity: 4, denomination: 5 } } },
         { round: 1, playerId: 'human', action: { type: 'dudo', playerId: 'human' } },
       ],
-      roundDeals: [{ round: 1, paloFijo: false, starterId: 'bot', hands: [{ playerId: 'human', dice: [1, 2, 3, 4, 6] }, { playerId: 'bot', dice: [5, 2, 3, 4, 6] }] }],
-      roundResolutions: [{ round: 1, paloFijo: false, resolution }],
+      roundDeals: [{ round: 1, paloFijo: false, starterId: 'bot', hands: [{ playerId: 'human', dice: [1, 2, 3, 5, 6] }, { playerId: 'bot', dice: [5, 2, 3, 4, 6] }] }],
+      roundResolutions: [{ round: 1, paloFijo: false, resolution, revealedHands: [{ playerId: 'human', dice: [1, 2, 3, 5, 6] }, { playerId: 'bot', dice: [5, 2, 3, 4, 6] }] }],
       botDecisions: [botDecision],
       finalState,
     }, '2026-07-18T00:00:00.000Z')
 
     expect(analysis.headline).toContain('Ana María')
-    expect(analysis.keyMoment).toContain('claimed 4 Chinas with 2 actually there')
+    expect(analysis.keyMoment).toContain('called Dudo on the final claim and was right')
+    expect(analysis.signaturePlay).toMatchObject({
+      round: 1, kind: 'correct-dudo', actorId: 'human', counterpartId: 'bot',
+      counterpartAttributable: true,
+      bid: { quantity: 4, denomination: 5 }, actualCount: 2, callKind: 'dudo',
+    })
     expect(analysis.players.find((player) => player.id === 'bot')).toMatchObject({
       persona: 'Bold storyteller',
       stats: {
+        bidFaceCounts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 1, 6: 0 },
         unsupportedFinalBids: 1,
         unsupportedCaught: 1,
         unsupportedSurvived: 0,
@@ -96,8 +102,8 @@ describe('completed match analysis', () => {
     // Only Min-chi's claim was challenged, so only Min-chi's has a denominator.
     expect(bot.stats.verifiedFinalBids).toBe(1)
     expect(human.stats.verifiedFinalBids).toBe(0)
-    expect(human.verdict).toContain('No claim of theirs ever reached a reveal.')
-    expect(bot.verdict).toContain('1 of 1 revealed claim fell short')
+    expect(human).toMatchObject({ style: 'Opening Moves', styleRead: 'Made 1 attributable bids and 1 attributable calls.', badges: [] })
+    expect(bot.styleRead).toContain('Made 1 attributable bids')
   })
 
   it('never scores a blind Palo Fijo claim against dice the bidder could not see', () => {
@@ -136,13 +142,13 @@ describe('completed match analysis', () => {
         { round: 1, playerId: 'bot', action: { type: 'bid', playerId: 'bot', bid: { quantity: 4, denomination: 5 } }, tableDice: [5, 5] },
         { round: 1, playerId: 'human', action: { type: 'dudo', playerId: 'human' } },
       ],
-      roundDeals: [{ round: 1, paloFijo: false, starterId: 'bot', hands: [{ playerId: 'human', dice: [1, 2, 3, 4, 6] }, { playerId: 'bot', dice: [5, 2, 3, 4, 6] }] }],
-      roundResolutions: [{ round: 1, paloFijo: false, resolution }],
+      roundDeals: [{ round: 1, paloFijo: false, starterId: 'bot', hands: [{ playerId: 'human', dice: [1, 2, 3, 5, 6] }, { playerId: 'bot', dice: [5, 2, 3, 4, 6] }] }],
+      roundResolutions: [{ round: 1, paloFijo: false, resolution, revealedHands: [{ playerId: 'human', dice: [1, 2, 3, 5, 6] }, { playerId: 'bot', dice: [5, 2, 3, 4, 6] }] }],
       botDecisions: [botDecision],
       finalState,
     }, '2026-07-18T00:00:00.000Z')
 
-    expect(analysis.schemaVersion).toBe(4)
+    expect(analysis.schemaVersion).toBe(5)
     expect(analysis.startingDice).toEqual([
       { playerId: 'human', dice: 5 },
       { playerId: 'bot', dice: 5 },
@@ -150,20 +156,29 @@ describe('completed match analysis', () => {
     expect(analysis.roundStories).toEqual([{
       round: 1,
       paloFijo: false,
-      bids: [{ playerId: 'bot', quantity: 4, denomination: 5, tableDice: 2 }],
+      startingDice: [
+        { playerId: 'human', dice: 5 },
+        { playerId: 'bot', dice: 5 },
+      ],
+      bids: [{ playerId: 'bot', quantity: 4, denomination: 5, attributable: true, tableDice: 2 }],
       callerId: 'human',
+      callerAttributable: true,
       bidderId: 'bot',
       kind: 'dudo',
       correct: true,
       actualCount: 2,
       margin: -2,
       diceChanges: [{ playerId: 'bot', delta: -1 }],
+      revealedHands: [{ playerId: 'human', dice: [1, 2, 3, 5, 6] }, { playerId: 'bot', dice: [5, 2, 3, 4, 6] }],
     }])
-    // Privacy: the browser payload must never carry dealt or revealed hand values.
+    // The only dice values in the browser payload come from the recorded public
+    // reveal—not the round deal, a reroll log, or an unresolved private hand.
     const serialized = JSON.stringify(analysis)
     expect(serialized).not.toContain('"hands"')
     expect(serialized).not.toContain('"hand"')
     expect(serialized).not.toContain('rerolledDice')
+    expect(serialized).not.toContain('successProbability')
+    expect(serialized).not.toContain('surpriseValue')
   })
 
   it('labels a ladder-top fallback as forced without inventing deliberate bluff intent', () => {
@@ -248,14 +263,16 @@ describe('completed match analysis', () => {
     const bot = analysis.players.find((player) => player.id === 'bot')!
     expect(human.stats).toMatchObject({
       bids: 0,
+      bidFaceCounts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 },
       verifiedFinalBids: 0,
       unsupportedFinalBids: 0,
       forcedEscalations: 0,
     })
     expect(human.scores.bluff.samples).toBe(0)
+    expect(human).toMatchObject({ style: 'Off the Record', styleRead: 'No attributable actions were recorded.', badges: [] })
     expect(bot.stats).toMatchObject({ dudoAttempts: 1, dudoCorrect: 1 })
     expect(analysis.roundStories[0].bids).toEqual([
-      { playerId: 'human', quantity: 4, denomination: 5 },
+      { playerId: 'human', quantity: 4, denomination: 5, attributable: false },
     ])
   })
 
@@ -296,10 +313,11 @@ describe('completed match analysis', () => {
     const coveredHuman = build(true).players.find((player) => player.id === 'human')!
     expect(coveredHuman.moment).toBeUndefined()
     expect(build(true).keyMoment).toBeUndefined()
+    expect(build(true).signaturePlay).toBeUndefined()
     expect(coveredHuman.stats).toMatchObject({ calzoAttempts: 0, calzoCorrect: 0 })
     // The die really was won, so the match fact survives the attribution filter.
     expect(coveredHuman.stats.diceGained).toBe(1)
-    expect(build(true).roundStories[0]).toMatchObject({ callerId: 'human', kind: 'calzo', correct: true })
+    expect(build(true).roundStories[0]).toMatchObject({ callerId: 'human', callerAttributable: false, kind: 'calzo', correct: true })
     // The bot's real bid is still verified against the reveal.
     expect(build(true).players.find((player) => player.id === 'bot')!.stats.verifiedFinalBids).toBe(1)
 
@@ -307,5 +325,366 @@ describe('completed match analysis', () => {
     const realHuman = build(false).players.find((player) => player.id === 'human')!
     expect(realHuman.moment).toContain('Calzo call was right')
     expect(realHuman.stats).toMatchObject({ calzoAttempts: 1, calzoCorrect: 1 })
+  })
+
+  it('attributes signature eligibility to the featured actor across every covered combination', () => {
+    const build = (correct: boolean, bidCovered: boolean, callCovered: boolean) => {
+      const bid = { quantity: correct ? 4 : 1, denomination: 5 as const }
+      return buildMatchAnalysis({
+        rules: { ...DEFAULT_GAME_RULES },
+        seats: [{ id: 'human', name: 'Ana María', controller: 'human' }, { id: 'bot', name: 'Min-chi Park', controller: 'bot' }],
+        actions: [
+          { round: 1, playerId: 'bot', action: { type: 'bid' as const, playerId: 'bot', bid }, ...(bidCovered ? { covered: true } : {}) },
+          { round: 1, playerId: 'human', action: { type: 'dudo' as const, playerId: 'human' }, ...(callCovered ? { covered: true } : {}) },
+        ],
+        roundDeals: [{ round: 1, paloFijo: false, starterId: 'bot', hands: [
+          { playerId: 'human', dice: [1, 2, 3, 4, 6] }, { playerId: 'bot', dice: [5, 2, 3, 4, 6] },
+        ] }],
+        roundResolutions: [{ round: 1, paloFijo: false, resolution: {
+          ...resolution, bid, actualCount: correct ? 2 : 1, correct,
+          diceChanges: [{ playerId: correct ? 'bot' : 'human', before: 5, after: 4, delta: -1, reason: 'dudo' }],
+        } }],
+        botDecisions: [], finalState,
+      })
+    }
+    for (const bidCovered of [false, true]) {
+      for (const callCovered of [false, true]) {
+        const story = build(true, bidCovered, callCovered).roundStories[0]
+        expect(story.bids.at(-1)?.attributable, `bid covered=${bidCovered}`).toBe(!bidCovered)
+        expect(story.callerAttributable, `call covered=${callCovered}`).toBe(!callCovered)
+        const serializedStory = JSON.parse(JSON.stringify(story))
+        expect(serializedStory.bids.at(-1).attributable, `serialized bid covered=${bidCovered}`).toBe(!bidCovered)
+        expect(serializedStory.callerAttributable, `serialized call covered=${callCovered}`).toBe(!callCovered)
+        const correctCall = build(true, bidCovered, callCovered).signaturePlay
+        expect(correctCall?.kind, `correct call; bid covered=${bidCovered}, call covered=${callCovered}`)
+          .toBe(callCovered ? undefined : 'correct-dudo')
+        if (correctCall) {
+          expect(correctCall.counterpartAttributable).toBe(!bidCovered)
+          const copy = build(true, bidCovered, callCovered).keyMoment!
+          expect(copy).toContain('Ana María called Dudo on the final claim and was right')
+          if (bidCovered) expect(copy).not.toContain('Min-chi Park')
+        }
+
+        const heldAnalysis = build(false, bidCovered, callCovered)
+        const heldBid = heldAnalysis.signaturePlay
+        expect(heldBid?.kind, `held bid; bid covered=${bidCovered}, call covered=${callCovered}`)
+          .toBe(bidCovered ? undefined : 'bid-held')
+        if (heldBid) {
+          expect(heldBid.counterpartAttributable).toBe(!callCovered)
+          if (callCovered) {
+            expect(heldAnalysis.keyMoment).toContain('a Dudo followed')
+            expect(heldAnalysis.keyMoment).not.toContain('Ana María')
+          } else {
+            expect(heldAnalysis.keyMoment).toContain('Ana María said Dudo')
+          }
+          expect(heldAnalysis.keyMoment).toContain('1 was there')
+        }
+      }
+    }
+    const coveredCatch = build(true, false, true)
+    const caughtBidderMoment = coveredCatch.players.find((player) => player.id === 'bot')?.moment
+    expect(caughtBidderMoment).toContain('it was caught')
+    expect(caughtBidderMoment).not.toContain('Ana María')
+  })
+
+  it('records literal unheld-face bids before table dice or rerolls, without treating aces as every face', () => {
+    const build = (paloFijo: boolean) => buildMatchAnalysis({
+      rules: { ...DEFAULT_GAME_RULES, paloFijoBlindDice: true },
+      seats: [
+        { id: 'human', name: 'Ana María', controller: 'human' },
+        { id: 'bot', name: 'Min-chi Park', controller: 'bot' },
+      ],
+      actions: [
+        // Min-chi has an Ace but no Samba. The public commitment and later reroll
+        // must not rewrite what was visibly absent when this claim was made.
+        { round: 1, playerId: 'bot', action: { type: 'bid' as const, playerId: 'bot', bid: { quantity: 3, denomination: 6 } }, tableDice: [5], rerolledDice: [6, 6, 6, 6] },
+        { round: 1, playerId: 'human', action: { type: 'dudo' as const, playerId: 'human' } },
+      ],
+      roundDeals: [{ round: 1, paloFijo, starterId: 'bot', hands: [
+        { playerId: 'human', dice: [2, 3, 4, 5, 6] },
+        { playerId: 'bot', dice: [1, 2, 3, 4, 5] },
+      ] }],
+      roundResolutions: [{ round: 1, paloFijo, resolution: {
+        ...resolution, bid: { quantity: 3, denomination: 6 }, actualCount: 2,
+      } }],
+      botDecisions: [],
+      finalState,
+    })
+    const sighted = build(false).players.find((player) => player.id === 'bot')!
+    expect(sighted.stats).toMatchObject({
+      bidFaceCounts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 1 },
+      unheldFaceBids: 1,
+      averageUnheldFaceQuantity: 3,
+    })
+
+    // With five dice in blind Palo Fijo, Min-chi could not see the hand at all.
+    const blind = build(true).players.find((player) => player.id === 'bot')!
+    expect(blind.stats).toMatchObject({ unheldFaceBids: 0, averageUnheldFaceQuantity: 0 })
+  })
+
+  it('models a table-dice signature from fixed commitments and unknown rerolls', () => {
+    const build = (oldUncommitted: number[], rerolledDice: number[], actualCount: number) => buildMatchAnalysis({
+      rules: { ...DEFAULT_GAME_RULES },
+      seats: [
+        { id: 'actor', name: 'Actor', controller: 'human' },
+        { id: 'caller', name: 'Caller', controller: 'human' },
+        { id: 'third', name: 'Third', controller: 'human' },
+      ],
+      actions: [
+        { round: 1, playerId: 'actor', action: { type: 'bid' as const, playerId: 'actor', bid: { quantity: 6, denomination: 6 } }, tableDice: [2], rerolledDice: rerolledDice as Array<1 | 2 | 3 | 4 | 5 | 6> },
+        { round: 1, playerId: 'caller', action: { type: 'dudo' as const, playerId: 'caller' } },
+      ],
+      roundDeals: [{ round: 1, paloFijo: false, starterId: 'actor', hands: [
+        { playerId: 'actor', dice: [...oldUncommitted, 2] },
+        { playerId: 'caller', dice: [6, 6, 6, 6, 6] },
+        { playerId: 'third', dice: [6] },
+      ] }],
+      roundResolutions: [{ round: 1, paloFijo: false, resolution: {
+        kind: 'dudo', callerId: 'caller', bidderId: 'actor', bid: { quantity: 6, denomination: 6 }, actualCount, correct: false,
+        diceChanges: [{ playerId: 'caller', before: 5, after: 4, delta: -1, reason: 'dudo' }], nextStarterId: 'caller', paloFijoNextRound: false,
+      } }],
+      botDecisions: [], finalState: { ...finalState, winnerId: 'actor' },
+    })
+    const formerlyStrongHand = build([6, 6, 6, 6], [3, 3, 3, 3], 6)
+    const fortunateReroll = build([3, 3, 3, 3], [6, 6, 6, 6], 10)
+
+    // Only the committed 2 was fixed at decision time. Four old Sambas cannot
+    // inflate the read, and four later rerolled Sambas cannot retroactively do so.
+    expect(formerlyStrongHand.signaturePlay?.surprise).toBe('long-shot')
+    expect(fortunateReroll.signaturePlay?.surprise).toBe('long-shot')
+    expect(formerlyStrongHand.signaturePlay).toMatchObject({ kind: 'bid-held', tableDice: 1 })
+    expect(fortunateReroll.signaturePlay).toMatchObject({ kind: 'bid-held', tableDice: 1 })
+  })
+
+  it('selects a privacy-safe signature for a long-shot bid that held under Dudo', () => {
+    const bid: { quantity: number; denomination: 6 } = { quantity: 10, denomination: 6 }
+    const analysis = buildMatchAnalysis({
+      rules: { ...DEFAULT_GAME_RULES },
+      seats: [
+        { id: 'la-hoha', name: 'La Hoha', controller: 'human' },
+        { id: 'caller', name: 'Caller', controller: 'human' },
+        { id: 'third', name: 'Third', controller: 'human' },
+        { id: 'fourth', name: 'Fourth', controller: 'human' },
+      ],
+      actions: [
+        { round: 5, playerId: 'la-hoha', action: { type: 'bid', playerId: 'la-hoha', bid } },
+        { round: 5, playerId: 'caller', action: { type: 'dudo', playerId: 'caller' } },
+      ],
+      roundDeals: [{ round: 5, paloFijo: false, starterId: 'la-hoha', hands: [
+        { playerId: 'la-hoha', dice: [1, 2, 3, 4, 5] },
+        { playerId: 'caller', dice: [6, 6, 6, 6, 6] },
+        { playerId: 'third', dice: [6, 6, 6, 6, 6] },
+        { playerId: 'fourth', dice: [6] },
+      ] }],
+      roundResolutions: [{ round: 5, paloFijo: false, resolution: {
+        kind: 'dudo', callerId: 'caller', bidderId: 'la-hoha', bid, actualCount: 12, correct: false,
+        diceChanges: [{ playerId: 'caller', before: 5, after: 4, delta: -1, reason: 'dudo' }],
+        nextStarterId: 'caller', paloFijoNextRound: false,
+      } }],
+      botDecisions: [],
+      finalState: { ...finalState, round: 5, winnerId: 'la-hoha' },
+    })
+    expect(analysis.signaturePlay).toMatchObject({
+      round: 5, kind: 'bid-held', actorId: 'la-hoha', counterpartId: 'caller', counterpartAttributable: true, bid,
+      actualCount: 12, callKind: 'dudo', surprise: 'long-shot',
+    })
+    expect(JSON.stringify(analysis.signaturePlay)).not.toContain('probability')
+    expect(JSON.stringify(analysis.signaturePlay)).not.toContain('hand')
+    expect(JSON.parse(JSON.stringify(analysis.roundStories[0]))).toMatchObject({
+      callerAttributable: true,
+      bids: [{ attributable: true }],
+    })
+  })
+
+  it('damps a one-sample unheld-face read in the Biggest liar award and carries public shortfall evidence', () => {
+    const analysis = buildMatchAnalysis({
+      rules: { ...DEFAULT_GAME_RULES },
+      seats: [
+        { id: 'ana', name: 'Ana', controller: 'human' },
+        { id: 'min', name: 'Min', controller: 'bot' },
+      ],
+      actions: [
+        { round: 1, playerId: 'ana', action: { type: 'bid', playerId: 'ana', bid: { quantity: 6, denomination: 6 } } },
+        { round: 1, playerId: 'min', action: { type: 'bid', playerId: 'min', bid: { quantity: 7, denomination: 5 } } },
+        { round: 1, playerId: 'ana', action: { type: 'dudo', playerId: 'ana' } },
+      ],
+      roundDeals: [{ round: 1, paloFijo: false, starterId: 'ana', hands: [
+        { playerId: 'ana', dice: [1, 2, 3, 4, 5] }, { playerId: 'min', dice: [1, 2, 3, 4, 6] },
+      ] }],
+      roundResolutions: [{ round: 1, paloFijo: false, resolution: {
+        kind: 'dudo', callerId: 'ana', bidderId: 'min', bid: { quantity: 7, denomination: 5 }, actualCount: 2, correct: true,
+        diceChanges: [{ playerId: 'min', before: 5, after: 4, delta: -1, reason: 'dudo' }],
+        nextStarterId: 'min', paloFijoNextRound: false,
+      } }],
+      botDecisions: [], finalState,
+    })
+    expect(analysis.biggestLiar).toEqual({
+      playerId: 'min', score: 74,
+      components: {
+        unsupportedFinalBids: 1, tableMaxUnsupportedFinalBids: 1,
+        unheldFaceBids: 1, averageUnheldFaceQuantity: 7, tableMaxAverageUnheldFaceQuantity: 7,
+      },
+      widestRevealedShortfall: {
+        round: 1, bid: { quantity: 7, denomination: 5 }, actualCount: 2, shortfall: 5, callerId: 'ana', caught: true,
+      },
+    })
+  })
+
+  it('breaks Biggest liar ties by seat order and omits it when there is no evidence', () => {
+    const tied = buildMatchAnalysis({
+      rules: { ...DEFAULT_GAME_RULES },
+      seats: [{ id: 'first', name: 'First', controller: 'human' }, { id: 'second', name: 'Second', controller: 'human' }],
+      actions: [
+        { round: 1, playerId: 'first', action: { type: 'bid', playerId: 'first', bid: { quantity: 4, denomination: 6 } } },
+        { round: 1, playerId: 'second', action: { type: 'dudo', playerId: 'second' } },
+        { round: 2, playerId: 'second', action: { type: 'bid', playerId: 'second', bid: { quantity: 4, denomination: 6 } } },
+        { round: 2, playerId: 'first', action: { type: 'dudo', playerId: 'first' } },
+      ],
+      roundDeals: [
+        { round: 1, paloFijo: false, starterId: 'first', hands: [{ playerId: 'first', dice: [1, 2, 3, 4, 5] }, { playerId: 'second', dice: [1, 2, 3, 4, 5] }] },
+        { round: 2, paloFijo: false, starterId: 'second', hands: [{ playerId: 'first', dice: [1, 2, 3, 4] }, { playerId: 'second', dice: [1, 2, 3, 4, 5] }] },
+      ],
+      roundResolutions: [1, 2].map((round) => ({ round, paloFijo: false, resolution: {
+        kind: 'dudo' as const, callerId: round === 1 ? 'second' : 'first', bidderId: round === 1 ? 'first' : 'second', bid: { quantity: 4, denomination: 6 }, actualCount: 1, correct: true,
+        diceChanges: [{ playerId: round === 1 ? 'first' : 'second', before: 5, after: 4, delta: -1, reason: 'dudo' as const }], nextStarterId: 'first', paloFijoNextRound: false,
+      } })),
+      botDecisions: [], finalState: { ...finalState, round: 2, winnerId: 'first' },
+    })
+    expect(tied.biggestLiar?.playerId).toBe('first')
+    // Both players have the same single unheld sample, so the damping applies
+    // equally and seat order resolves the otherwise exact tie.
+    expect(tied.biggestLiar?.score).toBe(74)
+
+    const quiet = buildMatchAnalysis({ ...{
+      rules: { ...DEFAULT_GAME_RULES }, seats: [{ id: 'only', name: 'Only', controller: 'human' as const }], actions: [], roundDeals: [], roundResolutions: [], botDecisions: [],
+    }, finalState: { ...finalState, winnerId: 'only', players: [{ ...finalState.players[0], id: 'only', name: 'Only' }] } })
+    expect(quiet.biggestLiar).toBeUndefined()
+  })
+
+  it('does not bestow Biggest liar for absent-face bids without an unsupported final', () => {
+    const analysis = buildMatchAnalysis({
+      rules: { ...DEFAULT_GAME_RULES },
+      seats: [{ id: 'storyteller', name: 'Storyteller', controller: 'human' }],
+      actions: [
+        { round: 1, playerId: 'storyteller', action: { type: 'bid', playerId: 'storyteller', bid: { quantity: 5, denomination: 6 } } },
+      ],
+      roundDeals: [{ round: 1, paloFijo: false, starterId: 'storyteller', hands: [
+        { playerId: 'storyteller', dice: [1, 2, 3, 4, 5] },
+      ] }],
+      roundResolutions: [], botDecisions: [],
+      finalState: { ...finalState, winnerId: 'storyteller', players: [{ ...finalState.players[0], id: 'storyteller', name: 'Storyteller' }] },
+    })
+
+    expect(analysis.players[0].stats).toMatchObject({ unheldFaceBids: 1, averageUnheldFaceQuantity: 5, unsupportedFinalBids: 0 })
+    expect(analysis.biggestLiar).toBeUndefined()
+  })
+
+  it('ranks Biggest liar by raw composite before rounding a near tie for display', () => {
+    const bRounds = Array.from({ length: 20 }, (_, index) => index + 2)
+    const roundDeals = [1, ...bRounds].map((round) => ({
+      round, paloFijo: false, starterId: round === 1 ? 'a' : 'b',
+      hands: [{ playerId: 'a', dice: [1, 2, 3, 4, 5] }, { playerId: 'b', dice: [1, 2, 3, 4, 5] }],
+    }))
+    const actions = [
+      { round: 1, playerId: 'a', action: { type: 'bid' as const, playerId: 'a', bid: { quantity: 4, denomination: 6 as const } } },
+      { round: 1, playerId: 'b', action: { type: 'dudo' as const, playerId: 'b' } },
+      ...bRounds.flatMap((round, index) => [
+        { round, playerId: 'b', action: { type: 'bid' as const, playerId: 'b', bid: { quantity: index === bRounds.length - 1 ? 2 : 1, denomination: 6 as const } } },
+        { round, playerId: 'a', action: { type: 'dudo' as const, playerId: 'a' } },
+      ]),
+    ]
+    const roundResolutions = [
+      { round: 1, paloFijo: false, resolution: { kind: 'dudo' as const, callerId: 'b', bidderId: 'a', bid: { quantity: 4, denomination: 6 as const }, actualCount: 0, correct: true, diceChanges: [{ playerId: 'a', before: 5, after: 4, delta: -1, reason: 'dudo' as const }], nextStarterId: 'a', paloFijoNextRound: false } },
+      ...bRounds.map((round, index) => {
+        const finalRound = index === bRounds.length - 1
+        const quantity = finalRound ? 2 : 1
+        return { round, paloFijo: false, resolution: { kind: 'dudo' as const, callerId: 'a', bidderId: 'b', bid: { quantity, denomination: 6 as const }, actualCount: finalRound ? 0 : 1, correct: finalRound, diceChanges: [{ playerId: finalRound ? 'b' : 'a', before: 5, after: 4, delta: -1, reason: 'dudo' as const }], nextStarterId: 'b', paloFijoNextRound: false } }
+      }),
+    ]
+    const analysis = buildMatchAnalysis({
+      rules: { ...DEFAULT_GAME_RULES },
+      seats: [{ id: 'a', name: 'A', controller: 'human' }, { id: 'b', name: 'B', controller: 'human' }],
+      actions, roundDeals, roundResolutions, botDecisions: [],
+      finalState: { ...finalState, round: 21, winnerId: 'a' },
+    })
+
+    // A: 65 + 35*(4/4)*1/4 = 73.75. B: 65 + 35*(1.05/4) = 74.1875.
+    // Both display as 74; raw ordering must select B before the average-quantity
+    // tie-break would incorrectly favor A.
+    expect(analysis.biggestLiar).toMatchObject({ playerId: 'b', score: 74 })
+    expect(analysis.biggestLiar?.components).toMatchObject({ unheldFaceBids: 20, averageUnheldFaceQuantity: 1.05 })
+  })
+
+  it('does not double-count one final bid that was both unsupported and a forced escalation when it survived', () => {
+    const analysis = buildMatchAnalysis({
+      rules: { ...DEFAULT_GAME_RULES },
+      seats: [{ id: 'bidder', name: 'Bidder', controller: 'human' }, { id: 'caller', name: 'Caller', controller: 'human' }],
+      actions: [1, 2].flatMap((round) => [
+        { round, playerId: 'caller', action: { type: 'bid' as const, playerId: 'caller', bid: { quantity: 7, denomination: 6 as const } } },
+        { round, playerId: 'bidder', action: { type: 'bid' as const, playerId: 'bidder', bid: { quantity: 8, denomination: 6 as const } } },
+        { round, playerId: 'caller', action: { type: 'calzo' as const, playerId: 'caller' } },
+      ]),
+      roundDeals: [1, 2].map((round) => ({ round, paloFijo: false, starterId: 'caller', hands: [{ playerId: 'bidder', dice: [2, 2, 2, 2, 2] }, { playerId: 'caller', dice: [3, 3, 3, 3, 3] }] })),
+      roundResolutions: [1, 2].map((round) => ({ round, paloFijo: false, resolution: { kind: 'calzo' as const, callerId: 'caller', bidderId: 'bidder', bid: { quantity: 8, denomination: 6 as const }, actualCount: 0, correct: false, diceChanges: [{ playerId: 'caller', before: 5, after: 4, delta: -1, reason: 'calzo-wrong' as const }], nextStarterId: 'caller', paloFijoNextRound: false } })),
+      botDecisions: [],
+      finalState: { ...finalState, round: 2, winnerId: 'bidder', players: [{ ...finalState.players[0], id: 'bidder', name: 'Bidder' }, { ...finalState.players[1], id: 'caller', name: 'Caller' }] },
+    })
+    const bidder = analysis.players.find((player) => player.id === 'bidder')!
+    expect(bidder.stats).toMatchObject({ unsupportedSurvived: 2, forcedEscalationsSurvived: 2 })
+    expect(bidder).toMatchObject({ style: 'Somehow Still Here', styleRead: 'Had at least 2 final claims survive the round.' })
+    expect(bidder.styleRead).not.toContain('4 final claims')
+  })
+
+  it('selects high and low claim-risk labels only after the report’s six-bid gate', () => {
+    const buildClaimStyle = (id: string, bid: { quantity: number; denomination: 1 | 6 }, hand: Array<1 | 2 | 3 | 4 | 5 | 6>) => buildMatchAnalysis({
+      rules: { ...DEFAULT_GAME_RULES },
+      seats: [{ id, name: id, controller: 'human' }, { id: 'other', name: 'Other', controller: 'human' }],
+      actions: Array.from({ length: 6 }, (_, index) => ({ round: index + 1, playerId: id, action: { type: 'bid' as const, playerId: id, bid } })),
+      roundDeals: Array.from({ length: 6 }, (_, index) => ({ round: index + 1, paloFijo: false, starterId: id, hands: [{ playerId: id, dice: hand }, { playerId: 'other', dice: [2, 3, 4, 5, 6] as Array<1 | 2 | 3 | 4 | 5 | 6> }] })),
+      roundResolutions: [], botDecisions: [],
+      finalState: { ...finalState, round: 6, winnerId: id, players: [{ ...finalState.players[0], id, name: id }, { ...finalState.players[1], id: 'other', name: 'Other' }] },
+    }).players.find((player) => player.id === id)!
+
+    const low = buildClaimStyle('low', { quantity: 1, denomination: 1 }, [1, 2, 3, 4, 5])
+    const high = buildClaimStyle('high', { quantity: 6, denomination: 6 }, [1, 2, 3, 4, 5])
+    expect(low).toMatchObject({ style: 'Receipts Attached', styleRead: 'Kept most claims close to the dice they could see.' })
+    expect(high).toMatchObject({ style: 'Stretch Merchant', styleRead: 'Sent more claims beyond the cup than most of this table.' })
+  })
+
+  it('uses literal event labels when no style axis clears its sample gate, and does so deterministically', () => {
+    const input = {
+      rules: { ...DEFAULT_GAME_RULES },
+      seats: [{ id: 'caller', name: 'Caller', controller: 'human' as const }, { id: 'bidder', name: 'Bidder', controller: 'human' as const }],
+      actions: [1, 2].flatMap((round) => [
+        { round, playerId: 'bidder', action: { type: 'bid' as const, playerId: 'bidder', bid: { quantity: 2, denomination: 5 as const } } },
+        { round, playerId: 'caller', action: { type: 'calzo' as const, playerId: 'caller' } },
+      ]),
+      roundDeals: [1, 2].map((round) => ({ round, paloFijo: false, starterId: 'bidder', hands: [{ playerId: 'caller', dice: [1, 2, 3, 4, 5] }, { playerId: 'bidder', dice: [5, 5, 2, 3, 4] }] })),
+      roundResolutions: [1, 2].map((round) => ({ round, paloFijo: false, resolution: { kind: 'calzo' as const, callerId: 'caller', bidderId: 'bidder', bid: { quantity: 2, denomination: 5 as const }, actualCount: 2, correct: true, diceChanges: [{ playerId: 'caller', before: 4, after: 5, delta: 1, reason: 'calzo-correct' as const }], nextStarterId: 'caller', paloFijoNextRound: false } })),
+      botDecisions: [],
+      finalState: { ...finalState, round: 2, winnerId: 'caller', players: [{ ...finalState.players[0], id: 'caller', name: 'Caller' }, { ...finalState.players[1], id: 'bidder', name: 'Bidder' }] },
+    }
+    const first = buildMatchAnalysis(input)
+    const second = buildMatchAnalysis(input)
+    const caller = first.players.find((player) => player.id === 'caller')!
+    expect(caller).toMatchObject({ style: 'Exact-Count Gremlin', styleRead: 'Hit every one of 2 Calzo calls.', badges: [] })
+    expect(second.players.map((player) => ({ style: player.style, styleRead: player.styleRead, badges: player.badges }))).toEqual(first.players.map((player) => ({ style: player.style, styleRead: player.styleRead, badges: player.badges })))
+  })
+
+  it('keeps replay dice out of unresolved rounds and copies only logged public reveals', () => {
+    const analysis = buildMatchAnalysis({
+      rules: { ...DEFAULT_GAME_RULES },
+      seats: [{ id: 'a', name: 'A', controller: 'human' }, { id: 'b', name: 'B', controller: 'human' }],
+      actions: [{ round: 2, playerId: 'a', action: { type: 'bid', playerId: 'a', bid: { quantity: 2, denomination: 5 } } }, { round: 2, playerId: 'b', action: { type: 'dudo', playerId: 'b' } }],
+      roundDeals: [
+        { round: 1, paloFijo: false, starterId: 'a', hands: [{ playerId: 'a', dice: [1, 1, 1] }, { playerId: 'b', dice: [2, 2, 2] }] },
+        { round: 2, paloFijo: false, starterId: 'a', hands: [{ playerId: 'a', dice: [5, 5, 1] }, { playerId: 'b', dice: [2, 3, 4] }] },
+      ],
+      roundResolutions: [{ round: 2, paloFijo: false, resolution: { kind: 'dudo', callerId: 'b', bidderId: 'a', bid: { quantity: 2, denomination: 5 }, actualCount: 2, correct: false, diceChanges: [{ playerId: 'b', before: 3, after: 2, delta: -1, reason: 'dudo' }], nextStarterId: 'b', paloFijoNextRound: false }, revealedHands: [{ playerId: 'a', dice: [5, 5, 1] }, { playerId: 'b', dice: [2, 3, 4] }] }],
+      botDecisions: [], finalState: { ...finalState, round: 2, winnerId: 'a', players: [{ ...finalState.players[0], id: 'a', name: 'A' }, { ...finalState.players[1], id: 'b', name: 'B' }] },
+    })
+    expect(analysis.roundStories).toHaveLength(1)
+    expect(analysis.roundStories[0]).toMatchObject({ round: 2, startingDice: [{ playerId: 'a', dice: 3 }, { playerId: 'b', dice: 3 }], revealedHands: [{ playerId: 'a', dice: [5, 5, 1] }, { playerId: 'b', dice: [2, 3, 4] }] })
+    expect(JSON.stringify(analysis.roundStories)).not.toContain('[1,1,1]')
   })
 })

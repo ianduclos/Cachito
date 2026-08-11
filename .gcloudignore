@@ -8,5 +8,9 @@ dist
 logs
 reports
 lab
+artifacts
+legendary-analysis-fixture.html
+dev/legendaryFixture.vite.config.ts
+opencode.json
 firebase-debug.log
 *.docx

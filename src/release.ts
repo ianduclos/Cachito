@@ -1,2 +1,2 @@
 /** Visible on the opening screen so a cached browser can be identified quickly. */
-export const release = "r2026.08.06.002";
+export const release = "r2026.08.11.001";

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_GAME_RULES } from "../engine";
@@ -98,7 +98,7 @@ function enterTable({ spectator = false, eliminated = false, shuffling = true, v
   return view;
 }
 
-function enterWinner({ viewerId = "player-1", spectator = false, shortfall = false }: { viewerId?: string; spectator?: boolean; shortfall?: boolean } = {}) {
+function enterWinner({ viewerId = "player-1", spectator = false, shortfall = false, longMatch = false, legacyAnalysis = false, analysisPlayerCount = 2, liarVariant, coveredSignatureCounterpart, coveredTapeAction }: { viewerId?: string; spectator?: boolean; shortfall?: boolean; longMatch?: boolean; legacyAnalysis?: boolean; analysisPlayerCount?: 2 | 8; liarVariant?: "winner" | "survived" | "tie"; coveredSignatureCounterpart?: "bidder" | "caller"; coveredTapeAction?: "bid" | "call" | "both" } = {}) {
   const playerId = spectator ? undefined : viewerId;
   const players = gamePlayers("player-1").map((player, index) => ({ ...player, diceCount: index === 0 ? 3 : 0, eliminated: index !== 0 }));
   const view: PublicGameView = {
@@ -114,27 +114,81 @@ function enterWinner({ viewerId = "player-1", spectator = false, shortfall = fal
     ...(playerId ? { viewerPlayerId: playerId } : {}),
   };
   const analysis: MatchAnalysis = {
-    schemaVersion: 4, generatedAt: "2026-07-18T00:00:00.000Z", rounds: 9, totalTurns: 42, winnerId: "player-1",
+    schemaVersion: 5, generatedAt: "2026-07-18T00:00:00.000Z", rounds: 9, totalTurns: 42, winnerId: "player-1",
     headline: "Ana María took the table after 9 rounds.", keyMoment: "Round 7: a correct Dudo changed the direction of the table.",
     startingDice: [{ playerId: "player-1", dice: 5 }, { playerId: "player-2", dice: 5 }],
     tableAverages: { bluff: 22, aggression: 48, challenge: 36 },
-    momentum: [{ round: 9, players: [{ playerId: "player-1", dice: 3, share: 100 }, { playerId: "player-2", dice: 0, share: 0 }] }],
+    momentum: [{ round: 8, players: [{ playerId: "player-1", dice: 3, share: 75 }, { playerId: "player-2", dice: 1, share: 25 }] }, { round: 9, players: [{ playerId: "player-1", dice: 3, share: 100 }, { playerId: "player-2", dice: 0, share: 0 }] }],
     roundStories: [...(shortfall ? [{
-      round: 8, paloFijo: false,
-      bids: [{ playerId: "player-2", quantity: 6, denomination: 5 as const }],
-      callerId: "player-1", bidderId: "player-2", kind: "dudo" as const, correct: true, actualCount: 2, margin: -4,
+      round: 8, paloFijo: false, startingDice: [{ playerId: "player-1", dice: 3 }, { playerId: "player-2", dice: 1 }],
+      bids: [{ playerId: "player-2", quantity: 6, denomination: 5 as const, attributable: true }],
+      callerId: "player-1", callerAttributable: true, bidderId: "player-2", kind: "dudo" as const, correct: true, actualCount: 2, margin: -4,
       diceChanges: [{ playerId: "player-2", delta: -1 }],
     }] : []), {
-      round: 9, paloFijo: false,
-      bids: [{ playerId: "player-2", quantity: 4, denomination: 5, tableDice: 1 }, { playerId: "player-1", quantity: 5, denomination: 5 }],
-      callerId: "player-2", bidderId: "player-1", kind: "dudo" as const, correct: false, actualCount: 5, margin: 0,
+      round: 9, paloFijo: false, startingDice: [{ playerId: "player-1", dice: 3 }, { playerId: "player-2", dice: 1 }],
+      bids: [{ playerId: "player-2", quantity: 4, denomination: 5, attributable: true, tableDice: 1 }, { playerId: "player-1", quantity: 5, denomination: 5, attributable: true }],
+      callerId: "player-2", callerAttributable: true, bidderId: "player-1", kind: "dudo" as const, correct: false, actualCount: 5, margin: 0,
       diceChanges: [{ playerId: "player-2", delta: -1 }],
     }],
+    signaturePlay: { round: 9, kind: "bid-held", actorId: "player-1", counterpartId: "player-2", counterpartAttributable: true, bid: { quantity: 5, denomination: 5 }, actualCount: 5, callKind: "dudo", diceChanges: [{ playerId: "player-2", delta: -1 }], ladderLength: 2, tableDice: 1, surprise: "bold" },
+    ...(shortfall ? { biggestLiar: { playerId: "player-2", score: 81, components: { unsupportedFinalBids: 1, tableMaxUnsupportedFinalBids: 1, unheldFaceBids: 4, averageUnheldFaceQuantity: 5.5, tableMaxAverageUnheldFaceQuantity: 5.5 }, widestRevealedShortfall: { round: 8, bid: { quantity: 6, denomination: 5 }, actualCount: 2, shortfall: 4, callerId: "player-1", caught: true } } } : {}),
     players: [
-      { id: "player-1", name: "Ana María", controller: "human", winner: true, verdict: "Bid patiently and picked measured moments to challenge. Claims stayed close to what their own dice supported. Every claim that reached a reveal held up.", scores: { bluff: { value: 31, samples: 18, earlyRead: false }, aggression: { value: 40, samples: 8, earlyRead: false }, challenge: { value: 52, samples: 4, earlyRead: false } }, stats: { bids: 18, verifiedFinalBids: 4, unsupportedFinalBids: 0, unsupportedCaught: 0, unsupportedSurvived: 0, deliberatePersonaBluffs: 0, deliberateBluffsCaught: 0, deliberateBluffsSurvived: 0, forcedEscalations: 0, forcedEscalationsCaught: 0, forcedEscalationsSurvived: 0, dudoAttempts: 3, dudoCorrect: 2, calzoAttempts: 1, calzoCorrect: 1, diceGained: 1, diceLost: 3, tableDicePlays: 1 } },
-      { id: "player-2", name: "Min-chi Park", controller: "bot", persona: "Bold storyteller", winner: false, verdict: "Pressed the table hard and challenged boldly. Claims regularly ran past what their own dice supported. 1 of 5 revealed claims fell short: 1 caught, 0 survived.", scores: { bluff: { value: 64, samples: 20, earlyRead: false }, aggression: { value: 72, samples: 11, earlyRead: false }, challenge: { value: 66, samples: 3, earlyRead: false } }, stats: { bids: 20, verifiedFinalBids: 5, unsupportedFinalBids: 1, unsupportedCaught: 1, unsupportedSurvived: 0, deliberatePersonaBluffs: 1, deliberateBluffsCaught: 1, deliberateBluffsSurvived: 0, forcedEscalations: 2, forcedEscalationsCaught: 1, forcedEscalationsSurvived: 1, dudoAttempts: 2, dudoCorrect: 1, calzoAttempts: 1, calzoCorrect: 0, diceGained: 0, diceLost: 5, tableDicePlays: 2 }, botReasoning: [{ round: 4, action: "Bid 5 Chinas", explanation: "It found a cheap moment to sell a believable story on a face it genuinely held." }] },
+      { id: "player-1", name: "Ana María", controller: "human", winner: true, verdict: "Bid patiently and picked measured moments to challenge. Claims stayed close to what their own dice supported. Every claim that reached a reveal held up.", style: "Receipts Attached", styleRead: "Kept most claims close to the dice they could see.", badges: [{ label: "ALL CLAIMS HELD", read: "Every revealed final claim held." }], scores: { bluff: { value: 31, samples: 18, earlyRead: false }, aggression: { value: 40, samples: 8, earlyRead: false }, challenge: { value: 52, samples: 1, earlyRead: true } }, stats: { bids: 18, verifiedFinalBids: 4, unsupportedFinalBids: 0, unsupportedCaught: 0, unsupportedSurvived: 0, deliberatePersonaBluffs: 0, deliberateBluffsCaught: 0, deliberateBluffsSurvived: 0, forcedEscalations: 0, forcedEscalationsCaught: 0, forcedEscalationsSurvived: 0, dudoAttempts: 3, dudoCorrect: 2, calzoAttempts: 1, calzoCorrect: 1, diceGained: 1, diceLost: 3, tableDicePlays: 1, bidFaceCounts: { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 3 }, unheldFaceBids: 0, averageUnheldFaceQuantity: 0 } },
+      { id: "player-2", name: "Min-chi Park", controller: "bot", persona: "Bold storyteller", winner: false, verdict: "Pressed the table hard and challenged boldly. Claims regularly ran past what their own dice supported. 1 of 5 revealed claims fell short: 1 caught, 0 survived.", style: "Bid Bulldozer", styleRead: "Kept pushing when the ladder tightened.", badges: [{ label: "TABLE DICE", read: "Put dice in public twice." }, { label: "FORCED CLIMB", read: "Climbed without a fully backed raise twice." }], scores: { bluff: { value: 64, samples: 20, earlyRead: false }, aggression: { value: 72, samples: 11, earlyRead: false }, challenge: { value: 66, samples: 3, earlyRead: false } }, stats: { bids: 20, verifiedFinalBids: 5, unsupportedFinalBids: 1, unsupportedCaught: 1, unsupportedSurvived: 0, deliberatePersonaBluffs: 1, deliberateBluffsCaught: 1, deliberateBluffsSurvived: 0, forcedEscalations: 2, forcedEscalationsCaught: 1, forcedEscalationsSurvived: 1, dudoAttempts: 2, dudoCorrect: 1, calzoAttempts: 1, calzoCorrect: 0, diceGained: 0, diceLost: 5, tableDicePlays: 2, bidFaceCounts: { 1: 2, 2: 1, 3: 2, 4: 3, 5: 8, 6: 4 }, unheldFaceBids: 4, averageUnheldFaceQuantity: 5.5 }, botReasoning: [{ round: 4, action: "Bid 5 Chinas", explanation: "It found a cheap moment to sell a believable story on a face it genuinely held." }] },
     ],
   };
+  if (longMatch) {
+    analysis.rounds = 30;
+    analysis.momentum = Array.from({ length: 30 }, (_, index) => ({ round: index + 1, players: [{ playerId: "player-1", dice: Math.max(0, 5 - Math.floor(index / 8)), share: 100 }, { playerId: "player-2", dice: 0, share: 0 }] }));
+    analysis.roundStories = Array.from({ length: 30 }, (_, index) => ({ round: index + 1, paloFijo: false, startingDice: [{ playerId: "player-1", dice: Math.max(1, 5 - Math.floor(index / 8)) }, { playerId: "player-2", dice: 1 }], bids: [{ playerId: "player-1", quantity: 2 + (index % 4), denomination: 5 as const, attributable: true }], callerId: "player-2", callerAttributable: true, bidderId: "player-1", kind: "dudo" as const, correct: index % 2 === 0, actualCount: 3, margin: 0, diceChanges: [] }));
+  }
+  if (analysis.biggestLiar && liarVariant) {
+    const awardedPlayer = analysis.players.find((player) => player.id === (liarVariant === "winner" ? "player-1" : "player-2"))!;
+    analysis.biggestLiar.playerId = awardedPlayer.id;
+    if (liarVariant === "winner") {
+      awardedPlayer.stats.unsupportedFinalBids = 1;
+      awardedPlayer.stats.unsupportedCaught = 0;
+      awardedPlayer.stats.unsupportedSurvived = 1;
+      awardedPlayer.stats.unheldFaceBids = 3;
+      awardedPlayer.stats.averageUnheldFaceQuantity = 6;
+    } else if (liarVariant === "survived") {
+      awardedPlayer.stats.unsupportedFinalBids = 2;
+      awardedPlayer.stats.unsupportedCaught = 0;
+      awardedPlayer.stats.unsupportedSurvived = 2;
+    } else {
+      awardedPlayer.stats.unsupportedFinalBids = 2;
+      awardedPlayer.stats.unsupportedCaught = 1;
+      awardedPlayer.stats.unsupportedSurvived = 1;
+    }
+    analysis.biggestLiar.components.unsupportedFinalBids = awardedPlayer.stats.unsupportedFinalBids;
+    analysis.biggestLiar.components.unheldFaceBids = awardedPlayer.stats.unheldFaceBids;
+    analysis.biggestLiar.components.averageUnheldFaceQuantity = awardedPlayer.stats.averageUnheldFaceQuantity;
+  }
+  if (analysis.signaturePlay && coveredSignatureCounterpart) {
+    analysis.signaturePlay.counterpartAttributable = false;
+    if (coveredSignatureCounterpart === "bidder") {
+      analysis.signaturePlay.kind = "correct-dudo";
+      analysis.signaturePlay.actualCount = 2;
+    }
+  }
+  if (coveredTapeAction) {
+    const tapeStory = analysis.roundStories.at(-1)!;
+    if (coveredTapeAction === "bid" || coveredTapeAction === "both") tapeStory.bids.at(-1)!.attributable = false;
+    if (coveredTapeAction === "call" || coveredTapeAction === "both") tapeStory.callerAttributable = false;
+  }
+  if (analysisPlayerCount === 8) {
+    for (let index = 2; index < players.length; index += 1) {
+      analysis.players.push({ ...analysis.players[1], id: players[index].id, name: players[index].name, winner: false, scores: { ...analysis.players[1].scores }, stats: { ...analysis.players[1].stats, bidFaceCounts: { ...analysis.players[1].stats.bidFaceCounts } }, botReasoning: undefined });
+    }
+  }
+  if (legacyAnalysis) {
+    (analysis as unknown as { schemaVersion: number }).schemaVersion = 4;
+    for (const player of analysis.players) delete (player.stats as Partial<typeof player.stats>).bidFaceCounts;
+    for (const story of analysis.roundStories) {
+      delete (story as Partial<typeof story>).callerAttributable;
+      for (const bid of story.bids) delete (bid as Partial<typeof bid>).attributable;
+    }
+  }
   act(() => {
     socket().open();
     socket().message({ type: "joined", roomCode: "ABCDE", ...(playerId ? { playerId, reconnectToken: "secret" } : {}), hostPlayerId: "player-1" });
@@ -424,20 +478,21 @@ describe("OnlineGame connection lifecycle", () => {
     expect(socket().sent.map((message) => JSON.parse(message))).toContainEqual({ type: "return-to-lobby" });
   });
 
-  it("crowns the biggest liar from the widest revealed shortfall", () => {
+  it("explains biggest liar as a table-relative mix, never a confession", () => {
     render(<OnlineGame onExit={vi.fn()} />);
     enterWinner({ shortfall: true });
 
     fireEvent.click(screen.getByRole("button", { name: "Game analysis" }));
     const panel = screen.getByRole("dialog", { name: "Game analysis" });
 
-    // Min-chi claimed six Chinas in round 8 with two there — four short, the
-    // widest gap of the match, so the crown and the tile both name them.
+    // The award combines revealed unsupported bids with claims on literal
+    // absent faces, while retaining the widest public miss as evidence.
     expect(panel).toHaveTextContent("Biggest liar");
-    expect(panel).toHaveTextContent("♛ Min-chi Park");
-    expect(panel).toHaveTextContent("Round 8: claimed 6 Chinas, 2 there");
-    const crown = screen.getByLabelText("Biggest liar: round 8, claimed 6 with 2 on the table");
-    expect(crown.closest(".analysis-player")).toHaveTextContent("Min-chi Park");
+    expect(panel).toHaveTextContent("Min-chi Park");
+    expect(panel).toHaveTextContent("The dice kept the receipts.");
+    expect(panel).toHaveTextContent("1 unsupported final bid");
+    expect(panel).toHaveTextContent("4 bids named a face absent from their hand");
+    expect(panel).toHaveTextContent("Widest miss: R8, 6 Chinas claimed, 2 were there — 4 short.");
   });
 
   it("hands out no liar's crown when every revealed claim held up", () => {
@@ -447,6 +502,19 @@ describe("OnlineGame connection lifecycle", () => {
     fireEvent.click(screen.getByRole("button", { name: "Game analysis" }));
 
     expect(screen.getByRole("dialog", { name: "Game analysis" })).not.toHaveTextContent("Biggest liar");
+  });
+
+  it.each([
+    ["winner", "Lied. Won. No notes."],
+    ["survived", "Got away with it. Lost anyway."],
+    ["tie", "The dice kept the receipts."],
+  ] as const)("uses the %s Biggest liar roast", (liarVariant, expectedRoast) => {
+    render(<OnlineGame onExit={vi.fn()} />);
+    enterWinner({ shortfall: true, liarVariant });
+
+    fireEvent.click(screen.getByRole("button", { name: "Game analysis" }));
+    const award = screen.getByLabelText("Biggest liar explanation");
+    expect(award).toHaveTextContent(expectedRoast);
   });
 
   it("keeps a player on the winner screen after someone else takes the room back to its lobby", () => {
@@ -485,29 +553,181 @@ describe("OnlineGame connection lifecycle", () => {
     expect(screen.getByRole("button", { name: "Leave game" })).toBeInTheDocument();
   });
 
-  it("opens a dense, plain-language completed-game analysis from the winner screen", () => {
+  it("opens an overview first, with dossiers, style reads and an on-demand round tape", () => {
     render(<OnlineGame onExit={vi.fn()} />);
     enterWinner();
 
     fireEvent.click(screen.getByRole("button", { name: "Game analysis" }));
     const panel = screen.getByRole("dialog", { name: "Game analysis" });
-    expect(panel).toHaveTextContent("The match, burning down");
-    expect(panel).toHaveTextContent("Round by round");
-    expect(panel).toHaveTextContent("Who dared to call");
-    // Round rail retells the fixture's final round in plain words with margin.
-    expect(panel).toHaveTextContent("Min-chi Park → Dudo ✗");
-    expect(panel).toHaveTextContent("was exactly true — 5 on the table");
-    expect(panel).toHaveTextContent("Knife-edge bids");
-    expect(panel).toHaveTextContent("not a chance of winning");
+    expect(panel).toHaveTextContent("Match arc");
+    expect(panel).toHaveTextContent("Play of the match");
+    expect(panel).toHaveTextContent("Ana María made it 5 Chinas. Min-chi Park said Dudo. 5 were there.");
+    expect(panel).toHaveTextContent("How everyone’s game read");
+    expect(panel).toHaveTextContent("Receipts Attached");
+    expect(panel).toHaveTextContent("Kept most claims close to the dice they could see.");
+    expect(panel).toHaveTextContent("ALL CLAIMS HELD");
+    expect(within(panel).getByRole("button", { name: "Game settings" })).toBeInTheDocument();
     expect(panel).toHaveTextContent("Bold storyteller");
-    expect(panel).toHaveTextContent("Pressed the table hard");
-    expect(panel).toHaveTextContent("Unsupported");
-    expect(panel).toHaveTextContent("1 caught · 1 survived");
+    expect(panel).not.toHaveTextContent("Who dared to call");
+    fireEvent.click(screen.getAllByText("Open dossier")[0]);
     expect(panel).toHaveTextContent("Intent not recorded");
-    expect(screen.getAllByLabelText(/Aggression: How strongly and quickly/)).toHaveLength(2);
-    fireEvent.click(screen.getByText("What this bot was thinking"));
+    expect(panel).toHaveTextContent("Early read · 1 call");
+    expect(panel).toHaveTextContent("18 bids");
+    fireEvent.click(screen.getAllByText("Open dossier")[0]);
+    fireEvent.click(screen.getAllByText("Open dossier")[1]);
+    expect(panel).toHaveTextContent("Unsupported");
+    expect(panel).toHaveTextContent("Deliberate");
+    expect(panel).toHaveTextContent("Absent face");
+    expect(panel).toHaveTextContent("1 caught · 0 survived");
+    expect(screen.getAllByLabelText(/Bid faces: Every attributable bid by face/).length).toBeGreaterThan(0);
+    expect(screen.getAllByLabelText(/Aggression: How strongly someone raised/)).toHaveLength(2);
+    expect(panel).toHaveTextContent("Bot reasoning");
     expect(panel).toHaveTextContent("believable story");
+    const analysisScroll = panel.querySelector<HTMLElement>(".analysis-scroll")!;
+    analysisScroll.scrollTop = 300;
+    fireEvent.click(screen.getByRole("button", { name: "Round tape" }));
+    expect(analysisScroll.scrollTop).toBe(0);
+    expect(panel).toHaveTextContent("The stories worth opening");
+    expect(screen.getByRole("button", { name: "Eliminations" })).toBeInTheDocument();
+    expect(panel).toHaveTextContent("Dudo bounced. Ana María had 5 for 5 Chinas.");
+    expect(panel).toHaveTextContent("Exact landing");
+    expect(panel).toHaveTextContent("Play of the match");
+    fireEvent.click(screen.getByRole("button", { name: "Eliminations" }));
+    fireEvent.click(screen.getByRole("button", { name: /Replay round 9/ }));
+    expect(screen.getByRole("dialog", { name: "Round 9 · open dice" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close round replay" }));
+    fireEvent.click(screen.getByRole("button", { name: "Calzo" }));
+    expect(panel).toHaveTextContent("No rounds match that filter.");
+    fireEvent.click(screen.getByRole("button", { name: "Show all rounds" }));
+    expect(panel).toHaveTextContent("Dudo bounced.");
+    analysisScroll.scrollTop = 300;
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    expect(analysisScroll.scrollTop).toBe(0);
     fireEvent.click(screen.getByRole("button", { name: "Back to winner" }));
+    expect(screen.getByRole("dialog", { name: "Game winner" })).toBeInTheDocument();
+  });
+
+  it("names an attributable caller but not a covered final bidder on the tape", () => {
+    const { container } = render(<OnlineGame onExit={vi.fn()} />);
+    enterWinner({ coveredTapeAction: "bid" });
+    fireEvent.click(screen.getByRole("button", { name: "Game analysis" }));
+    fireEvent.click(screen.getByRole("button", { name: "Round tape" }));
+
+    const card = screen.getByRole("button", { name: "Replay round 9: Min-chi Park called Dudo on the final claim. 5 backed 5 Chinas." });
+    expect(card).toHaveTextContent("Final claim: 5 Chinas · 5 were there");
+    expect(card).not.toHaveTextContent("Ana María");
+    const coveredBar = container.querySelectorAll(".analysis-ladder-bar")[1];
+    expect(coveredBar).toHaveClass("analysis-ladder-bar--covered");
+    expect(coveredBar).toHaveAttribute("title", "Covered bid 2: 5 × Chinas");
+    expect(coveredBar).toHaveAttribute("aria-label", "Covered bid 2: 5 × Chinas");
+  });
+
+  it("names an attributable final bidder but keeps a covered call generic on the tape", () => {
+    render(<OnlineGame onExit={vi.fn()} />);
+    enterWinner({ coveredTapeAction: "call" });
+    fireEvent.click(screen.getByRole("button", { name: "Game analysis" }));
+    fireEvent.click(screen.getByRole("button", { name: "Round tape" }));
+
+    const card = screen.getByRole("button", { name: "Replay round 9: A Dudo followed Ana María’s 5 Chinas. 5 were there." });
+    expect(card).toHaveTextContent("Ana María’s final 5 Chinas · 5 were there");
+    expect(card).not.toHaveTextContent("Min-chi Park called Dudo");
+  });
+
+  it("keeps both sides generic when the final bid and resolving call were covered", () => {
+    render(<OnlineGame onExit={vi.fn()} />);
+    enterWinner({ coveredTapeAction: "both" });
+    fireEvent.click(screen.getByRole("button", { name: "Game analysis" }));
+    fireEvent.click(screen.getByRole("button", { name: "Round tape" }));
+
+    const card = screen.getByRole("button", { name: "Replay round 9: A Dudo followed the final 5 Chinas. 5 were there." });
+    expect(card).toHaveTextContent("Final claim: 5 Chinas · 5 were there");
+    expect(card).not.toHaveTextContent("Ana María");
+    expect(card).not.toHaveTextContent("Min-chi Park called Dudo");
+  });
+
+  it("does not attribute a covered signature call to the caller", () => {
+    const { container } = render(<OnlineGame onExit={vi.fn()} />);
+    enterWinner({ coveredSignatureCounterpart: "caller" });
+    fireEvent.click(screen.getByRole("button", { name: "Game analysis" }));
+
+    const signature = container.querySelector(".analysis-editorial-rail")!;
+    expect(signature).toHaveTextContent("Ana María made it 5 Chinas. A Dudo followed. 5 were there.");
+    expect(signature).not.toHaveTextContent("Min-chi Park");
+  });
+
+  it("opens the exact same round replay from the signature play rail", () => {
+    render(<OnlineGame onExit={vi.fn()} />);
+    enterWinner();
+    fireEvent.click(screen.getByRole("button", { name: "Game analysis" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Replay play of the match from round 9" }));
+    const replay = screen.getByRole("dialog", { name: "Round 9 · open dice" });
+    expect(replay).toHaveTextContent("Fresh cups. Same suspicious friends.");
+    fireEvent.click(within(replay).getByRole("button", { name: "Close round replay" }));
+    expect(screen.queryByRole("dialog", { name: "Round 9 · open dice" })).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Game analysis" })).toBeInTheDocument();
+  });
+
+  it("does not attribute a covered signature bid to the bidder", () => {
+    const { container } = render(<OnlineGame onExit={vi.fn()} />);
+    enterWinner({ coveredSignatureCounterpart: "bidder" });
+    fireEvent.click(screen.getByRole("button", { name: "Game analysis" }));
+
+    const signature = container.querySelector(".analysis-editorial-rail")!;
+    expect(signature).toHaveTextContent("Ana María called Dudo on 5 Chinas. 2 were there.");
+    expect(signature).not.toHaveTextContent("Min-chi Park");
+  });
+
+  it("caps match-arc round labels on a long match", () => {
+    const { container } = render(<OnlineGame onExit={vi.fn()} />);
+    enterWinner({ longMatch: true });
+    fireEvent.click(screen.getByRole("button", { name: "Game analysis" }));
+
+    const labels = [...container.querySelectorAll(".analysis-flow text")].map((node) => node.textContent);
+    expect(labels.filter((label) => label?.startsWith("R") || label === "start")).toHaveLength(8);
+    expect(labels).not.toContain("R28✗");
+    expect(labels).toContain("R30✗");
+    expect([...container.querySelectorAll(".analysis-flow text")].find((node) => node.textContent === "R30✗")).toHaveAttribute("text-anchor", "end");
+    expect(container.querySelectorAll(".analysis-flow rect[tabindex]")).toHaveLength(0);
+    expect(screen.getByText("View round values")).toBeInTheDocument();
+  });
+
+  it("opens legacy schema-v4 player dossiers without face-count data", () => {
+    render(<OnlineGame onExit={vi.fn()} />);
+    enterWinner({ legacyAnalysis: true });
+    fireEvent.click(screen.getByRole("button", { name: "Game analysis" }));
+    fireEvent.click(screen.getAllByText("Open dossier")[0]);
+
+    expect(screen.getByRole("dialog", { name: "Game analysis" })).toHaveTextContent("Bid faces");
+    expect(screen.getByLabelText("Ana María attributable bids by face")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Round tape" }));
+    const legacyCard = screen.getByRole("button", { name: "Replay round 9: A Dudo followed the final 5 Chinas. 5 were there." });
+    expect(legacyCard).toHaveTextContent("Final claim: 5 Chinas");
+    expect(legacyCard.querySelectorAll(".analysis-ladder-bar--covered")).toHaveLength(2);
+  });
+
+  it("marks a full eight-player roster for the responsive analysis grid", () => {
+    const { container } = render(<OnlineGame onExit={vi.fn()} />);
+    enterWinner({ analysisPlayerCount: 8 });
+    fireEvent.click(screen.getByRole("button", { name: "Game analysis" }));
+
+    expect(container.querySelector(".analysis-player-grid")).toHaveAttribute("data-player-count", "8");
+    expect(container.querySelectorAll(".analysis-player-grid > .analysis-player")).toHaveLength(8);
+  });
+
+  it("lets nested sound settings consume Escape before closing analysis", () => {
+    render(<OnlineGame onExit={vi.fn()} />);
+    enterWinner();
+    fireEvent.click(screen.getByRole("button", { name: "Game analysis" }));
+    const panel = screen.getByRole("dialog", { name: "Game analysis" });
+    fireEvent.click(within(panel).getByRole("button", { name: "Game settings" }));
+    expect(screen.getByRole("dialog", { name: "Game settings" })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Game settings" })).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Game analysis" })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.getByRole("dialog", { name: "Game winner" })).toBeInTheDocument();
   });
 
