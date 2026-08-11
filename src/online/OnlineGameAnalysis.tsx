@@ -15,7 +15,27 @@ const metricHelp = {
 } as const;
 const metricLabels = { bluff: "Claim risk", aggression: "Aggression", challenge: "Challenge" } as const;
 
-type BiggestLiar = { playerId: string; score: number; components: { unsupportedFinalBids: number; tableMaxUnsupportedFinalBids: number; unheldFaceBids: number; averageUnheldFaceQuantity: number; tableMaxAverageUnheldFaceQuantity: number }; widestRevealedShortfall?: { round: number; bid: { quantity: number; denomination: Die }; actualCount: number; shortfall: number; callerId: string; caught: boolean } };
+type BiggestLiar = {
+  playerId: string;
+  score?: number;
+  deceptionPoints?: number;
+  components: {
+    scoredBids?: number;
+    inventedFaceBids?: number;
+    singleCopyBids?: number;
+    whiteLieBids?: number;
+    gratuitousOverraises?: number;
+    excessRaiseSteps?: number;
+    scoredUnsupportedCaught?: number;
+    scoredUnsupportedSurvived?: number;
+    // Recovery compatibility for matches completed before the choice-based award.
+    unsupportedFinalBids?: number;
+    unheldFaceBids?: number;
+    averageUnheldFaceQuantity?: number;
+  };
+  widestScoredShortfall?: { round: number; bid: { quantity: number; denomination: Die }; actualCount: number; shortfall: number; callerId: string; caught: boolean };
+  widestRevealedShortfall?: { round: number; bid: { quantity: number; denomination: Die }; actualCount: number; shortfall: number; callerId: string; caught: boolean };
+};
 type SignaturePlay = { round: number; kind: "correct-calzo" | "correct-dudo" | "bid-held"; actorId: string; counterpartId: string; counterpartAttributable: boolean; bid: { quantity: number; denomination: Die }; actualCount: number; callKind: "dudo" | "calzo"; diceChanges: Array<{ playerId: string; delta: number }>; ladderLength: number; tableDice: number; surprise: "long-shot" | "bold" | "notable" };
 type AnalysisV5 = MatchAnalysis & { biggestLiar?: BiggestLiar; signaturePlay?: SignaturePlay };
 type PlayerWithStyleRead = MatchAnalysisPlayer & { style?: string; styleRead?: string; badges?: Array<{ label: string; read: string }> };
@@ -39,7 +59,7 @@ function ClaimBreakdown({ player }: { player: MatchAnalysisPlayer }) {
   const stats = player.stats;
   return <section className="analysis-claim-breakdown" aria-label={`${player.name} bidding evidence`}>
     <div><span>Unsupported <Help label="Unsupported final bids" text="Revealed final bids that landed above the count on the table." /></span><strong>{stats.unsupportedFinalBids}/{stats.verifiedFinalBids}</strong><small>{stats.unsupportedCaught} caught · {stats.unsupportedSurvived} survived</small></div>
-    <div><span>Deliberate <Help label="Deliberate persona bluffs" text="Recorded when a bot persona explicitly chose a bluffing play." /></span><strong>{player.controller === "bot" ? stats.deliberatePersonaBluffs : "—"}</strong><small>{player.controller === "bot" ? `${stats.deliberateBluffsCaught} caught · ${stats.deliberateBluffsSurvived} survived` : "Intent not recorded"}</small></div>
+    {player.controller === "bot" && <div><span>Deliberate <Help label="Deliberate persona bluffs" text="Times this bot explicitly chose a bluffing play." /></span><strong>{stats.deliberatePersonaBluffs}</strong><small>{stats.deliberateBluffsCaught} caught · {stats.deliberateBluffsSurvived} survived</small></div>}
     <div><span>Forced raise <Help label="Forced raise" text="No legal raise could be fully covered by that player’s own dice at the time." /></span><strong>{stats.forcedEscalations}</strong><small>{stats.forcedEscalationsCaught} caught · {stats.forcedEscalationsSurvived} survived</small></div>
     <div><span>Absent face <Help label="Absent face bids" text="All their bids that named a literal face absent from their visible hand. Covered timeout actions are excluded." /></span><strong>{stats.unheldFaceBids}</strong><small>{stats.unheldFaceBids ? `${stats.averageUnheldFaceQuantity.toFixed(1)} named on average` : "No attributable examples"}</small></div>
   </section>;
@@ -189,13 +209,22 @@ function signatureSentence(signature: SignaturePlay, nameOf: (id: string) => str
 const surpriseLabels: Record<SignaturePlay["surprise"], string> = { "long-shot": "Long shot", bold: "Bold", notable: "Notable" };
 
 function LiarAward({ liar, player, nameOf }: { liar: BiggestLiar; player: MatchAnalysisPlayer | undefined; nameOf: (id: string) => string }) {
-  const shortfall = liar.widestRevealedShortfall;
+  const shortfall = liar.widestScoredShortfall ?? liar.widestRevealedShortfall;
+  const caught = liar.components.scoredUnsupportedCaught ?? player?.stats.unsupportedCaught ?? 0;
+  const survived = liar.components.scoredUnsupportedSurvived ?? player?.stats.unsupportedSurvived ?? 0;
   const roast = player?.winner
     ? "Lied. Won. No notes."
-    : (player?.stats.unsupportedSurvived ?? 0) > (player?.stats.unsupportedCaught ?? 0)
+    : survived > caught
       ? "Got away with it. Lost anyway."
       : "The dice kept the receipts.";
-  return <section className="analysis-supporting-award" aria-label="Biggest liar explanation"><p>Biggest liar</p><h3>{nameOf(liar.playerId)}</h3><strong>{roast}</strong><span>{countLabel(liar.components.unsupportedFinalBids, "unsupported final bid")} · {countLabel(liar.components.unheldFaceBids, "bid")} named a face absent from their hand · average absent-face claim {liar.components.averageUnheldFaceQuantity.toFixed(1)}</span>{shortfall && <small>Widest miss: R{shortfall.round}, {shortfall.bid.quantity} {denominationNames[shortfall.bid.denomination]} claimed, {shortfall.actualCount === 1 ? "1 was" : `${shortfall.actualCount} were`} there — {shortfall.shortfall} short.</small>}</section>;
+  const choiceEvidence = [
+    liar.components.inventedFaceBids ? countLabel(liar.components.inventedFaceBids, "invented face") : undefined,
+    liar.components.singleCopyBids ? countLabel(liar.components.singleCopyBids, "one-die stretch", "one-die stretches") : undefined,
+    liar.components.gratuitousOverraises ? `${countLabel(liar.components.gratuitousOverraises, "unnecessary jump")} · ${countLabel(liar.components.excessRaiseSteps ?? 0, "extra step")}` : undefined,
+    liar.components.whiteLieBids ? countLabel(liar.components.whiteLieBids, "polite little fib") : undefined,
+  ].filter(Boolean).join(" · ");
+  const legacyEvidence = `${countLabel(liar.components.unheldFaceBids ?? 0, "absent-face bid")} · ${countLabel(liar.components.unsupportedFinalBids ?? 0, "unsupported final bid")}`;
+  return <section className="analysis-supporting-award" aria-label="Biggest liar explanation"><p>Biggest liar</p><h3>{nameOf(liar.playerId)}</h3><strong>{roast}</strong><span>{choiceEvidence || legacyEvidence}</span>{shortfall && <small>Widest exposed miss: R{shortfall.round}, {shortfall.bid.quantity} {denominationNames[shortfall.bid.denomination]} claimed, {shortfall.actualCount === 1 ? "1 was" : `${shortfall.actualCount} were`} there — {shortfall.shortfall} short.</small>}</section>;
 }
 
 function GameAnalysisPanel({ analysis: rawAnalysis, onClose }: { analysis: MatchAnalysis; onClose: () => void }) {

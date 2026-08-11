@@ -116,6 +116,38 @@ export interface MatchAnalysisLadderBid {
   tableDice?: number
 }
 
+export interface MatchAnalysisReplayPlayerState {
+  playerId: string
+  /** The exact private remainder at this retrospective instant. */
+  hand: Die[]
+  /** Dice already committed publicly by this player at this instant. */
+  tableDice: Die[]
+}
+
+export type MatchAnalysisReplayAction =
+  | { type: 'bid'; bid: Bid; tableDice?: Die[] }
+  | { type: 'dudo' | 'calzo' }
+
+/**
+ * Postgame-only open-dice chronology. Action frames are snapshots immediately
+ * before the named action, so a table-dice bid still shows the hand the bidder
+ * actually saw; the following frame shows the rerolled remainder.
+ */
+export type MatchAnalysisReplayFrame =
+  | {
+      phase: 'setup'
+      actionIndex: -1
+      players: MatchAnalysisReplayPlayerState[]
+    }
+  | {
+      phase: 'before-action'
+      actionIndex: number
+      actorId: string
+      attributable: boolean
+      action: MatchAnalysisReplayAction
+      players: MatchAnalysisReplayPlayerState[]
+    }
+
 /** The public story of one resolved round: the ladder, the call, the reveal. */
 export interface MatchAnalysisRoundStory {
   round: number
@@ -133,6 +165,8 @@ export interface MatchAnalysisRoundStory {
   /** actualCount − bid.quantity: 0 means the final bid was exactly true. */
   margin: number
   diceChanges: Array<{ playerId: string; delta: number }>
+  /** Exact open-dice retrospective; absent when legacy chronology cannot prove every frame. */
+  replayFrames?: MatchAnalysisReplayFrame[]
   /**
    * Open dice from the authoritative resolution record. These are serialized
    * only when the same hands were publicly visible during the resolved reveal.
@@ -168,18 +202,22 @@ export interface MatchAnalysis {
     tableDice: number
     surprise: 'long-shot' | 'bold' | 'notable'
   }
-  /** A descriptive, outcome-based award — never a statement of player intent. */
+  /** A playful, choice-based award — never a statement of player intent or character. */
   biggestLiar?: {
     playerId: string
-    score: number
+    /** Sum of pre-action choice evidence, rounded to two decimals for display. */
+    deceptionPoints: number
     components: {
-      unsupportedFinalBids: number
-      tableMaxUnsupportedFinalBids: number
-      unheldFaceBids: number
-      averageUnheldFaceQuantity: number
-      tableMaxAverageUnheldFaceQuantity: number
+      scoredBids: number
+      inventedFaceBids: number
+      singleCopyBids: number
+      whiteLieBids: number
+      gratuitousOverraises: number
+      excessRaiseSteps: number
+      scoredUnsupportedCaught: number
+      scoredUnsupportedSurvived: number
     }
-    widestRevealedShortfall?: {
+    widestScoredShortfall?: {
       round: number
       bid: Bid
       actualCount: number
@@ -192,7 +230,7 @@ export interface MatchAnalysis {
   startingDice: Array<{ playerId: string; dice: number }>
   tableAverages: { bluff: number; aggression: number; challenge: number }
   momentum: Array<{ round: number; players: Array<{ playerId: string; dice: number; share: number }> }>
-  /** Public round-by-round record; contains no hidden-hand information. */
+  /** Completed-match round record; replay hands are postgame-only retrospective data. */
   roundStories: MatchAnalysisRoundStory[]
   players: MatchAnalysisPlayer[]
 }
@@ -202,7 +240,16 @@ type MutablePlayer = MatchAnalysisPlayer & {
   aggressionValues: number[]
   challengeValues: number[]
   unheldFaceQuantities: number[]
-  widestRevealedShortfall?: {
+  deceptionPoints: number
+  deceptionBids: number
+  inventedFaceBids: number
+  singleCopyBids: number
+  whiteLieBids: number
+  gratuitousOverraises: number
+  excessRaiseSteps: number
+  scoredUnsupportedCaught: number
+  scoredUnsupportedSurvived: number
+  widestScoredShortfall?: {
     round: number
     bid: Bid
     actualCount: number
@@ -222,6 +269,7 @@ interface FinalBidClassification {
   successProbability: number
   ladderLength: number
   tableDice: number
+  deceptionPoints: number
 }
 
 interface FinalCallContext {
@@ -384,6 +432,65 @@ function verdict(player: MutablePlayer) {
   return player.styleRead
 }
 
+function replaySnapshot(input: MatchAnalysisInput, handsById: Map<string, Die[]>, tableDiceById: Map<string, Die[]>): MatchAnalysisReplayPlayerState[] {
+  return input.seats.map((seat) => ({
+    playerId: seat.id,
+    hand: [...(handsById.get(seat.id) ?? [])],
+    tableDice: [...(tableDiceById.get(seat.id) ?? [])],
+  }))
+}
+
+function containsDice(hand: Die[], selected: Die[]) {
+  const remaining = [...hand]
+  return selected.every((die) => {
+    const index = remaining.indexOf(die)
+    if (index < 0) return false
+    remaining.splice(index, 1)
+    return true
+  })
+}
+
+function buildReplayFrames(input: MatchAnalysisInput, deal: MatchAnalysisRound, resolution: RoundResolution): MatchAnalysisReplayFrame[] | undefined {
+  if (input.seats.some((seat) => !deal.hands.some((hand) => hand.playerId === seat.id))) return undefined
+  const handsById = new Map(deal.hands.map((hand) => [hand.playerId, [...hand.dice] as Die[]]))
+  const tableDiceById = new Map<string, Die[]>()
+  const actions = input.actions.filter((entry) => entry.round === deal.round && entry.playerId && ['bid', 'dudo', 'calzo'].includes(entry.action.type))
+  const finalCall = actions.at(-1)
+  const finalBid = [...actions].reverse().find((entry) => entry.action.type === 'bid')
+  if (!finalCall || finalCall.playerId !== resolution.callerId || finalCall.action.type !== resolution.kind || !finalBid || finalBid.playerId !== resolution.bidderId) return undefined
+  if (finalBid.action.type !== 'bid') return undefined
+  const finalBidAction = finalBid.action as Extract<GameAction, { type: 'bid' }>
+  if (!sameBid(finalBidAction.bid, resolution.bid)) return undefined
+
+  const frames: MatchAnalysisReplayFrame[] = [{ phase: 'setup', actionIndex: -1, players: replaySnapshot(input, handsById, tableDiceById) }]
+  for (const [actionIndex, entry] of actions.entries()) {
+    const actorId = entry.playerId!
+    const action = entry.action
+    if (!handsById.has(actorId)) return undefined
+    if (action.type === 'bid') {
+      const bidAction = action as Extract<GameAction, { type: 'bid' }>
+      frames.push({
+        phase: 'before-action', actionIndex, actorId, attributable: entry.covered !== true,
+        action: { type: 'bid', bid: { ...bidAction.bid }, ...(entry.tableDice?.length ? { tableDice: [...entry.tableDice] } : {}) },
+        players: replaySnapshot(input, handsById, tableDiceById),
+      })
+      if (entry.tableDice?.length) {
+        const preActionHand = handsById.get(actorId)!
+        if (!entry.rerolledDice || entry.rerolledDice.length + entry.tableDice.length !== preActionHand.length || !containsDice(preActionHand, entry.tableDice)) return undefined
+        tableDiceById.set(actorId, [...entry.tableDice])
+        handsById.set(actorId, [...entry.rerolledDice])
+      }
+    } else if (action.type === 'dudo' || action.type === 'calzo') {
+      frames.push({
+        phase: 'before-action', actionIndex, actorId, attributable: entry.covered !== true,
+        action: { type: action.type },
+        players: replaySnapshot(input, handsById, tableDiceById),
+      })
+    } else return undefined
+  }
+  return frames
+}
+
 export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().toISOString()): MatchAnalysis {
   const resolutionByRound = new Map(input.roundResolutions.map((entry) => [entry.round, entry]))
   const coveredCallByRound = new Map<number, boolean>()
@@ -398,6 +505,7 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
     scores: { bluff: score(0, 0, 4), aggression: score(priors.aggressionMean, 0, 3), challenge: score(priors.challengeMean, 0, 2) },
     stats: { bids: 0, verifiedFinalBids: 0, unsupportedFinalBids: 0, unsupportedCaught: 0, unsupportedSurvived: 0, deliberatePersonaBluffs: 0, deliberateBluffsCaught: 0, deliberateBluffsSurvived: 0, forcedEscalations: 0, forcedEscalationsCaught: 0, forcedEscalationsSurvived: 0, dudoAttempts: 0, dudoCorrect: 0, calzoAttempts: 0, calzoCorrect: 0, diceGained: 0, diceLost: 0, tableDicePlays: 0, bidFaceCounts: emptyFaceCounts(), unheldFaceBids: 0, averageUnheldFaceQuantity: 0 },
     claimValues: [], aggressionValues: [], challengeValues: [], unheldFaceQuantities: [],
+    deceptionPoints: 0, deceptionBids: 0, inventedFaceBids: 0, singleCopyBids: 0, whiteLieBids: 0, gratuitousOverraises: 0, excessRaiseSteps: 0, scoredUnsupportedCaught: 0, scoredUnsupportedSurvived: 0,
   }]))
 
   for (const deal of input.roundDeals) {
@@ -425,10 +533,12 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
         if (decision) usedBotDecisions.add(decision.sequence)
         const stateBeforeBid: PlayingState = { phase: 'playing', round: deal.round, paloFijo: deal.paloFijo, rules: input.rules, players, currentPlayerId: actor.id, currentBid, lastBidderId }
         const hand = handsById.get(actor.id) ?? []
+        const canSeeHand = !(deal.paloFijo && input.rules.paloFijoBlindDice && hand.length > 1)
         const visibleBidderView = bidderView(view, actor.id, hand, deal.paloFijo, input.rules)
         const actionBidderView = entry.tableDice?.length
           ? tableDiceBidderView(view, actor.id, entry.tableDice)
           : visibleBidderView
+        let deceptionPoints = 0
         if (!entry.covered) {
           actor.stats.bids += 1
           // Claim risk: the chance this player's own claim was false at the moment they
@@ -443,10 +553,35 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
           // as holding another face. Assess the private hand before this action can
           // commit dice or replace it with a reroll. A multi-die blind Palo Fijo
           // bidder never saw that hand, so there is no fair attribution to make.
-          const canSeeHand = !(deal.paloFijo && input.rules.paloFijoBlindDice && hand.length > 1)
           if (canSeeHand && !hand.includes(action.bid.denomination)) {
             actor.stats.unheldFaceBids += 1
             actor.unheldFaceQuantities.push(action.bid.quantity)
+          }
+          if (canSeeHand) {
+            const legalBids = getLegalActions(stateBeforeBid, actor.id).bids
+            const chosenIsLegal = legalBids.some((bid) => sameBid(bid, action.bid))
+            if (chosenIsLegal) {
+              const literalCopies = hand.filter((die) => die === action.bid.denomination).length
+              const supportFactor = literalCopies === 0 ? 1 : literalCopies === 1 ? 0.4 : 0
+              const introducedOrSwitched = !currentBid || currentBid.denomination !== action.bid.denomination
+              // Count only engine-generated legal choices below the chosen
+              // same-face quantity. This measures excess without reproducing
+              // Aces/Palo Fijo ordering in analysis code.
+              const excessSteps = introducedOrSwitched ? 0 : legalBids.filter((bid) => bid.denomination === action.bid.denomination && bid.quantity < action.bid.quantity).length
+              const choiceFactor = introducedOrSwitched ? 2 : 0.25 + 0.5 * excessSteps
+              deceptionPoints = supportFactor * choiceFactor
+              if (deceptionPoints > 0) {
+                actor.deceptionPoints += deceptionPoints
+                actor.deceptionBids += 1
+                if (literalCopies === 0 && introducedOrSwitched) actor.inventedFaceBids += 1
+                if (literalCopies === 1) actor.singleCopyBids += 1
+                if (literalCopies === 0 && !introducedOrSwitched && excessSteps === 0) actor.whiteLieBids += 1
+                if (!introducedOrSwitched && excessSteps > 0) {
+                  actor.gratuitousOverraises += 1
+                  actor.excessRaiseSteps += excessSteps
+                }
+              }
+            }
           }
         }
         if (entry.tableDice?.length) tableDiceById.set(actor.id, [...entry.tableDice])
@@ -460,6 +595,7 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
           successProbability: 1 - facingRisk(actionBidderView, actor.id, action.bid, 'raise'),
           ladderLength,
           tableDice: [...tableDiceById.values()].reduce((sum, dice) => sum + dice.length, 0),
+          deceptionPoints,
         }
         currentBid = action.bid
         lastBidderId = actor.id
@@ -518,8 +654,12 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
         const candidate = `Round ${deal.round}: claimed ${resolved.bid.quantity} ${denominationNames[resolved.bid.denomination]} with ${resolved.actualCount} actually there${caught ? coveredCall ? ' — it was caught' : ` — ${input.seats.find((seat) => seat.id === resolved.callerId)?.name ?? 'the caller'} caught it` : ' — it survived the call'}.`
         const priorGap = bidder.moment?.match(/gap:(\d+)/)?.[1]
         if (!priorGap || gap > Number(priorGap)) bidder.moment = `${candidate} gap:${gap}`
-        if (!bidder.widestRevealedShortfall || gap > bidder.widestRevealedShortfall.shortfall) {
-          bidder.widestRevealedShortfall = {
+        if ((matchingFinalBid?.deceptionPoints ?? 0) > 0) {
+          if (caught) bidder.scoredUnsupportedCaught += 1
+          else bidder.scoredUnsupportedSurvived += 1
+        }
+        if ((matchingFinalBid?.deceptionPoints ?? 0) > 0 && (!bidder.widestScoredShortfall || gap > bidder.widestScoredShortfall.shortfall)) {
+          bidder.widestScoredShortfall = {
             round: deal.round,
             bid: resolved.bid,
             actualCount: resolved.actualCount,
@@ -658,6 +798,7 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
     const resolvingCall = input.actions
       .filter((entry) => entry.round === deal.round && entry.playerId === resolved.callerId && entry.action.type === resolved.kind)
       .at(-1)
+    const replayFrames = buildReplayFrames(input, deal, resolved)
     return [{
       round: deal.round,
       paloFijo: deal.paloFijo,
@@ -676,6 +817,7 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
       actualCount: resolved.actualCount,
       margin: resolved.actualCount - resolved.bid.quantity,
       diceChanges: resolved.diceChanges.map((change) => ({ playerId: change.playerId, delta: change.delta })),
+      ...(replayFrames ? { replayFrames } : {}),
       ...(resolvedEntry.revealedHands ? {
         // This value exists only because the room captured it from the all-hands
         // reveal projection. Never substitute a deal or current private hand.
@@ -722,33 +864,28 @@ export function buildMatchAnalysis(input: MatchAnalysisInput, now = new Date().t
       : `Round ${signaturePlay.round}: ${signatureActor ?? 'The caller'} called ${signaturePlay.callKind === 'calzo' ? 'Calzo' : 'Dudo'} on the final claim and was right.`
     : undefined
 
-  const maxUnsupported = Math.max(0, ...players.map((player) => player.stats.unsupportedFinalBids))
-  const maxAverageUnheld = Math.max(0, ...players.map((player) => player.stats.averageUnheldFaceQuantity))
-  const rankedBiggestLiars = players.map((player) => {
-    const unsupported = maxUnsupported ? player.stats.unsupportedFinalBids / maxUnsupported : 0
-    const unheld = maxAverageUnheld
-      ? (player.stats.averageUnheldFaceQuantity / maxAverageUnheld) * Math.min(1, player.stats.unheldFaceBids / 4)
-      : 0
-    const rawScore = (0.65 * unsupported + 0.35 * unheld) * 100
-    return { player, rawScore, score: Math.round(rawScore) }
-  }).filter(({ player }) => player.stats.unsupportedFinalBids > 0)
-    .sort((left, right) => right.rawScore - left.rawScore
-      || right.player.stats.unsupportedFinalBids - left.player.stats.unsupportedFinalBids
-      || right.player.stats.averageUnheldFaceQuantity - left.player.stats.averageUnheldFaceQuantity
-      || right.player.stats.unheldFaceBids - left.player.stats.unheldFaceBids
-      || (seatIndex.get(left.player.id) ?? Number.MAX_SAFE_INTEGER) - (seatIndex.get(right.player.id) ?? Number.MAX_SAFE_INTEGER))
+  const rankedBiggestLiars = players.filter((player) => player.deceptionPoints > 0)
+    .sort((left, right) => right.deceptionPoints - left.deceptionPoints
+      || right.inventedFaceBids - left.inventedFaceBids
+      || right.gratuitousOverraises - left.gratuitousOverraises
+      || right.excessRaiseSteps - left.excessRaiseSteps
+      || right.deceptionBids - left.deceptionBids
+      || (seatIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (seatIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER))
   const selectedBiggestLiar = rankedBiggestLiars[0]
   const biggestLiar = selectedBiggestLiar && {
-    playerId: selectedBiggestLiar.player.id,
-    score: selectedBiggestLiar.score,
+    playerId: selectedBiggestLiar.id,
+    deceptionPoints: Math.round(selectedBiggestLiar.deceptionPoints * 100) / 100,
     components: {
-      unsupportedFinalBids: selectedBiggestLiar.player.stats.unsupportedFinalBids,
-      tableMaxUnsupportedFinalBids: maxUnsupported,
-      unheldFaceBids: selectedBiggestLiar.player.stats.unheldFaceBids,
-      averageUnheldFaceQuantity: selectedBiggestLiar.player.stats.averageUnheldFaceQuantity,
-      tableMaxAverageUnheldFaceQuantity: maxAverageUnheld,
+      scoredBids: selectedBiggestLiar.deceptionBids,
+      inventedFaceBids: selectedBiggestLiar.inventedFaceBids,
+      singleCopyBids: selectedBiggestLiar.singleCopyBids,
+      whiteLieBids: selectedBiggestLiar.whiteLieBids,
+      gratuitousOverraises: selectedBiggestLiar.gratuitousOverraises,
+      excessRaiseSteps: selectedBiggestLiar.excessRaiseSteps,
+      scoredUnsupportedCaught: selectedBiggestLiar.scoredUnsupportedCaught,
+      scoredUnsupportedSurvived: selectedBiggestLiar.scoredUnsupportedSurvived,
     },
-    ...(selectedBiggestLiar.player.widestRevealedShortfall ? { widestRevealedShortfall: selectedBiggestLiar.player.widestRevealedShortfall } : {}),
+    ...(selectedBiggestLiar.widestScoredShortfall ? { widestScoredShortfall: selectedBiggestLiar.widestScoredShortfall } : {}),
   }
   const publicPlayers: MatchAnalysisPlayer[] = players.map((player) => ({
     id: player.id, name: player.name, controller: player.controller, ...(player.persona ? { persona: player.persona } : {}),

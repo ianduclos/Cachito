@@ -34,11 +34,11 @@ Bots receive only `projectForPlayer`, `getLegalActions`, and public action histo
 - contain no hidden opponent information or implementation jargon;
 - be recorded only for real bot seats. A timeout safety move made for a human is marked `covered` and is not attributed as that human’s strategy.
 
-Bot decision records remain private during play. The browser receives analysis only after the authoritative state is `gameOver`. Raw diagnostics, visible bot hands, probabilities, and the storage bucket are never exposed.
+Bot decision records remain private during play. The browser receives analysis only after the authoritative state is `gameOver`. Raw diagnostics, live hands, probabilities, and the storage bucket are never exposed during play. Schema-v5’s explicit retrospective replay exception is delivered only inside completed analysis after every round has resolved and the match is over.
 
 ## Completed-game analysis
 
-`buildMatchAnalysis` creates a compact, versioned summary after game over. It uses public actions, dealt-hand records, structured revealed-round resolutions, safe bot explanations, and the final state. The resulting browser payload omits private raw hands and probability diagnostics; it may carry a hand only when it is copied from a completed, publicly visible resolution reveal for replay.
+`buildMatchAnalysis` creates a compact, versioned summary after game over. It uses public actions, dealt-hand records, structured revealed-round resolutions, safe bot explanations, and the final state. The resulting browser payload omits probability diagnostics. It may carry exact historical hands only in the completed-match `replayFrames` chronology described below; this exception must never cross the live-play projection boundary.
 
 Actions marked `covered: true` remain in the public round story because they
 really happened, but they are excluded from the covered human's strategy
@@ -58,7 +58,7 @@ Aggression and challenge pull small samples toward population priors; claim risk
 
 Momentum shows each player’s share of remaining dice after a round. It is not a win-probability graph. A defining moment is selected from verified calls or the largest revealed bluff gap. Bot reasoning is limited to the last three distinct plain-language explanations.
 
-Analysis schema v3 (2026-07-20) adds `startingDice` and `roundStories`: the public per-round record — the full bid ladder (bidder, quantity, denomination, table-dice count), the call, the revealed `actualCount`, its margin against the final bid, and dice deltas. Everything in a round story was visible at the table; it must never grow hidden-hand fields. Schema-v5 may additionally copy the hand values shown in that completed public reveal, but never a pre-reveal or otherwise private hand. The browser renders these as the stacked dice-flow chart, the round-by-round rail, and the call board; the player-color palette in `OnlineTable.css` is CVD-validated against the panel surface and assigned by fixed seat order.
+Analysis schema v3 (2026-07-20) adds `startingDice` and `roundStories`: the public per-round record — the full bid ladder (bidder, quantity, denomination, table-dice count), the call, the revealed `actualCount`, its margin against the final bid, and dice deltas. Schema-v5 adds a tightly scoped completed-match retrospective described below. The browser renders these as the stacked dice-flow chart, the round-by-round rail, the call board, and postgame replay; the player-color palette in `OnlineTable.css` is CVD-validated against the panel surface and assigned by fixed seat order.
 
 Analysis schema v4 (2026-07-30) redefines `scores.bluff` as claim risk (above) and adds `stats.verifiedFinalBids`, the count of that player's final bids that actually reached a reveal — the denominator the browser shows beside `unsupportedFinalBids` so a "1 unsupported" reads as "1 of 4 revealed" rather than a bare tally.
 
@@ -68,15 +68,31 @@ stories. Per-player `stats.unheldFaceBids` and
 absent from the bidder's visible private hand at the time of the bid, before a
 table-dice commitment or reroll. This is not rules support: an Ace counts only
 as an Ace, never as proof that another face was held. Covered bids and blind
-multi-die Palo Fijo bids are excluded. `biggestLiar`, when present, is a
-table-relative descriptive award, weighted 65% by verified unsupported final
-bids and 35% by the damped average of those literal unheld-face quantities. The
-award is eligible only when the player has at least one verified unsupported
-final bid; merely naming faces they did not hold cannot bestow it. The
-unheld component is multiplied by `min(1, unheldFaceBids / 4)`; ties are broken
-using the unrounded composite, then unsupported count, average quantity, sample
-count, and fixed seat order. Only the winning score is rounded for display. It
-must never be presented as an inference of human intent or honesty.
+multi-die Palo Fijo bids are excluded.
+
+`biggestLiar`, when present, is a playful summary of bid choices rather than
+revealed outcomes. Each attributable bid is scored from the exact pre-action
+hand and the engine’s `getLegalActions` result. Literal support is weighted
+`1` with zero copies of the named face, `0.4` with one copy, and `0` with two or
+more. An opening or denomination switch has choice weight `2`. Continuing the
+same face at its engine-generated minimum has weight `0.25`; each additional
+engine-legal same-face quantity skipped adds `0.5`. The bid contributes support
+weight × choice weight. Zero literal Aces can therefore score when choosing
+Aces, while wild Aces never masquerade as literal copies of another face.
+Covered moves and blind multi-die Palo Fijo choices do not score.
+
+The award ranks total unrounded choice points, then invented-face count,
+gratuitous-overraise count, excess raise steps, scored-bid count, and fixed seat
+order. Revealed support, caught/survived outcome, winner status, and shortfall
+never create eligibility or affect ranking. They remain optional roast/evidence
+only. The clean schema-v5 wire is `deceptionPoints`, components
+`scoredBids`, `inventedFaceBids`, `singleCopyBids`, `whiteLieBids`,
+`gratuitousOverraises`, `excessRaiseSteps`, `scoredUnsupportedCaught`, and
+`scoredUnsupportedSurvived`, plus optional `widestScoredShortfall`.
+`whiteLieBids` specifically means a zero-copy, same-face minimum continuation;
+a one-copy bid belongs to `singleCopyBids` instead. Browser recovery may be
+tolerant of older schema-v5 award shapes, but new analysis must emit only this
+choice-based shape. It must never be presented as inferred intent or character.
 
 Each player also carries `stats.bidFaceCounts`, a six-face fingerprint of all
 attributable bids. It is computed server-side from non-covered actions rather
@@ -98,12 +114,19 @@ roastier lexicon (`Stretch Merchant`, `Bid Bulldozer`, `Dudo Daredevil`, and
 friends); their evidence sentences remain literal and non-psychological.
 
 Every resolved `roundStories[]` entry now has `startingDice`—the public dice
-count by seat at the start of that round—and may have `revealedHands`. The
-latter is copied only from the authoritative `roundResolutions[].revealedHands`
-record captured while all hands were publicly displayed during the result
-reveal. It powers open-dice replay after the match. It must be omitted for old
-logs without that record; never backfill it from a round deal, reroll log, final
-state, or any pre-reveal/private hand. Raw probabilities remain excluded.
+count by seat at the start of that round—and may have `revealedHands` plus
+`replayFrames`. `revealedHands` is copied only from the authoritative resolution
+record captured while all hands were publicly displayed. `replayFrames` is a
+postgame-only open-dice chronology: one `setup` frame and one `before-action`
+frame for every bid/call. Each frame carries every player’s exact private
+remainder and accumulated public table dice. Action frames also carry a
+zero-based `actionIndex`, actor, attribution bit, and action payload. A
+table-dice bid’s frame shows the pre-action hand the bidder actually saw; the
+next frame uses the recorded rerolled remainder and newly public dice. Never
+substitute final revealed hands for an earlier frame. If an old/incomplete
+table-dice log lacks a valid reroll or the action chronology cannot be joined to
+the resolution, omit all `replayFrames` for that story and retain the legacy
+count/ladder/reveal fallback. Raw probabilities remain excluded.
 
 The public round tape preserves attribution separately from visibility:
 every ladder bid has `attributable`, and every story has
@@ -132,7 +155,9 @@ requires an uncovered final bid. A covered counterpart does not erase the real
 actor's play. `signaturePlay.counterpartAttributable` tells the browser whether
 it may name that counterpart as choosing the other action (the final bid for a
 correct call, or the call for a held bid); when false, narration must use generic
-phrasing. Raw probabilities, hands, and diagnostics must never be serialized.
+phrasing. Raw probabilities, hands, and diagnostics must never be serialized in
+the signature object; replay hands remain isolated to completed-match
+`roundStories[].replayFrames`.
 `keyMoment` remains only as privacy-safe legacy prose for older browser clients.
 
 Analysis schema v2 separates three facts that must never be collapsed into “confirmed bluffs”:

@@ -179,6 +179,9 @@ describe('completed match analysis', () => {
     expect(serialized).not.toContain('rerolledDice')
     expect(serialized).not.toContain('successProbability')
     expect(serialized).not.toContain('surpriseValue')
+    // This legacy-shaped table-dice entry lacks its post-action reroll, so the
+    // builder must not invent intermediate open hands from the final reveal.
+    expect(analysis.roundStories[0].replayFrames).toBeUndefined()
   })
 
   it('labels a ladder-top fallback as forced without inventing deliberate bluff intent', () => {
@@ -355,6 +358,8 @@ describe('completed match analysis', () => {
         const serializedStory = JSON.parse(JSON.stringify(story))
         expect(serializedStory.bids.at(-1).attributable, `serialized bid covered=${bidCovered}`).toBe(!bidCovered)
         expect(serializedStory.callerAttributable, `serialized call covered=${callCovered}`).toBe(!callCovered)
+        expect(story.replayFrames?.[1]).toMatchObject({ phase: 'before-action', actorId: 'bot', attributable: !bidCovered })
+        expect(story.replayFrames?.[2]).toMatchObject({ phase: 'before-action', actorId: 'human', attributable: !callCovered })
         const correctCall = build(true, bidCovered, callCovered).signaturePlay
         expect(correctCall?.kind, `correct call; bid covered=${bidCovered}, call covered=${callCovered}`)
           .toBe(callCovered ? undefined : 'correct-dudo')
@@ -454,6 +459,18 @@ describe('completed match analysis', () => {
     expect(fortunateReroll.signaturePlay?.surprise).toBe('long-shot')
     expect(formerlyStrongHand.signaturePlay).toMatchObject({ kind: 'bid-held', tableDice: 1 })
     expect(fortunateReroll.signaturePlay).toMatchObject({ kind: 'bid-held', tableDice: 1 })
+    expect(formerlyStrongHand.biggestLiar).toBeUndefined()
+    expect(fortunateReroll.biggestLiar).toMatchObject({ playerId: 'actor', deceptionPoints: 2, components: { inventedFaceBids: 1 } })
+    const strongFrames = formerlyStrongHand.roundStories[0].replayFrames!
+    expect(strongFrames).toHaveLength(3)
+    expect(strongFrames[0]).toMatchObject({ phase: 'setup', actionIndex: -1 })
+    expect(strongFrames[0].players.find((player) => player.playerId === 'actor')).toEqual({ playerId: 'actor', hand: [6, 6, 6, 6, 2], tableDice: [] })
+    expect(strongFrames[1]).toMatchObject({ phase: 'before-action', actionIndex: 0, actorId: 'actor', attributable: true, action: { type: 'bid', tableDice: [2] } })
+    expect(strongFrames[1].players.find((player) => player.playerId === 'actor')).toEqual({ playerId: 'actor', hand: [6, 6, 6, 6, 2], tableDice: [] })
+    expect(strongFrames[2]).toMatchObject({ phase: 'before-action', actionIndex: 1, actorId: 'caller', attributable: true, action: { type: 'dudo' } })
+    expect(strongFrames[2].players.find((player) => player.playerId === 'actor')).toEqual({ playerId: 'actor', hand: [3, 3, 3, 3], tableDice: [2] })
+    const fortunateCallFrame = fortunateReroll.roundStories[0].replayFrames?.[2]
+    expect(fortunateCallFrame?.players.find((player) => player.playerId === 'actor')).toEqual({ playerId: 'actor', hand: [6, 6, 6, 6], tableDice: [2] })
   })
 
   it('selects a privacy-safe signature for a long-shot bid that held under Dudo', () => {
@@ -496,7 +513,7 @@ describe('completed match analysis', () => {
     })
   })
 
-  it('damps a one-sample unheld-face read in the Biggest liar award and carries public shortfall evidence', () => {
+  it('selects Biggest liar from attributable pre-action choice evidence and keeps outcome as evidence only', () => {
     const analysis = buildMatchAnalysis({
       rules: { ...DEFAULT_GAME_RULES },
       seats: [
@@ -509,7 +526,7 @@ describe('completed match analysis', () => {
         { round: 1, playerId: 'ana', action: { type: 'dudo', playerId: 'ana' } },
       ],
       roundDeals: [{ round: 1, paloFijo: false, starterId: 'ana', hands: [
-        { playerId: 'ana', dice: [1, 2, 3, 4, 5] }, { playerId: 'min', dice: [1, 2, 3, 4, 6] },
+        { playerId: 'ana', dice: [6, 6, 2, 3, 4] }, { playerId: 'min', dice: [1, 2, 3, 4, 6] },
       ] }],
       roundResolutions: [{ round: 1, paloFijo: false, resolution: {
         kind: 'dudo', callerId: 'ana', bidderId: 'min', bid: { quantity: 7, denomination: 5 }, actualCount: 2, correct: true,
@@ -519,15 +536,51 @@ describe('completed match analysis', () => {
       botDecisions: [], finalState,
     })
     expect(analysis.biggestLiar).toEqual({
-      playerId: 'min', score: 74,
+      playerId: 'min', deceptionPoints: 2,
       components: {
-        unsupportedFinalBids: 1, tableMaxUnsupportedFinalBids: 1,
-        unheldFaceBids: 1, averageUnheldFaceQuantity: 7, tableMaxAverageUnheldFaceQuantity: 7,
+        scoredBids: 1, inventedFaceBids: 1, singleCopyBids: 0, whiteLieBids: 0,
+        gratuitousOverraises: 0, excessRaiseSteps: 0,
+        scoredUnsupportedCaught: 1, scoredUnsupportedSurvived: 0,
       },
-      widestRevealedShortfall: {
+      widestScoredShortfall: {
         round: 1, bid: { quantity: 7, denomination: 5 }, actualCount: 2, shortfall: 5, callerId: 'ana', caught: true,
       },
     })
+  })
+
+  it('scores literal pre-action support without treating wild Aces as copies of another face', () => {
+    const build = (hand: Array<1 | 2 | 3 | 4 | 5 | 6>, options: { covered?: boolean; paloFijo?: boolean } = {}) => buildMatchAnalysis({
+      rules: { ...DEFAULT_GAME_RULES, paloFijoBlindDice: true },
+      seats: [{ id: 'bidder', name: 'Bidder', controller: 'human' }, { id: 'caller', name: 'Caller', controller: 'human' }],
+      actions: [
+        { round: 1, playerId: 'bidder', action: { type: 'bid' as const, playerId: 'bidder', bid: { quantity: 7, denomination: 6 as const } }, ...(options.covered ? { covered: true } : {}) },
+        { round: 1, playerId: 'caller', action: { type: 'dudo' as const, playerId: 'caller' } },
+      ],
+      roundDeals: [{ round: 1, paloFijo: options.paloFijo === true, starterId: 'bidder', hands: [{ playerId: 'bidder', dice: hand }, { playerId: 'caller', dice: [2, 3, 4, 5, 6] }] }],
+      roundResolutions: [{ round: 1, paloFijo: options.paloFijo === true, resolution: { kind: 'dudo' as const, callerId: 'caller', bidderId: 'bidder', bid: { quantity: 7, denomination: 6 as const }, actualCount: 1, correct: true, diceChanges: [{ playerId: 'bidder', before: 5, after: 4, delta: -1, reason: 'dudo' as const }], nextStarterId: 'bidder', paloFijoNextRound: false } }],
+      botDecisions: [],
+      finalState: { ...finalState, winnerId: 'caller', players: [{ ...finalState.players[0], id: 'bidder', name: 'Bidder' }, { ...finalState.players[1], id: 'caller', name: 'Caller' }] },
+    })
+
+    const zeroCopies = build([2, 3, 4, 5, 5])
+    expect(zeroCopies.biggestLiar).toMatchObject({ playerId: 'bidder', deceptionPoints: 2, components: { inventedFaceBids: 1, singleCopyBids: 0 } })
+    const oneCopy = build([6, 2, 3, 4, 5])
+    expect(oneCopy.biggestLiar).toMatchObject({ playerId: 'bidder', deceptionPoints: 0.8, components: { inventedFaceBids: 0, singleCopyBids: 1 } })
+    // Wild Aces support the game bid, but do not become literal Sambas for this
+    // choice-language score.
+    const wildAces = build([1, 1, 2, 3, 4])
+    expect(wildAces.biggestLiar).toMatchObject({ playerId: 'bidder', deceptionPoints: 2, components: { inventedFaceBids: 1 } })
+    for (const hand of [[6, 6, 2, 3, 4], [6, 6, 6, 2, 3]] as Array<Array<1 | 2 | 3 | 4 | 5 | 6>>) {
+      const analysis = build(hand)
+      expect(analysis.players[0].stats).toMatchObject({ unsupportedFinalBids: 1 })
+      expect(analysis.biggestLiar).toBeUndefined()
+    }
+    const covered = build([2, 3, 4, 5, 5], { covered: true })
+    expect(covered.players[0].stats).toMatchObject({ unsupportedFinalBids: 0 })
+    expect(covered.biggestLiar).toBeUndefined()
+    const blind = build([2, 3, 4, 5, 5], { paloFijo: true })
+    expect(blind.players[0].stats).toMatchObject({ unsupportedFinalBids: 1 })
+    expect(blind.biggestLiar).toBeUndefined()
   })
 
   it('breaks Biggest liar ties by seat order and omits it when there is no evidence', () => {
@@ -551,9 +604,9 @@ describe('completed match analysis', () => {
       botDecisions: [], finalState: { ...finalState, round: 2, winnerId: 'first' },
     })
     expect(tied.biggestLiar?.playerId).toBe('first')
-    // Both players have the same single unheld sample, so the damping applies
-    // equally and seat order resolves the otherwise exact tie.
-    expect(tied.biggestLiar?.score).toBe(74)
+    // Both players invented one opening face for two points, so fixed seat order
+    // resolves the exact choice-evidence tie.
+    expect(tied.biggestLiar?.deceptionPoints).toBe(2)
 
     const quiet = buildMatchAnalysis({ ...{
       rules: { ...DEFAULT_GAME_RULES }, seats: [{ id: 'only', name: 'Only', controller: 'human' as const }], actions: [], roundDeals: [], roundResolutions: [], botDecisions: [],
@@ -561,7 +614,7 @@ describe('completed match analysis', () => {
     expect(quiet.biggestLiar).toBeUndefined()
   })
 
-  it('does not bestow Biggest liar for absent-face bids without an unsupported final', () => {
+  it('can bestow Biggest liar from a scored choice even when no final outcome was revealed', () => {
     const analysis = buildMatchAnalysis({
       rules: { ...DEFAULT_GAME_RULES },
       seats: [{ id: 'storyteller', name: 'Storyteller', controller: 'human' }],
@@ -576,43 +629,63 @@ describe('completed match analysis', () => {
     })
 
     expect(analysis.players[0].stats).toMatchObject({ unheldFaceBids: 1, averageUnheldFaceQuantity: 5, unsupportedFinalBids: 0 })
-    expect(analysis.biggestLiar).toBeUndefined()
+    expect(analysis.biggestLiar).toMatchObject({ playerId: 'storyteller', deceptionPoints: 2, components: { inventedFaceBids: 1, scoredUnsupportedCaught: 0, scoredUnsupportedSurvived: 0 } })
   })
 
-  it('ranks Biggest liar by raw composite before rounding a near tie for display', () => {
-    const bRounds = Array.from({ length: 20 }, (_, index) => index + 2)
-    const roundDeals = [1, ...bRounds].map((round) => ({
-      round, paloFijo: false, starterId: round === 1 ? 'a' : 'b',
-      hands: [{ playerId: 'a', dice: [1, 2, 3, 4, 5] }, { playerId: 'b', dice: [1, 2, 3, 4, 5] }],
-    }))
-    const actions = [
-      { round: 1, playerId: 'a', action: { type: 'bid' as const, playerId: 'a', bid: { quantity: 4, denomination: 6 as const } } },
-      { round: 1, playerId: 'b', action: { type: 'dudo' as const, playerId: 'b' } },
-      ...bRounds.flatMap((round, index) => [
-        { round, playerId: 'b', action: { type: 'bid' as const, playerId: 'b', bid: { quantity: index === bRounds.length - 1 ? 2 : 1, denomination: 6 as const } } },
-        { round, playerId: 'a', action: { type: 'dudo' as const, playerId: 'a' } },
-      ]),
-    ]
-    const roundResolutions = [
-      { round: 1, paloFijo: false, resolution: { kind: 'dudo' as const, callerId: 'b', bidderId: 'a', bid: { quantity: 4, denomination: 6 as const }, actualCount: 0, correct: true, diceChanges: [{ playerId: 'a', before: 5, after: 4, delta: -1, reason: 'dudo' as const }], nextStarterId: 'a', paloFijoNextRound: false } },
-      ...bRounds.map((round, index) => {
-        const finalRound = index === bRounds.length - 1
-        const quantity = finalRound ? 2 : 1
-        return { round, paloFijo: false, resolution: { kind: 'dudo' as const, callerId: 'a', bidderId: 'b', bid: { quantity, denomination: 6 as const }, actualCount: finalRound ? 0 : 1, correct: finalRound, diceChanges: [{ playerId: finalRound ? 'b' : 'a', before: 5, after: 4, delta: -1, reason: 'dudo' as const }], nextStarterId: 'b', paloFijoNextRound: false } }
-      }),
-    ]
-    const analysis = buildMatchAnalysis({
+  it('uses engine-generated same-face minimums to distinguish white lies from gratuitous overraises', () => {
+    const build = (quantity: number, oneCopy = false) => buildMatchAnalysis({
       rules: { ...DEFAULT_GAME_RULES },
-      seats: [{ id: 'a', name: 'A', controller: 'human' }, { id: 'b', name: 'B', controller: 'human' }],
-      actions, roundDeals, roundResolutions, botDecisions: [],
-      finalState: { ...finalState, round: 21, winnerId: 'a' },
+      seats: [{ id: 'opener', name: 'Opener', controller: 'human' }, { id: 'actor', name: 'Actor', controller: 'human' }],
+      actions: [
+        { round: 1, playerId: 'opener', action: { type: 'bid' as const, playerId: 'opener', bid: { quantity: 2, denomination: 5 as const } } },
+        { round: 1, playerId: 'actor', action: { type: 'bid' as const, playerId: 'actor', bid: { quantity, denomination: 5 as const } } },
+        { round: 1, playerId: 'opener', action: { type: 'dudo' as const, playerId: 'opener' } },
+      ],
+      roundDeals: [{ round: 1, paloFijo: false, starterId: 'opener', hands: [{ playerId: 'opener', dice: [5, 5, 2, 3, 4] }, { playerId: 'actor', dice: oneCopy ? [5, 2, 3, 4, 6] : [2, 2, 3, 4, 6] }] }],
+      roundResolutions: [{ round: 1, paloFijo: false, resolution: { kind: 'dudo' as const, callerId: 'opener', bidderId: 'actor', bid: { quantity, denomination: 5 as const }, actualCount: 1, correct: true, diceChanges: [{ playerId: 'actor', before: 5, after: 4, delta: -1, reason: 'dudo' as const }], nextStarterId: 'actor', paloFijoNextRound: false } }],
+      botDecisions: [], finalState: { ...finalState, winnerId: 'opener', players: [{ ...finalState.players[0], id: 'opener', name: 'Opener' }, { ...finalState.players[1], id: 'actor', name: 'Actor' }] },
     })
 
-    // A: 65 + 35*(4/4)*1/4 = 73.75. B: 65 + 35*(1.05/4) = 74.1875.
-    // Both display as 74; raw ordering must select B before the average-quantity
-    // tie-break would incorrectly favor A.
-    expect(analysis.biggestLiar).toMatchObject({ playerId: 'b', score: 74 })
-    expect(analysis.biggestLiar?.components).toMatchObject({ unheldFaceBids: 20, averageUnheldFaceQuantity: 1.05 })
+    // For 2 Chinas, the engine-generated minimum same-face continuation is 3.
+    expect(build(3).biggestLiar).toMatchObject({ playerId: 'actor', deceptionPoints: 0.25, components: { whiteLieBids: 1, gratuitousOverraises: 0, excessRaiseSteps: 0 } })
+    // 5 Chinas skips the legal 3 and 4 quantities: .25 + .5 × 2 = 1.25.
+    expect(build(5).biggestLiar).toMatchObject({ playerId: 'actor', deceptionPoints: 1.25, components: { whiteLieBids: 0, gratuitousOverraises: 1, excessRaiseSteps: 2 } })
+    // One literal copy applies the .4 partial-backing factor to the same choice.
+    expect(build(5, true).biggestLiar).toMatchObject({ playerId: 'actor', deceptionPoints: 0.5, components: { singleCopyBids: 1, whiteLieBids: 0, gratuitousOverraises: 1, excessRaiseSteps: 2 } })
+  })
+
+  it('scores introduced or switched denominations strongly, including literal Ace choices', () => {
+    const build = (opening: boolean, actorHand: Array<1 | 2 | 3 | 4 | 5 | 6> = [2, 2, 3, 4, 5]) => buildMatchAnalysis({
+      rules: { ...DEFAULT_GAME_RULES },
+      seats: [{ id: 'actor', name: 'Actor', controller: 'human' }, { id: 'other', name: 'Other', controller: 'human' }],
+      actions: opening
+        ? [{ round: 1, playerId: 'actor', action: { type: 'bid' as const, playerId: 'actor', bid: { quantity: 1, denomination: 1 as const } } }]
+        : [
+            { round: 1, playerId: 'other', action: { type: 'bid' as const, playerId: 'other', bid: { quantity: 2, denomination: 5 as const } } },
+            { round: 1, playerId: 'actor', action: { type: 'bid' as const, playerId: 'actor', bid: { quantity: 2, denomination: 6 as const } } },
+          ],
+      roundDeals: [{ round: 1, paloFijo: false, starterId: opening ? 'actor' : 'other', hands: [{ playerId: 'actor', dice: actorHand }, { playerId: 'other', dice: [5, 5, 2, 3, 4] }] }],
+      roundResolutions: [], botDecisions: [], finalState: { ...finalState, winnerId: 'actor', players: [{ ...finalState.players[0], id: 'actor', name: 'Actor' }, { ...finalState.players[1], id: 'other', name: 'Other' }] },
+    })
+    expect(build(true).biggestLiar).toMatchObject({ playerId: 'actor', deceptionPoints: 2, components: { inventedFaceBids: 1 } })
+    expect(build(true, [1, 1, 2, 3, 4]).biggestLiar).toBeUndefined()
+    expect(build(false).biggestLiar).toMatchObject({ playerId: 'actor', deceptionPoints: 2, components: { inventedFaceBids: 1 } })
+  })
+
+  it('keeps reveal outcome out of Biggest liar ranking and points', () => {
+    const build = (actualCount: number) => buildMatchAnalysis({
+      rules: { ...DEFAULT_GAME_RULES },
+      seats: [{ id: 'actor', name: 'Actor', controller: 'human' }, { id: 'caller', name: 'Caller', controller: 'human' }],
+      actions: [{ round: 1, playerId: 'actor', action: { type: 'bid' as const, playerId: 'actor', bid: { quantity: 4, denomination: 6 as const } } }, { round: 1, playerId: 'caller', action: { type: 'dudo' as const, playerId: 'caller' } }],
+      roundDeals: [{ round: 1, paloFijo: false, starterId: 'actor', hands: [{ playerId: 'actor', dice: [2, 2, 3, 4, 5] }, { playerId: 'caller', dice: [2, 3, 4, 5, 6] }] }],
+      roundResolutions: [{ round: 1, paloFijo: false, resolution: { kind: 'dudo' as const, callerId: 'caller', bidderId: 'actor', bid: { quantity: 4, denomination: 6 as const }, actualCount, correct: actualCount < 4, diceChanges: [{ playerId: actualCount < 4 ? 'actor' : 'caller', before: 5, after: 4, delta: -1, reason: 'dudo' as const }], nextStarterId: 'caller', paloFijoNextRound: false } }],
+      botDecisions: [], finalState: { ...finalState, winnerId: 'actor', players: [{ ...finalState.players[0], id: 'actor', name: 'Actor' }, { ...finalState.players[1], id: 'caller', name: 'Caller' }] },
+    })
+    const caught = build(1).biggestLiar!
+    const held = build(5).biggestLiar!
+    expect({ playerId: caught.playerId, deceptionPoints: caught.deceptionPoints }).toEqual({ playerId: held.playerId, deceptionPoints: held.deceptionPoints })
+    expect(caught.components).toMatchObject({ scoredUnsupportedCaught: 1, scoredUnsupportedSurvived: 0 })
+    expect(held.components).toMatchObject({ scoredUnsupportedCaught: 0, scoredUnsupportedSurvived: 0 })
   })
 
   it('does not double-count one final bid that was both unsupported and a forced escalation when it survived', () => {

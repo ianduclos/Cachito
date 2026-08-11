@@ -131,7 +131,7 @@ function enterWinner({ viewerId = "player-1", spectator = false, shortfall = fal
       diceChanges: [{ playerId: "player-2", delta: -1 }],
     }],
     signaturePlay: { round: 9, kind: "bid-held", actorId: "player-1", counterpartId: "player-2", counterpartAttributable: true, bid: { quantity: 5, denomination: 5 }, actualCount: 5, callKind: "dudo", diceChanges: [{ playerId: "player-2", delta: -1 }], ladderLength: 2, tableDice: 1, surprise: "bold" },
-    ...(shortfall ? { biggestLiar: { playerId: "player-2", score: 81, components: { unsupportedFinalBids: 1, tableMaxUnsupportedFinalBids: 1, unheldFaceBids: 4, averageUnheldFaceQuantity: 5.5, tableMaxAverageUnheldFaceQuantity: 5.5 }, widestRevealedShortfall: { round: 8, bid: { quantity: 6, denomination: 5 }, actualCount: 2, shortfall: 4, callerId: "player-1", caught: true } } } : {}),
+    ...(shortfall ? { biggestLiar: { playerId: "player-2", deceptionPoints: 8.25, components: { scoredBids: 7, inventedFaceBids: 3, singleCopyBids: 1, whiteLieBids: 2, gratuitousOverraises: 1, excessRaiseSteps: 2, scoredUnsupportedCaught: 1, scoredUnsupportedSurvived: 0 }, widestScoredShortfall: { round: 8, bid: { quantity: 6, denomination: 5 }, actualCount: 2, shortfall: 4, callerId: "player-1", caught: true } } } : {}),
     players: [
       { id: "player-1", name: "Ana María", controller: "human", winner: true, verdict: "Bid patiently and picked measured moments to challenge. Claims stayed close to what their own dice supported. Every claim that reached a reveal held up.", style: "Receipts Attached", styleRead: "Kept most claims close to the dice they could see.", badges: [{ label: "ALL CLAIMS HELD", read: "Every revealed final claim held." }], scores: { bluff: { value: 31, samples: 18, earlyRead: false }, aggression: { value: 40, samples: 8, earlyRead: false }, challenge: { value: 52, samples: 1, earlyRead: true } }, stats: { bids: 18, verifiedFinalBids: 4, unsupportedFinalBids: 0, unsupportedCaught: 0, unsupportedSurvived: 0, deliberatePersonaBluffs: 0, deliberateBluffsCaught: 0, deliberateBluffsSurvived: 0, forcedEscalations: 0, forcedEscalationsCaught: 0, forcedEscalationsSurvived: 0, dudoAttempts: 3, dudoCorrect: 2, calzoAttempts: 1, calzoCorrect: 1, diceGained: 1, diceLost: 3, tableDicePlays: 1, bidFaceCounts: { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 3 }, unheldFaceBids: 0, averageUnheldFaceQuantity: 0 } },
       { id: "player-2", name: "Min-chi Park", controller: "bot", persona: "Bold storyteller", winner: false, verdict: "Pressed the table hard and challenged boldly. Claims regularly ran past what their own dice supported. 1 of 5 revealed claims fell short: 1 caught, 0 survived.", style: "Bid Bulldozer", styleRead: "Kept pushing when the ladder tightened.", badges: [{ label: "TABLE DICE", read: "Put dice in public twice." }, { label: "FORCED CLIMB", read: "Climbed without a fully backed raise twice." }], scores: { bluff: { value: 64, samples: 20, earlyRead: false }, aggression: { value: 72, samples: 11, earlyRead: false }, challenge: { value: 66, samples: 3, earlyRead: false } }, stats: { bids: 20, verifiedFinalBids: 5, unsupportedFinalBids: 1, unsupportedCaught: 1, unsupportedSurvived: 0, deliberatePersonaBluffs: 1, deliberateBluffsCaught: 1, deliberateBluffsSurvived: 0, forcedEscalations: 2, forcedEscalationsCaught: 1, forcedEscalationsSurvived: 1, dudoAttempts: 2, dudoCorrect: 1, calzoAttempts: 1, calzoCorrect: 0, diceGained: 0, diceLost: 5, tableDicePlays: 2, bidFaceCounts: { 1: 2, 2: 1, 3: 2, 4: 3, 5: 8, 6: 4 }, unheldFaceBids: 4, averageUnheldFaceQuantity: 5.5 }, botReasoning: [{ round: 4, action: "Bid 5 Chinas", explanation: "It found a cheap moment to sell a believable story on a face it genuinely held." }] },
@@ -160,9 +160,8 @@ function enterWinner({ viewerId = "player-1", spectator = false, shortfall = fal
       awardedPlayer.stats.unsupportedCaught = 1;
       awardedPlayer.stats.unsupportedSurvived = 1;
     }
-    analysis.biggestLiar.components.unsupportedFinalBids = awardedPlayer.stats.unsupportedFinalBids;
-    analysis.biggestLiar.components.unheldFaceBids = awardedPlayer.stats.unheldFaceBids;
-    analysis.biggestLiar.components.averageUnheldFaceQuantity = awardedPlayer.stats.averageUnheldFaceQuantity;
+    analysis.biggestLiar.components.scoredUnsupportedCaught = awardedPlayer.stats.unsupportedCaught;
+    analysis.biggestLiar.components.scoredUnsupportedSurvived = awardedPlayer.stats.unsupportedSurvived;
   }
   if (analysis.signaturePlay && coveredSignatureCounterpart) {
     analysis.signaturePlay.counterpartAttributable = false;
@@ -478,21 +477,23 @@ describe("OnlineGame connection lifecycle", () => {
     expect(socket().sent.map((message) => JSON.parse(message))).toContainEqual({ type: "return-to-lobby" });
   });
 
-  it("explains biggest liar as a table-relative mix, never a confession", () => {
+  it("explains biggest liar through choices, with outcomes used only for the roast", () => {
     render(<OnlineGame onExit={vi.fn()} />);
     enterWinner({ shortfall: true });
 
     fireEvent.click(screen.getByRole("button", { name: "Game analysis" }));
     const panel = screen.getByRole("dialog", { name: "Game analysis" });
 
-    // The award combines revealed unsupported bids with claims on literal
-    // absent faces, while retaining the widest public miss as evidence.
+    // The award names invented faces, soft one-die stretches, unnecessary
+    // jumps and inherited white lies. The public miss is supporting evidence.
     expect(panel).toHaveTextContent("Biggest liar");
     expect(panel).toHaveTextContent("Min-chi Park");
     expect(panel).toHaveTextContent("The dice kept the receipts.");
-    expect(panel).toHaveTextContent("1 unsupported final bid");
-    expect(panel).toHaveTextContent("4 bids named a face absent from their hand");
-    expect(panel).toHaveTextContent("Widest miss: R8, 6 Chinas claimed, 2 were there — 4 short.");
+    expect(panel).toHaveTextContent("3 invented faces");
+    expect(panel).toHaveTextContent("1 one-die stretch");
+    expect(panel).toHaveTextContent("1 unnecessary jump · 2 extra steps");
+    expect(panel).toHaveTextContent("2 polite little fibs");
+    expect(panel).toHaveTextContent("Widest exposed miss: R8, 6 Chinas claimed, 2 were there — 4 short.");
   });
 
   it("hands out no liar's crown when every revealed claim held up", () => {
@@ -570,7 +571,8 @@ describe("OnlineGame connection lifecycle", () => {
     expect(panel).toHaveTextContent("Bold storyteller");
     expect(panel).not.toHaveTextContent("Who dared to call");
     fireEvent.click(screen.getAllByText("Open dossier")[0]);
-    expect(panel).toHaveTextContent("Intent not recorded");
+    expect(panel).not.toHaveTextContent("Intent not recorded");
+    expect(within(screen.getAllByText("Open dossier")[0].parentElement!).queryByText("Deliberate")).not.toBeInTheDocument();
     expect(panel).toHaveTextContent("Early read · 1 call");
     expect(panel).toHaveTextContent("18 bids");
     fireEvent.click(screen.getAllByText("Open dossier")[0]);
