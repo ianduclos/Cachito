@@ -1,16 +1,32 @@
 ---
 project: Cachito
 state: active
-updated: 2026-08-06
-summary: Heads-up bot promotion live — the exp-002b gate is lifted (full Gen 2 belief stack plays two-seat games) with the exp-027 Calzo mode guard, shipped as r2026.08.06.002 after passing the 10k-game league (86.8% vs the gated champion) and the human replay gate. Earlier same day: the three corrected probability contracts deployed as r2026.08.06.001.
+updated: 2026-08-17
+summary: Living 2H human-context replay complete — the two-turn bot-variation setup is retired (48/48 lanes diverge within two decisions on real human tables) and the next lab packet is the one-decision motif contract; production champion unchanged since r2026.08.06.002.
 machine: mac
 next:
-  - Ian: play heads-up on the new build — the bot now tracks bid evidence and calls Calzo; exact-count traps are halved, not dead
-  - Stage 2/3 follow-up now motivated: persona bluff adaptivity vs outcome-reading opponents is the honest route back to the old win number
-handoff_for: ian
+  - Design the one-decision motif contract (keep-story first) with falsification tests, per lab/ROADMAP.md
+  - Fresh-seed shadow audit against the Living 2 opportunity/diversity gate once that contract is frozen
+handoff_for: null
 ---
 
 # Cachito — status
+
+## 2026-08-17 — Living 2H complete: two-turn variation retired (lab-only)
+
+Five lab commits (`b26ccc4`..`28b458d`); product untouched. The Living 0–2
+packet was committed from a stale working tree, corpus gates were re-locked
+on the enlarged 25-file log corpus, and the Living 2H replay
+(`lab/tools/livingHumanContextReplay.ts`) passively reconstructed all 367
+strategic decisions from the five 2026-08-10 friend-session logs through the
+authoritative engine (zero legality mismatches, covered actions excluded,
+roster via `analysis.players`). Verdict: 48/48 seat×persona lanes diverge
+from real human play within two decisions (47/48 deterministic), so
+setup-and-continue plans starve everywhere; one-decision offers exist at
+26.9% of human decisions with the 0.02 allowance binding at 2.9%. Roadmap now
+points at a one-decision motif contract (keep-story first). Lab suite 230/230.
+Details: lab/LOG.md 2026-08-17 entry; canonical artifact
+`lab/data/living-v2/human-context-replay.json`.
 
 ## 2026-08-06 (evening) — heads-up Gen 2 promotion live (r2026.08.06.002)
 
