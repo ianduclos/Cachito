@@ -3,7 +3,7 @@ import { randomInt } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { Storage } from "@google-cloud/storage";
 import { applyAction, createGame, DEFAULT_GAME_RULES, forfeitPlayer, getLegalActions, MAX_PLAYERS, projectForPlayer, projectForSpectator, type GameAction, type GameRules, type GameState, type PlayerSetup } from "../src/engine";
-import { chooseBotAction, createPersonaBluffPolicy, createRespectGatedPolicy, isChoiceLegal, PERSONA_LABELS, type BotObservation, type BotPolicy, type PersonaAggression, type PublicActionEntry } from "../src/bot";
+import { chooseBotAction, createPersonaBluffPolicy, createRespectGatedPolicy, isChoiceLegal, PERSONA_LABELS, type BotChoice, type BotObservation, type BotPolicy, type PersonaAggression, type PublicActionEntry } from "../src/bot";
 import { createBotDecisionRecord } from "../src/analytics";
 import { buildMatchAnalysis } from "../src/analysis";
 import { BOT_NAMES } from "../src/bot/names";
@@ -130,7 +130,7 @@ function randomBotPersona(): PersonaAggression {
   const roll = randomInt(100);
   return roll < 30 ? "conservative" : roll < 75 ? "balanced" : "aggressive";
 }
-function stableBotPersona(player: RoomPlayer): PersonaAggression {
+export function stableBotPersona(player: RoomPlayer): PersonaAggression {
   if (player.botPersona) return player.botPersona;
   const styles: PersonaAggression[] = ["conservative", "balanced", "aggressive"];
   return styles[[...player.id].reduce((total, character) => total + character.charCodeAt(0), 0) % styles.length];
@@ -149,7 +149,7 @@ function personaPolicy(persona: PersonaAggression) {
   }
   return policy;
 }
-function onlineBotPolicy(player: RoomPlayer) { return personaPolicy(stableBotPersona(player)); }
+export function onlineBotPolicy(player: RoomPlayer) { return personaPolicy(stableBotPersona(player)); }
 function send(socket: WebSocket, message: OnlineServerMessage) { if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message)); }
 function lobby(room: Room): Extract<OnlineServerMessage, { type: "lobby" }> {
   return { type: "lobby", roomCode: room.code, hostPlayerId: room.hostPlayerId, spectatorCount: room.spectators.size,
@@ -276,34 +276,35 @@ function scheduleTurn(room: Room, requestedRemainingMs?: number) {
   room.turnDeadlineAt = Date.now() + effectiveRemainingMs;
   turnTiming.deadlineAt = new Date(room.turnDeadlineAt).toISOString();
   publish(room);
-  room.turnTimer = setTimeout(() => {
-    room.turnTimer = undefined;
-    room.turnDeadlineAt = undefined;
-    const game = room.game;
-    if (!game || game.phase !== "playing" || game.currentPlayerId !== actor.id) return;
-    try {
-      const observation: BotObservation = { playerId: actor.id, view: projectForPlayer(game, actor.id), legalActions: getLegalActions(game, actor.id), history: room.botHistory };
-      const policy = actor.isBot ? onlineBotPolicy(actor) : personaPolicy("conservative");
-      const { choice, trace } = chooseBotAction(policy, observation, Math.random);
-      if (!isChoiceLegal(observation, choice)) throw new Error("Bot selected an illegal action.");
-      // A timeout bot is a safety net, not a strategic table-dice move.
-      const action = choice.type === "bid" ? { type: "bid" as const, playerId: actor.id, bid: choice.bid, ...(actor.isBot && choice.tableDiceIndices?.length ? { tableDiceIndices: choice.tableDiceIndices } : {}) } : { type: choice.type, playerId: actor.id };
-      finishTurnTiming(room, actor.isBot ? action.type : "timeout");
-      if (actor.isBot) room.botDecisions.push({ ...createBotDecisionRecord(observation, policy.name, choice, trace), sequence: room.botDecisions.length });
-      room.game = applyAction(game, action);
-      recordAction(room, actor.name, action, { covered: !actor.isBot });
-      if (room.game.phase === "reveal") startNextRoundVote(room);
-      if (!actor.isBot) {
-        room.history.unshift(`${actor.name} ran out of time — a bot made the move.`);
-        room.announcement = { text: `${actor.name} ran out of time — bot move.`, playerId: actor.id };
-      }
-      void persistRoomSnapshot(room);
-      if (room.game.phase === "playing" && everyoneShuffled(room)) scheduleTurn(room);
-      else { publish(room); scheduleTurn(room); }
-    } catch {
-      for (const player of room.players) if (player.socket) send(player.socket, { type: "error", message: "A room bot could not take its turn." });
+  room.turnTimer = setTimeout(() => executeBotTurn(room, actor), delay);
+}
+export function executeBotTurn(room: Room, actor: RoomPlayer) {
+  room.turnTimer = undefined;
+  room.turnDeadlineAt = undefined;
+  const game = room.game;
+  if (!game || game.phase !== "playing" || game.currentPlayerId !== actor.id) return;
+  try {
+    const observation: BotObservation = { playerId: actor.id, view: projectForPlayer(game, actor.id), legalActions: getLegalActions(game, actor.id), history: room.botHistory };
+    const policy = actor.isBot ? onlineBotPolicy(actor) : personaPolicy("conservative");
+    const { choice, trace } = chooseBotAction(policy, observation, Math.random);
+    if (!isChoiceLegal(observation, choice)) throw new Error("Bot selected an illegal action.");
+    // A timeout bot is a safety net, not a strategic table-dice move.
+    const action = choice.type === "bid" ? { type: "bid" as const, playerId: actor.id, bid: choice.bid, ...(actor.isBot && choice.tableDiceIndices?.length ? { tableDiceIndices: choice.tableDiceIndices } : {}) } : { type: choice.type, playerId: actor.id };
+    finishTurnTiming(room, actor.isBot ? action.type : "timeout");
+    if (actor.isBot) room.botDecisions.push({ ...createBotDecisionRecord(observation, policy.name, choice, trace), sequence: room.botDecisions.length });
+    room.game = applyAction(game, action);
+    recordAction(room, actor.name, action, { covered: !actor.isBot });
+    if (room.game.phase === "reveal") startNextRoundVote(room);
+    if (!actor.isBot) {
+      room.history.unshift(`${actor.name} ran out of time — a bot made the move.`);
+      room.announcement = { text: `${actor.name} ran out of time — bot move.`, playerId: actor.id };
     }
-  }, delay);
+    void persistRoomSnapshot(room);
+    if (room.game.phase === "playing" && everyoneShuffled(room)) scheduleTurn(room);
+    else { publish(room); scheduleTurn(room); }
+  } catch {
+    for (const player of room.players) if (player.socket) send(player.socket, { type: "error", message: "A room bot could not take its turn." });
+  }
 }
 function startRoundShuffle(room: Room, remainingMs = SHUFFLE_LIMIT_MS, keepReady = false) {
   if (!room.game || room.game.phase !== "playing") return;
@@ -438,6 +439,7 @@ async function loadPersistedRoom(roomCode: string): Promise<Room | undefined> {
       history: saved.history ?? [],
       botHistory: saved.botHistory ?? [],
       botDecisions: saved.botDecisions ?? [],
+      shadowDecisions: saved.shadowDecisions ?? [],
       ...(saved.analysis ? { analysis: saved.analysis } : {}),
       ...(saved.announcement ? { announcement: saved.announcement } : {}),
       ...(saved.shuffleReadyPlayerIds ? { shuffleReadyPlayerIds: new Set(saved.shuffleReadyPlayerIds) } : {}),
@@ -533,6 +535,7 @@ export function resetOnlineRoomsForTests() {
   rooms.clear();
   roomCreationTimestamps.clear();
 }
+export function getRoomForTests(roomCode: string): Room | undefined { return rooms.get(roomCode); }
 
 /** Authoritative websocket endpoint. Each browser receives only its permitted game projection. */
 export function installOnlineRooms(httpServer: import("node:http").Server) {
@@ -598,7 +601,7 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           roomCreationTimestamps.set(creationAddress, [...recentCreations, creationNow]);
           const id = `player-${crypto.randomUUID()}`;
           player = { id, name, isBot: false, token: token(), socket };
-          room = { code: code(), hostPlayerId: id, players: [player], spectators: new Map(), connectionEvents: [], rules: { ...DEFAULT_GAME_RULES }, roundDeals: [], roundResolutions: [], turnTimings: [], history: [], botHistory: [], botDecisions: [], actions: [], lastActivityAt: Date.now() };
+          room = { code: code(), hostPlayerId: id, players: [player], spectators: new Map(), connectionEvents: [], rules: { ...DEFAULT_GAME_RULES }, roundDeals: [], roundResolutions: [], turnTimings: [], history: [], botHistory: [], botDecisions: [], shadowDecisions: [], actions: [], lastActivityAt: Date.now() };
           recordConnection(room, socket, "room-created", "player", id);
           rooms.set(room.code, room);
           association = "bound";
@@ -731,7 +734,7 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           if (room.pendingRules) throw new Error("Every player must approve the pending rules before the game starts.");
           const starter = room.players.find((candidate) => candidate.id === room!.nextGameStarterId) ?? room.players[Math.floor(Math.random() * room.players.length)];
           const otherPlayers = room.players.filter((candidate) => candidate.id !== starter.id).sort(() => Math.random() - .5);
-          room.game = createGame([starter, ...otherPlayers].map(({ id, name }): PlayerSetup => ({ id, name })), Math.random, room.rules); room.startedAt = new Date().toISOString(); room.history = [`Round 1 begins — ${starter.name} starts.`]; room.botHistory = []; room.botDecisions = []; room.analysis = undefined; room.actions = [{ at: room.startedAt, round: 1, action: { type: "round-start" } }]; room.roundDeals = []; room.roundResolutions = []; room.turnTimings = []; room.activeTurn = undefined; recordRoundDeal(room); touch(room); startRoundShuffle(room); void persistRoomSnapshot(room); publish(room);
+          room.game = createGame([starter, ...otherPlayers].map(({ id, name }): PlayerSetup => ({ id, name })), Math.random, room.rules); room.startedAt = new Date().toISOString(); room.history = [`Round 1 begins — ${starter.name} starts.`]; room.botHistory = []; room.botDecisions = []; room.shadowDecisions = []; room.analysis = undefined; room.actions = [{ at: room.startedAt, round: 1, action: { type: "round-start" } }]; room.roundDeals = []; room.roundResolutions = []; room.turnTimings = []; room.activeTurn = undefined; recordRoundDeal(room); touch(room); startRoundShuffle(room); void persistRoomSnapshot(room); publish(room);
         } else if (message.type === "return-to-lobby") {
           // Any player still at the finished table can take the room back to the
           // lobby — waiting on the host left the rest of the table with no way
@@ -742,7 +745,7 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           if (!player || !room.players.some((candidate) => candidate.id === player!.id)) throw new Error("Only a player at this finished table can return it to the lobby.");
           if (!room.game) return;
           if (room.game.phase !== "gameOver") throw new Error("This game is still running.");
-          promoteQueuedSpectators(room); room.game = undefined; room.history = []; room.botHistory = []; room.botDecisions = []; room.analysis = undefined; room.announcement = undefined; room.paused = undefined; room.shuffleReadyPlayerIds = undefined; room.nextRoundReadyPlayerIds = undefined; room.nextRoundDeadlineAt = undefined; room.shuffleDeadlineAt = undefined; if (room.shuffleTimer) clearTimeout(room.shuffleTimer); room.shuffleTimer = undefined; for (const timer of room.botShuffleTimers ?? []) clearTimeout(timer); room.botShuffleTimers = []; if (room.nextRoundTimer) clearTimeout(room.nextRoundTimer); room.nextRoundTimer = undefined; for (const timer of room.botNextRoundTimers ?? []) clearTimeout(timer); room.botNextRoundTimers = []; if (room.turnTimer) clearTimeout(room.turnTimer); room.turnTimer = undefined; room.turnDeadlineAt = undefined; room.actions = []; room.roundDeals = []; room.roundResolutions = []; room.turnTimings = []; room.activeTurn = undefined; room.startedAt = undefined; touch(room); void persistRoomSnapshot(room); publish(room);
+          promoteQueuedSpectators(room); room.game = undefined; room.history = []; room.botHistory = []; room.botDecisions = []; room.shadowDecisions = []; room.analysis = undefined; room.announcement = undefined; room.paused = undefined; room.shuffleReadyPlayerIds = undefined; room.nextRoundReadyPlayerIds = undefined; room.nextRoundDeadlineAt = undefined; room.shuffleDeadlineAt = undefined; if (room.shuffleTimer) clearTimeout(room.shuffleTimer); room.shuffleTimer = undefined; for (const timer of room.botShuffleTimers ?? []) clearTimeout(timer); room.botShuffleTimers = []; if (room.nextRoundTimer) clearTimeout(room.nextRoundTimer); room.nextRoundTimer = undefined; for (const timer of room.botNextRoundTimers ?? []) clearTimeout(timer); room.botNextRoundTimers = []; if (room.turnTimer) clearTimeout(room.turnTimer); room.turnTimer = undefined; room.turnDeadlineAt = undefined; room.actions = []; room.roundDeals = []; room.roundResolutions = []; room.turnTimings = []; room.activeTurn = undefined; room.startedAt = undefined; touch(room); void persistRoomSnapshot(room); publish(room);
         } else if (message.type === "toggle-pause") {
           if (!player || !room.game || room.game.phase === "gameOver" || !room.players.some((candidate) => candidate.id === player!.id)) throw new Error("Only a player at this table can pause or resume the game.");
           if (room.paused) resumeGame(room, player);
@@ -794,6 +797,19 @@ export function installOnlineRooms(httpServer: import("node:http").Server) {
           if (message.action.type === "nextRound") throw new Error("Wait for the table to choose the next round.");
           if (room.game.phase === "playing" && !everyoneShuffled(room)) throw new Error("Everyone needs to shake their dice before the round begins.");
           const action: GameAction = { ...message.action, playerId: player.id };
+          if (!player.isBot && player.socket && (action.type === "bid" || action.type === "dudo" || action.type === "calzo")) {
+            try {
+              const observation: BotObservation = { playerId: player.id, view: projectForPlayer(room.game, player.id), legalActions: getLegalActions(room.game, player.id), history: room.botHistory };
+              const policy = personaPolicy(stableBotPersona(player));
+              const { choice, trace } = chooseBotAction(policy, observation, Math.random);
+              const observedAction: BotChoice = action.type === "bid"
+                ? { type: "bid", bid: action.bid, ...(action.tableDiceIndices?.length ? { tableDiceIndices: action.tableDiceIndices } : {}) }
+                : { type: action.type };
+              room.shadowDecisions.push({ ...createBotDecisionRecord(observation, policy.name, choice, trace), observedAction, sequence: room.shadowDecisions.length });
+            } catch (error) {
+              console.error("Shadow decision recording failed", error);
+            }
+          }
           const nextGame = applyValidatedGameAction(room.game, action, () => {
             if (action.type === "bid" || action.type === "dudo" || action.type === "calzo") finishTurnTiming(room!, action.type);
           });
@@ -937,6 +953,33 @@ async function deleteActiveRoomSnapshot(roomCode: string) {
   if (!storage || !logBucket) return;
   await storage.bucket(logBucket).file(`active-rooms/${roomCode}.json`).delete({ ignoreNotFound: true }).catch(() => undefined);
 }
+export function buildOnlineMatchRecord(room: Room) {
+  if (!room.game || !room.startedAt) throw new Error("Cannot build a match record for an unfinished room.");
+  return {
+    ...onlineLogHeader(5),
+    roomCode: room.code,
+    startedAt: room.startedAt,
+    updatedAt: new Date().toISOString(),
+    rules: room.game.rules,
+    seats: room.players.map((player) => ({ id: player.id, name: player.name, nickname: player.name, controller: player.isBot ? "bot" : "human", ...(player.isBot ? { policyName: onlineBotPolicy(player).name, persona: stableBotPersona(player), personaLabel: PERSONA_LABELS[stableBotPersona(player)] } : {}) })),
+    history: room.history,
+    actions: room.actions,
+    roundDeals: room.roundDeals,
+    roundResolutions: room.roundResolutions,
+    botDecisions: room.botDecisions,
+    shadowDecisions: room.shadowDecisions,
+    analysis: room.analysis,
+    turnTimings: room.turnTimings,
+    connectionEvents: room.connectionEvents,
+    connectionAudit: {
+      ipHashAlgorithm: "HMAC-SHA-256",
+      rawIpStored: false,
+      rawUserAgentStored: false,
+      hashSaltConfigured: hasConnectionHashSalt(),
+    },
+    state: room.game,
+  };
+}
 async function persistRoomSnapshotNow(room: Room) {
   if (!storage || !logBucket) return;
   const activeFile = storage.bucket(logBucket).file(`active-rooms/${room.code}.json`);
@@ -959,6 +1002,7 @@ async function persistRoomSnapshotNow(room: Room) {
       history: room.history,
       botHistory: room.botHistory,
       botDecisions: room.botDecisions,
+      shadowDecisions: room.shadowDecisions,
       analysis: room.analysis,
       announcement: room.announcement,
       shuffleReadyPlayerIds: room.shuffleReadyPlayerIds ? [...room.shuffleReadyPlayerIds] : undefined,
@@ -978,29 +1022,7 @@ async function persistRoomSnapshotNow(room: Room) {
   }
   if (!room.game || !room.startedAt) return;
   const filename = `online-matches/${room.startedAt.replace(/[:.]/g, "-")}-${room.code}.json`;
-  const snapshot = {
-    ...onlineLogHeader(5),
-    roomCode: room.code,
-    startedAt: room.startedAt,
-    updatedAt: new Date().toISOString(),
-    rules: room.game.rules,
-    seats: room.players.map((player) => ({ id: player.id, name: player.name, nickname: player.name, controller: player.isBot ? "bot" : "human", ...(player.isBot ? { policyName: onlineBotPolicy(player).name, persona: stableBotPersona(player), personaLabel: PERSONA_LABELS[stableBotPersona(player)] } : {}) })),
-    history: room.history,
-    actions: room.actions,
-    roundDeals: room.roundDeals,
-    roundResolutions: room.roundResolutions,
-    botDecisions: room.botDecisions,
-    analysis: room.analysis,
-    turnTimings: room.turnTimings,
-    connectionEvents: room.connectionEvents,
-    connectionAudit: {
-      ipHashAlgorithm: "HMAC-SHA-256",
-      rawIpStored: false,
-      rawUserAgentStored: false,
-      hashSaltConfigured: hasConnectionHashSalt(),
-    },
-    state: room.game,
-  };
+  const snapshot = buildOnlineMatchRecord(room);
   try {
     await storage.bucket(logBucket).file(filename).save(JSON.stringify(snapshot), { contentType: "application/json", resumable: false, metadata: { cacheControl: "no-store" } });
   } catch (error) {

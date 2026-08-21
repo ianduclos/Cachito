@@ -1,7 +1,7 @@
 import type { WebSocket } from "ws";
 import type { BotDecisionRecord, LoggedRoundResolution } from "../src/analytics";
 import type { MatchAnalysis } from "../src/analysis";
-import type { PersonaAggression, PublicActionEntry } from "../src/bot";
+import type { BotChoice, PersonaAggression, PublicActionEntry } from "../src/bot";
 import type { Die, GameAction, GameRules, GameState } from "../src/engine";
 
 export type RoomPlayer = { id: string; name: string; isBot: boolean; botPersona?: PersonaAggression; token?: string; socket?: WebSocket; disconnectedAt?: number };
@@ -32,6 +32,7 @@ export type Room = {
   history: string[];
   botHistory: PublicActionEntry[];
   botDecisions: BotDecisionRecord[];
+  shadowDecisions: Array<BotDecisionRecord & { observedAction: BotChoice }>;
   analysis?: MatchAnalysis;
   announcement?: { text: string; playerId?: string };
   shuffleReadyPlayerIds?: Set<string>;
