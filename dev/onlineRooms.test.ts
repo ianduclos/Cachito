@@ -4,7 +4,8 @@ import WebSocket, { type WebSocketServer } from "ws";
 import { applyAction, createGame, type GameAction, type GameState } from "../src/engine";
 import type { PublicActionEntry } from "../src/bot";
 import type { OnlineClientMessage, OnlineServerMessage } from "../src/online/protocol";
-import { applyValidatedGameAction, installOnlineRooms, isRecoverySnapshotFresh, onlineLogHeader, recordBotHistoryEntry, resetOnlineRoomsForTests, SUPPORTED_CONCURRENT_GAMES } from "./onlineRooms";
+import type { RoomPlayer } from "./onlineRoomTypes";
+import { applyValidatedGameAction, buildOnlineMatchRecord, executeBotTurn, getRoomForTests, installOnlineRooms, isRecoverySnapshotFresh, onlineBotPolicy, onlineLogHeader, recordBotHistoryEntry, resetOnlineRoomsForTests, SUPPORTED_CONCURRENT_GAMES } from "./onlineRooms";
 import { release } from "../src/release";
 
 class ProtocolClient {
@@ -347,5 +348,71 @@ describe("authoritative online rooms", () => {
     const client = await connect();
     client.socket.send("x".repeat(16 * 1024 + 1));
     await expect(client.waitForClose()).resolves.toBe(1009);
+  });
+
+  it("records a shadow decision for each human strategic action", async () => {
+    const host = await connect();
+    host.send({ type: "create-room", name: "Host" });
+    const hostJoined = await host.take(isJoined);
+    const guest = await connect();
+    guest.send({ type: "join-room", roomCode: hostJoined.roomCode, name: "Guest" });
+    const guestJoined = await guest.take(isJoined);
+    await host.take((message) => message.type === "lobby" && message.players.length === 2);
+    host.send({ type: "start-game" });
+    await host.take((message) => message.type === "state" && message.view.phase === "playing");
+    host.send({ type: "shuffle-dice" });
+    guest.send({ type: "shuffle-dice" });
+    const opened = await host.take((message): message is Extract<OnlineServerMessage, { type: "state" }> => message.type === "state" && Boolean(message.turnDeadlineAt) && message.shuffle?.readyPlayerIds.length === 2);
+    const actor = opened.view.currentPlayerId === hostJoined.playerId ? host : guest;
+    const actorJoined = opened.view.currentPlayerId === hostJoined.playerId ? hostJoined : guestJoined;
+    const reactor = actor === host ? guest : host;
+    actor.send({ type: "action", action: { type: "bid", playerId: actorJoined.playerId!, bid: { quantity: 1, denomination: 2 } } });
+    await reactor.take((message) => message.type === "state" && message.view.currentBid?.quantity === 1);
+    reactor.send({ type: "action", action: { type: "dudo", playerId: guestJoined.playerId! } });
+    await host.take((message) => message.type === "state" && message.view.phase === "reveal");
+    const room = getRoomForTests(hostJoined.roomCode)!;
+    expect(room.shadowDecisions).toHaveLength(2);
+    expect(room.botDecisions).toHaveLength(0);
+    const bidShadow = room.shadowDecisions[0];
+    expect(bidShadow.sequence).toBe(0);
+    expect(bidShadow.playerId).toBe(actorJoined.playerId);
+    expect(bidShadow.observedAction).toEqual({ type: "bid", bid: { quantity: 1, denomination: 2 } });
+    expect(bidShadow.policyName).toBe(onlineBotPolicy({ id: actorJoined.playerId, isBot: false } as RoomPlayer).name);
+    expect(bidShadow.probabilities.currentBid).toBeUndefined();
+    const dudoShadow = room.shadowDecisions[1];
+    expect(dudoShadow.sequence).toBe(1);
+    expect(dudoShadow.observedAction).toEqual({ type: "dudo" });
+    expect(dudoShadow.probabilities.currentBid).toBeDefined();
+    const record = buildOnlineMatchRecord(room);
+    expect(record.shadowDecisions).toEqual(room.shadowDecisions);
+    expect(record.schemaVersion).toBe(5);
+  });
+
+  it("records bot actions in botDecisions but not shadowDecisions, and ignores shuffles", async () => {
+    const host = await connect();
+    host.send({ type: "create-room", name: "Host" });
+    const hostJoined = await host.take(isJoined);
+    host.send({ type: "add-bot" });
+    const lobby = await host.take((message): message is Extract<OnlineServerMessage, { type: "lobby" }> => message.type === "lobby" && message.players.length === 2);
+    const botId = lobby.players.find((player) => player.isBot)!.id;
+    host.send({ type: "start-game" });
+    await host.take((message) => message.type === "state" && message.view.phase === "playing");
+    host.send({ type: "shuffle-dice" });
+    // The bot shake timer fires 2–3s out; keep the budget generous under parallel-suite load.
+    await host.take((message): message is Extract<OnlineServerMessage, { type: "state" }> => message.type === "state" && Boolean(message.turnDeadlineAt) && message.shuffle?.readyPlayerIds.length === 2, 15000);
+    let room = getRoomForTests(hostJoined.roomCode)!;
+    const bot = room.players.find((player) => player.isBot)!;
+    if (room.game?.currentPlayerId === bot.id) {
+      if (room.turnTimer) clearTimeout(room.turnTimer);
+      executeBotTurn(room, bot);
+    }
+    host.send({ type: "action", action: { type: "bid", playerId: hostJoined.playerId!, bid: { quantity: 1, denomination: 2 } } });
+    await host.take((message) => message.type === "state" && message.view.currentBid?.quantity === 1);
+    room = getRoomForTests(hostJoined.roomCode)!;
+    if (room.turnTimer) clearTimeout(room.turnTimer);
+    executeBotTurn(room, bot);
+    expect(room.botDecisions.some((decision) => decision.playerId === botId)).toBe(true);
+    expect(room.shadowDecisions.some((decision) => decision.playerId === botId)).toBe(false);
+    expect(room.shadowDecisions).toHaveLength(1);
   });
 });
