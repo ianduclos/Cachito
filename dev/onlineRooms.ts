@@ -23,11 +23,13 @@ const storage = logBucket ? new Storage() : undefined;
  * Production sets MATCH_LOG_BUCKET, so this is inert there and the GCS path is untouched.
  * Without it a locally-served room persists nothing at all — the match exists only in this
  * process's memory, which is how a 27-round game played on 2026-08-28 became unrecoverable.
- * Set MATCH_LOG_DIR to relocate it, or to "" to switch the fallback off entirely.
+ *
+ * OPT-IN, deliberately: the caller passes the directory to installOnlineRooms. An earlier
+ * version defaulted it on whenever the bucket was absent, which meant the TEST SUITE — which
+ * stands up real rooms on a real server — wrote 15 match logs into the repo on one run. Tests
+ * pass no directory and so write nothing.
  */
-const localMatchLogDir = logBucket
-  ? undefined
-  : (process.env.MATCH_LOG_DIR ?? "logs/online-matches") || undefined;
+let localMatchLogDir: string | undefined;
 const GAME_IDLE_MS = 20 * 60_000;
 const LOBBY_IDLE_MS = 60 * 60_000;
 const ROUND_ADVANCE_MS = 60_000;
@@ -550,7 +552,8 @@ export function resetOnlineRoomsForTests() {
 export function getRoomForTests(roomCode: string): Room | undefined { return rooms.get(roomCode); }
 
 /** Authoritative websocket endpoint. Each browser receives only its permitted game projection. */
-export function installOnlineRooms(httpServer: import("node:http").Server) {
+export function installOnlineRooms(httpServer: import("node:http").Server, options: { matchLogDir?: string } = {}) {
+  localMatchLogDir = logBucket ? undefined : (options.matchLogDir || undefined);
   if (localMatchLogDir) console.log(`Match logs: no MATCH_LOG_BUCKET set, writing completed matches to ${resolve(localMatchLogDir)}`);
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
   const liveSockets = new WeakMap<WebSocket, boolean>();

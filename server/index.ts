@@ -81,7 +81,9 @@ const httpServer = createServer((request, response) => {
 
 async function main() {
   if (development) vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
-  installOnlineRooms(httpServer);
+  // Local match logs only when this process is the dev server AND no bucket is configured;
+  // installOnlineRooms ignores the directory whenever MATCH_LOG_BUCKET is set.
+  installOnlineRooms(httpServer, { matchLogDir: development ? (process.env.MATCH_LOG_DIR ?? "logs/online-matches") : process.env.MATCH_LOG_DIR });
   const port = Number(process.env.PORT ?? 5173);
   httpServer.listen(port, "0.0.0.0", () => console.log(`Cachito is running at http://localhost:${port}`));
 }

@@ -19,6 +19,7 @@ ui-debug.log
 # Generated game data
 logs/*.json
 logs/*.tmp-*
+logs/online-matches/
 
 # Editor and operating-system files
 .DS_Store
