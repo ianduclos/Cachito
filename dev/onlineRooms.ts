@@ -1,5 +1,7 @@
 import type { IncomingMessage } from "node:http";
 import { randomInt } from "node:crypto";
+import { mkdir, rename, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import { Storage } from "@google-cloud/storage";
 import { applyAction, createGame, DEFAULT_GAME_RULES, forfeitPlayer, getLegalActions, MAX_PLAYERS, projectForPlayer, projectForSpectator, type GameAction, type GameRules, type GameState, type PlayerSetup } from "../src/engine";
@@ -16,6 +18,16 @@ const roomCreationTimestamps = new Map<string, number[]>();
 const connectionContexts = new WeakMap<WebSocket, ConnectionContext>();
 const logBucket = process.env.MATCH_LOG_BUCKET;
 const storage = logBucket ? new Storage() : undefined;
+/**
+ * Local fallback for completed-match logs, used ONLY when no GCS bucket is configured.
+ * Production sets MATCH_LOG_BUCKET, so this is inert there and the GCS path is untouched.
+ * Without it a locally-served room persists nothing at all — the match exists only in this
+ * process's memory, which is how a 27-round game played on 2026-08-28 became unrecoverable.
+ * Set MATCH_LOG_DIR to relocate it, or to "" to switch the fallback off entirely.
+ */
+const localMatchLogDir = logBucket
+  ? undefined
+  : (process.env.MATCH_LOG_DIR ?? "logs/online-matches") || undefined;
 const GAME_IDLE_MS = 20 * 60_000;
 const LOBBY_IDLE_MS = 60 * 60_000;
 const ROUND_ADVANCE_MS = 60_000;
@@ -539,6 +551,7 @@ export function getRoomForTests(roomCode: string): Room | undefined { return roo
 
 /** Authoritative websocket endpoint. Each browser receives only its permitted game projection. */
 export function installOnlineRooms(httpServer: import("node:http").Server) {
+  if (localMatchLogDir) console.log(`Match logs: no MATCH_LOG_BUCKET set, writing completed matches to ${resolve(localMatchLogDir)}`);
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
   const liveSockets = new WeakMap<WebSocket, boolean>();
   const heartbeat = setInterval(() => {
@@ -923,7 +936,7 @@ function denominationName(value: number) { return ["", "Aces", "Dones", "Trenes"
 
 /** Private, server-only snapshots for later bot evaluation. No browser receives this data. */
 function persistRoomSnapshot(room: Room) {
-  if (!storage || !logBucket) return;
+  if ((!storage || !logBucket) && !localMatchLogDir) return;
   if (room.expired) return deleteActiveRoomSnapshot(room.code);
   if (room.snapshotPersisting) { room.snapshotQueued = true; return; }
   if (room.snapshotTimer) return;
@@ -953,6 +966,24 @@ async function deleteActiveRoomSnapshot(roomCode: string) {
   if (!storage || !logBucket) return;
   await storage.bucket(logBucket).file(`active-rooms/${roomCode}.json`).delete({ ignoreNotFound: true }).catch(() => undefined);
 }
+/**
+ * Writes the same schema-5 record buildOnlineMatchRecord produces for GCS to a local file,
+ * one per match, overwritten in place as the match progresses (same semantics as the bucket
+ * object). Written via a temp file + rename so a reader never sees a half-written log —
+ * the pattern dev/gameLogPersistence.ts already uses for hot-seat games.
+ */
+export async function writeLocalMatchLog(room: Room, directory = localMatchLogDir) {
+  if (!directory || !room.game || !room.startedAt) return;
+  const destination = resolve(directory, `${room.startedAt.replace(/[:.]/g, "-")}-${room.code}.json`);
+  const temporary = `${destination}.tmp`;
+  try {
+    await mkdir(dirname(destination), { recursive: true });
+    await writeFile(temporary, `${JSON.stringify(buildOnlineMatchRecord(room), null, 2)}\n`, "utf8");
+    await rename(temporary, destination);
+  } catch (error) {
+    console.error("Unable to write local match log", error);
+  }
+}
 export function buildOnlineMatchRecord(room: Room) {
   if (!room.game || !room.startedAt) throw new Error("Cannot build a match record for an unfinished room.");
   return {
@@ -981,7 +1012,7 @@ export function buildOnlineMatchRecord(room: Room) {
   };
 }
 async function persistRoomSnapshotNow(room: Room) {
-  if (!storage || !logBucket) return;
+  if (!storage || !logBucket) return writeLocalMatchLog(room);
   const activeFile = storage.bucket(logBucket).file(`active-rooms/${room.code}.json`);
   if (room.game && !room.expired) {
     const updatedAt = new Date().toISOString();

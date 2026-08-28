@@ -241,8 +241,23 @@ function GameAnalysisPanel({ analysis: rawAnalysis, onClose }: { analysis: Match
   const calls = analysis.roundStories.length, rightCalls = analysis.roundStories.filter((story) => story.correct).length, exactBids = analysis.roundStories.filter((story) => story.margin === 0).length, tableDicePlays = analysis.players.reduce((sum, player) => sum + player.stats.tableDicePlays, 0), series = diceSeries(analysis);
   const signature = analysis.signaturePlay;
   const selectTab = (nextTab: "overview" | "tape") => { setTab(nextTab); if (scrollRef.current) scrollRef.current.scrollTop = 0; };
+  // Online rooms keep the match in server memory and, without MATCH_LOG_BUCKET, write nothing to
+  // disk — so a locally-played game was unrecoverable once the tab closed. This hands the whole
+  // analysis record (round stories, replay frames, revealed hands, per-player stats) to a file.
+  const exportLog = () => {
+    const stamp = (analysis.generatedAt ?? new Date().toISOString()).replace(/[:.]/g, "-");
+    const blob = new Blob([JSON.stringify(analysis, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `cachito-analysis-${stamp}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
   return <section className="game-analysis" role="dialog" aria-modal="true" aria-label="Game analysis" tabIndex={-1} ref={dialogRef}>
-    <header><div><p>Completed match · {analysis.rounds} {analysis.rounds === 1 ? "round" : "rounds"}</p><h2>Game analysis</h2><strong>{analysis.headline}</strong></div><div className="analysis-header-actions"><nav aria-label="Analysis views"><button type="button" className={tab === "overview" ? "is-active" : ""} aria-current={tab === "overview" ? "page" : undefined} onClick={() => selectTab("overview")}>Overview</button><button type="button" className={tab === "tape" ? "is-active" : ""} aria-current={tab === "tape" ? "page" : undefined} onClick={() => selectTab("tape")}>Round tape</button></nav><GameSettings /><button className="button button--ghost" type="button" onClick={onClose}>Back to winner</button></div></header>
+    <header><div><p>Completed match · {analysis.rounds} {analysis.rounds === 1 ? "round" : "rounds"}</p><h2>Game analysis</h2><strong>{analysis.headline}</strong></div><div className="analysis-header-actions"><nav aria-label="Analysis views"><button type="button" className={tab === "overview" ? "is-active" : ""} aria-current={tab === "overview" ? "page" : undefined} onClick={() => selectTab("overview")}>Overview</button><button type="button" className={tab === "tape" ? "is-active" : ""} aria-current={tab === "tape" ? "page" : undefined} onClick={() => selectTab("tape")}>Round tape</button></nav><GameSettings /><button className="button button--ghost analysis-export-button" type="button" onClick={exportLog}>Export log</button><button className="button button--ghost" type="button" onClick={onClose}>Back to winner</button></div></header>
     <div className="analysis-scroll" ref={scrollRef}>{tab === "overview" ? <>
       <p className="analysis-scoreline">{countLabel(analysis.rounds, "round")} · {countLabel(analysis.totalTurns, "turn")} · {rightCalls} of {calls} calls landed · {countLabel(exactBids, "exact final bid")} · {countLabel(tableDicePlays, "table-dice play")}</p>
       <section className="analysis-momentum"><div className="analysis-editorial-rail"><p>The table remembers</p><h3>Play of the match</h3>{signature ? <button type="button" className="analysis-signature-replay" onClick={() => { const story = analysis.roundStories.find((entry) => entry.round === signature.round); if (story) setSelectedStory(story); }} aria-label={`Replay play of the match from round ${signature.round}`}><strong>Round {signature.round} · {surpriseLabels[signature.surprise]}</strong><span>{signatureSentence(signature, nameOf)}</span><em>Replay this round <b aria-hidden="true">→</b></em></button> : <span>{analysis.keyMoment ?? "The dice did not leave one defining public moment."}</span>}</div><div><h3 id="match-arc-title">Match arc</h3><small>Dice each player still held after every round — counts, not odds of winning.</small><DiceFlowChart analysis={analysis} colorOf={colorOf} nameOf={nameOf} /><div className="analysis-legend">{analysis.players.map((player) => <span key={player.id}><i style={{ background: colorOf(player.id) }} />{player.name}</span>)}</div></div></section>

@@ -1,11 +1,14 @@
 import { createServer, type Server } from "node:http";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import WebSocket, { type WebSocketServer } from "ws";
 import { applyAction, createGame, type GameAction, type GameState } from "../src/engine";
 import type { PublicActionEntry } from "../src/bot";
 import type { OnlineClientMessage, OnlineServerMessage } from "../src/online/protocol";
 import type { RoomPlayer } from "./onlineRoomTypes";
-import { applyValidatedGameAction, buildOnlineMatchRecord, executeBotTurn, getRoomForTests, installOnlineRooms, isRecoverySnapshotFresh, onlineBotPolicy, onlineLogHeader, recordBotHistoryEntry, resetOnlineRoomsForTests, SUPPORTED_CONCURRENT_GAMES } from "./onlineRooms";
+import { applyValidatedGameAction, buildOnlineMatchRecord, writeLocalMatchLog, executeBotTurn, getRoomForTests, installOnlineRooms, isRecoverySnapshotFresh, onlineBotPolicy, onlineLogHeader, recordBotHistoryEntry, resetOnlineRoomsForTests, SUPPORTED_CONCURRENT_GAMES } from "./onlineRooms";
 import { release } from "../src/release";
 
 class ProtocolClient {
@@ -55,6 +58,53 @@ describe("online room safety guards", () => {
   it("stamps recovery and match logs with the deployed game version", () => {
     expect(onlineLogHeader(2)).toEqual({ schemaVersion: 2, gameVersion: release });
     expect(onlineLogHeader(5)).toEqual({ schemaVersion: 5, gameVersion: release });
+  });
+
+  // A locally-served room persisted NOTHING before 2026-08-28: match logs went only to GCS,
+  // gated on MATCH_LOG_BUCKET, so a game played against the local dev server survived just as
+  // long as the server process. This is the fallback that fixes it.
+  it("writes a completed match to a local file when no GCS bucket is configured", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "cachito-match-log-"));
+    const game = createGame([
+      { id: "p1", name: "dd" },
+      { id: "p2", name: "Monkoky" },
+    ]);
+    const room = {
+      code: "Z9V6B",
+      startedAt: "2026-08-28T17:40:00.000Z",
+      players: [
+        { id: "p1", name: "dd", isBot: false },
+        { id: "p2", name: "Monkoky", isBot: true },
+      ] as RoomPlayer[],
+      game,
+      history: [],
+      botHistory: [],
+      botDecisions: [],
+      shadowDecisions: [],
+      actions: [],
+      roundDeals: [],
+      roundResolutions: [],
+      turnTimings: [],
+    };
+
+    await writeLocalMatchLog(room as never, directory);
+
+    const written = await readdir(directory);
+    expect(written).toEqual(["2026-08-28T17-40-00-000Z-Z9V6B.json"]);
+    const record = JSON.parse(await readFile(join(directory, written[0]), "utf8"));
+    expect(record.schemaVersion).toBe(5);
+    expect(record.gameVersion).toBe(release);
+    expect(record.roomCode).toBe("Z9V6B");
+    // No .tmp left behind: the write is temp-file + rename so a reader never sees a partial log.
+    expect(written.some((name) => name.endsWith(".tmp"))).toBe(false);
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  it("writes nothing when no directory is configured, so production keeps using GCS only", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "cachito-match-log-"));
+    await writeLocalMatchLog({ code: "AAAAA", startedAt: "2026-08-28T00:00:00.000Z", game: {} } as never, undefined);
+    expect(await readdir(directory)).toEqual([]);
+    await rm(directory, { recursive: true, force: true });
   });
 
   it("age-bounds current snapshots and legacy snapshots during rollout", () => {

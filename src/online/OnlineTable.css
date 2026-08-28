@@ -230,6 +230,8 @@
 .game-analysis > header h2 { font-size: clamp(2rem, 3.5vw, 3.1rem); }
 .game-analysis > header strong { max-width: 720px; font-size: .88rem; line-height: 1.35; }
 .analysis-header-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.analysis-export-button { border-color: #f2bd5a55; color: #f2bd5a; }
+.analysis-export-button:hover { background: #f2bd5a12; }
 .analysis-header-actions nav { display: inline-flex; padding: 3px; border: 1px solid #ffffff21; border-radius: 9px; background: #031611; }
 .analysis-header-actions nav button, .analysis-filters button { border: 0; border-radius: 6px; padding: 7px 9px; color: #abc5b8; background: transparent; font: 800 12px/1 inherit; cursor: pointer; }
 .analysis-header-actions nav button.is-active, .analysis-filters button.is-active { color: #071d17; background: #d9bb6b; }
