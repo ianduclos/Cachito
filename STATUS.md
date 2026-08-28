@@ -22,10 +22,12 @@ itself is unchanged and nothing is deployed.
 **Local match logging fixed (`4c7e4b3`).** A room served locally wrote *nothing*
 to disk — match logs went only to GCS, gated on `MATCH_LOG_BUCKET` — so a
 27-round game played tonight was recoverable only by opening a WebSocket to the
-running server and spectating the room. Now: no bucket configured means the same
-schema-5 record is written to `logs/online-matches/`, atomically, one file per
-match, with the server announcing which mode it is in at startup. Production
-sets the bucket, so that path is untouched. Also added an **Export log** button
+running server and spectating the room. Now the dev server writes the same
+schema-5 record to `logs/online-matches/` (gitignored), atomically, one file per
+match, announcing at startup which mode it is in. The directory is passed
+explicitly by the caller rather than defaulting on — the first cut defaulted it
+whenever no bucket was set, which made the test suite write 15 match logs into
+the repo (`c4ba77b`). Production sets the bucket, so that path is untouched. Also added an **Export log** button
 to the online analysis header, mirroring the hot-seat game's own.
 
 **The table-dice change is a SINGLE site.** `champion/personaBluff.ts` sets
