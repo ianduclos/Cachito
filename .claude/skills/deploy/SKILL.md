@@ -24,7 +24,7 @@ after, to keep origin in sync.
 
 ```sh
 /opt/homebrew/share/google-cloud-sdk/bin/gcloud run deploy cachito-rooms \
-  --source /Users/ianduclos/Documents/Cachito --region europe-west4 --quiet
+  --source /Users/ianduclos/_SecondBrain/02_Areas/_Coding/Cachito --region europe-west4 --quiet
 ```
 
 Builds via the root Dockerfile through Cloud Build; `.gcloudignore` already
