@@ -2,10 +2,11 @@
 project: Cachito
 state: active
 updated: 2026-08-28
-summary: Ian played the champion and found its bluffing transparent, opening Living 6 as top priority (and with it a structural limit — self-play cannot measure believability); local match logging is fixed and shipped to the working tree — both of the day's decisions are applied (K2 weight 0.25, table dice active@leakage 1.5), the table-dice change is now confirmed to be a single-site edit, and the read-back approach was rebuilt after playing games proved a bad way to judge an 8%-frequency motif.
+summary: Ian played the champion and found its bluffing transparent, which opened Living 6 as top priority, produced a structural finding (self-play cannot measure believability) and a drafted design now awaiting his review; local match logging is fixed and shipped to the working tree. — both of the day's decisions are applied (K2 weight 0.25, table dice active@leakage 1.5), the table-dice change is now confirmed to be a single-site edit, and the read-back approach was rebuilt after playing games proved a bad way to judge an 8%-frequency motif.
 machine: mac
 next:
-  - Brainstorm the forced-escalation fix with Ian (TOP PRIORITY, his call) — champion/beliefEquity.ts compares evDudo against equityNow, so it cannot see how bad the raise it defaults to is; design the gate BEFORE the fix, because self-play cannot measure believability
+  - Ian reviews the forced-escalation spec (TOP PRIORITY, blocking) — docs/superpowers/specs/2026-08-28-forced-escalation-design.md; one section is flagged an open assumption, not a decision
+  - On approval, run writing-plans against that spec; phase 1 changes no bot code, it baselines the detector against the unchanged champion
   - Implement active@leakage 1.5 at the single coin-flip branch in src/bot/champion/personaBluff.ts, then re-duel with the production policy as candidate
   - Build the reveal reel — one page of ~15 generated reveal moments, current bot vs active@1.5 side by side — as the read-back Ian can actually do
   - Finish the level-k falsification suite — arms 4 (passthrough) and 5 (exploit audit) are still unbuilt, WIP at lab 155b272
@@ -14,6 +15,35 @@ handoff_for: ian
 ---
 
 # Cachito — status
+
+## 2026-08-28 (fifth) — Living 6 designed off a single game Ian played
+
+The session's most valuable input was Ian playing one match. His read — bluffing
+"read exactly as what it was, and as I'm not a bot, it was an easy dudo" —
+opened a packet, produced a structural finding about the lab's own methods, and
+ended in a drafted design (`b5a157a`,
+`docs/superpowers/specs/2026-08-28-forced-escalation-design.md`).
+
+**The defect.** `champion/beliefEquity.ts:416-440` prices Dudo-vs-raise as
+`evDudo > evBestBid` with `evBestBid = equityNow` — identical whether the best
+available raise is supported or hopeless. A cornered bot therefore raises
+without noticing, and the bluff is the residue of a comparison rather than a
+choice. It bypasses `personaBluff.ts`'s deliberate-bluff design entirely. This
+was a *ratified* scope boundary, not a bug, so the packet crosses it explicitly.
+
+**The structural finding, which outlives this packet.** A bot survived 7 of 10
+transparent bluffs — judged by other bots, while the one human called them
+instantly. Self-play cannot measure believability, so duels and win share are
+blind to this whole class of defect. Non-inferiority is a floor, never evidence.
+Saved to memory; it retroactively limits anything justified as "non-inferior in
+self-play."
+
+**The design.** Keep the bluff rate, make it believable: price the raise
+honestly, build it with the persona's existing constructor (which already solves
+two of Ian's three tells), and mix voluntary bluffs so the situation stops
+leaking. Gate is a cornered-ness detector over public information — measured
+with, never trained against. Awaiting Ian's review; section 2 carries an open
+assumption he rubber-stamped rather than decided.
 
 ## 2026-08-28 (fourth) — local games now record themselves; the table-dice change is smaller than thought
 
