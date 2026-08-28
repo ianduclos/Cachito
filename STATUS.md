@@ -2,13 +2,12 @@
 project: Cachito
 state: active
 updated: 2026-08-28
-summary: Ian played the champion and found its bluffing transparent, which opened Living 6 as top priority, produced a structural finding (self-play cannot measure believability) and a drafted design now awaiting his review; local match logging is fixed and shipped to the working tree. — both of the day's decisions are applied (K2 weight 0.25, table dice active@leakage 1.5), the table-dice change is now confirmed to be a single-site edit, and the read-back approach was rebuilt after playing games proved a bad way to judge an 8%-frequency motif.
+summary: Ian played the champion and read its bluffing as transparent, which opened Living 6 as top priority, produced a structural finding (self-play cannot measure believability) and a drafted design now awaiting his review; the day's two decisions are applied and local match logging is fixed.
 machine: mac
 next:
   - Ian reviews the forced-escalation spec (TOP PRIORITY, blocking) — docs/superpowers/specs/2026-08-28-forced-escalation-design.md; one section is flagged an open assumption, not a decision
   - On approval, run writing-plans against that spec; phase 1 changes no bot code, it baselines the detector against the unchanged champion
-  - Implement active@leakage 1.5 at the single coin-flip branch in src/bot/champion/personaBluff.ts, then re-duel with the production policy as candidate
-  - Build the reveal reel — one page of ~15 generated reveal moments, current bot vs active@1.5 side by side — as the read-back Ian can actually do
+  - Then table dice: implement active@leakage 1.5 at the single coin-flip branch in src/bot/champion/personaBluff.ts, re-duel, and build the reveal reel for Ian to read
   - Finish the level-k falsification suite — arms 4 (passthrough) and 5 (exploit audit) are still unbuilt, WIP at lab 155b272
   - Decide whether lab/ joins tsc and eslint at all (60 pre-existing type errors under the app config, none from this session)
 handoff_for: ian
