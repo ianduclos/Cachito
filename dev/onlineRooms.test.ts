@@ -456,8 +456,15 @@ describe("authoritative online rooms", () => {
       if (room.turnTimer) clearTimeout(room.turnTimer);
       executeBotTurn(room, bot);
     }
-    host.send({ type: "action", action: { type: "bid", playerId: hostJoined.playerId!, bid: { quantity: 1, denomination: 2 } } });
-    await host.take((message) => message.type === "state" && message.view.currentBid?.quantity === 1);
+    // Who opens the round is random, so the bot may already have bid. A hardcoded "1 Dones"
+    // is then illegal — nothing raises below the floor — and this test failed roughly half the
+    // time for that reason alone, independent of any bot behaviour. Raise whatever is actually
+    // on the table instead.
+    const standing = room.game?.currentBid ?? null;
+    const hostBid = standing ? { quantity: standing.quantity + 1, denomination: standing.denomination } : { quantity: 1, denomination: 2 as const };
+    host.send({ type: "action", action: { type: "bid", playerId: hostJoined.playerId!, bid: hostBid } });
+    await host.take((message) => message.type === "state" && message.view.currentBid?.quantity === hostBid.quantity
+      && message.view.currentBid?.denomination === hostBid.denomination);
     room = getRoomForTests(hostJoined.roomCode)!;
     if (room.turnTimer) clearTimeout(room.turnTimer);
     executeBotTurn(room, bot);
