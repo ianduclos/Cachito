@@ -37,19 +37,16 @@
 //
 // Table dice (brief requirement 2): reused directly from the wrapped policy's own choice when the
 // final bid didn't change from what it picked (Conservative, which Gen 2 wraps, has its own
-// tableDicePlan — src/bot/policies.ts — and Gen 2's belief-scored fallback bid can coincide with
-// it, though it usually drops table dice since it constructs a fresh BotChoice — see
-// beliefEquity.ts's `fallbackChoice`). Otherwise, whenever the persona is telling a story this
-// turn (a fresh bluff, an overridden continuation, or Gen 2's own choice already sitting on the
-// story face — "true or bluffed" per the brief) and the hand still holds a qualifying die after
-// the reveal, it puts ONE die (two only for the 'aggressive' persona, and only with >=2
-// qualifying dice and a hand deep enough to spare it) on the table — gated by `tableDiceChance` so
-// it reads as an occasional flourish, not a tic ("noticeably more deliberate," not spammy, per
-// the brief).
+// tableDicePlan — src/bot/policies.ts — belongs to createProbabilityPolicy, which only the local
+// hot-seat table runs). REPLACED 2026-08-28: the reveal used to be a per-persona coin flip gated
+// on the persona telling a story, with no value calculation behind it, and lab measurement found
+// it actively harmful. It is now PRICED by ./tableDiceReveal.ts, which owns the decision outright
+// and is not gated on the story — see the comment at the call site for why, and
+// lab/notes/table-dice-reveal-decision.md for the evidence and the ratification.
 //
 // Config (brief requirement 3): `bluffRate` (probability of firing a fresh bluff on an eligible
-// decision), `tableDiceChance`, and `aggression` (a conservative/balanced/aggressive dial bundling
-// defaults for both plus the commitment tolerance and the cheap-moment equity-downside cap — the
+// decision) and `aggression` (a conservative/balanced/aggressive dial bundling its default plus
+// the commitment tolerance and the cheap-moment equity-downside cap — the
 // knob future difficulty/personality seats can turn). All are individually overridable;
 // `aggression` only supplies defaults.
 //
@@ -64,6 +61,7 @@ import { createBeliefEquityPolicy, type BeliefEquityPolicyOptions } from './beli
 import type { BotActionResult, BotChoice, BotDecisionTrace, BotObservation, BotPolicy } from '../types'
 import type { Bid, Die, PublicGameView, PublicPlayer } from '../../engine'
 import { loadEquityTable, lookupEquity, type EquityTable } from './equity'
+import { chooseRevealIndices, LEAKAGE_PER_DIE } from './tableDiceReveal'
 
 export type PersonaAggression = 'conservative' | 'balanced' | 'aggressive'
 
@@ -75,16 +73,15 @@ export const PERSONA_LABELS: Record<PersonaAggression, string> = {
 
 interface AggressionPreset {
   bluffRate: number
-  tableDiceChance: number
   toleratedExtraQuantity: number
   maxEquityDownside: number
 }
 
 /** The aggressive-vs-conservative dial (brief requirement 3). Values are starting points, tuned against the exp-012 gate (see lab/LOG.md) rather than derived analytically. */
 const AGGRESSION_PRESETS: Record<PersonaAggression, AggressionPreset> = {
-  conservative: { bluffRate: 0.07, tableDiceChance: 0.3, toleratedExtraQuantity: 1, maxEquityDownside: 0.1 },
-  balanced: { bluffRate: 0.11, tableDiceChance: 0.45, toleratedExtraQuantity: 2, maxEquityDownside: 0.15 },
-  aggressive: { bluffRate: 0.16, tableDiceChance: 0.6, toleratedExtraQuantity: 3, maxEquityDownside: 0.2 },
+  conservative: { bluffRate: 0.07, toleratedExtraQuantity: 1, maxEquityDownside: 0.1 },
+  balanced: { bluffRate: 0.11, toleratedExtraQuantity: 2, maxEquityDownside: 0.15 },
+  aggressive: { bluffRate: 0.16, toleratedExtraQuantity: 3, maxEquityDownside: 0.2 },
 }
 
 /** Minimum own diceCount to be eligible for a fresh bluff ("not at elimination risk" — losing a die from this floor still leaves a buffer). */
@@ -97,9 +94,7 @@ const EARLY_MID_DICE_FRACTION = 0.5
 export interface PersonaBluffOptions extends BeliefEquityPolicyOptions {
   /** Probability of firing a fresh deliberate bluff on an eligible decision. Defaults from `aggression`. Target band (brief): 0.08-0.12 of ALL bids once eligibility gating is folded in. */
   bluffRate?: number
-  /** Probability of putting a matching die on the table while telling a story (fresh bluff, overridden continuation, or a naturally story-aligned bid). Defaults from `aggression`. */
-  tableDiceChance?: number
-  /** Aggressive-vs-conservative dial; supplies defaults for bluffRate/tableDiceChance/commitment tolerance/downside cap. Default 'balanced'. */
+  /** Aggressive-vs-conservative dial; supplies defaults for bluffRate/commitment tolerance/downside cap. Default 'balanced'. */
   aggression?: PersonaAggression
   /** Let the persona tell stories heads-up instead of delegating (exp-017 gate). Default false. */
   headsUpPersona?: boolean
@@ -115,10 +110,6 @@ function isCurrentRoundStarter(observation: BotObservation): boolean {
   const roundEntries = observation.history.filter((entry) => entry.round === observation.view.round)
   if (roundEntries.length === 0) return true
   return roundEntries[0].playerId === observation.playerId
-}
-
-function sameBid(left: Bid, right: Bid): boolean {
-  return left.quantity === right.quantity && left.denomination === right.denomination
 }
 
 /**
@@ -211,7 +202,6 @@ export function createPersonaBluffPolicy(options: PersonaBluffOptions): BotPolic
   const headsUpPersona = options.headsUpPersona ?? false
   const preset = AGGRESSION_PRESETS[aggression]
   const bluffRate = options.bluffRate ?? preset.bluffRate
-  const tableDiceChance = options.tableDiceChance ?? preset.tableDiceChance
   const toleratedExtraQuantity = preset.toleratedExtraQuantity
   const maxEquityDownside = preset.maxEquityDownside
   const name = options.name ?? 'Persona Bluff'
@@ -231,7 +221,7 @@ export function createPersonaBluffPolicy(options: PersonaBluffOptions): BotPolic
     if (!player || legalActions.bids.length === 0) return base
 
     const trace: BotDecisionTrace = { ...base.trace, model: 'persona-bluff', version: 1 }
-    trace.settings = { ...base.trace.settings, bluffRate, tableDiceChance, toleratedExtraQuantity, maxEquityDownside }
+    trace.settings = { ...base.trace.settings, bluffRate, tableDiceLeakagePerDie: LEAKAGE_PER_DIE, toleratedExtraQuantity, maxEquityDownside }
 
     const anchor = findStoryAnchor(observation)
     let finalBid: Bid = base.choice.bid
@@ -280,27 +270,36 @@ export function createPersonaBluffPolicy(options: PersonaBluffOptions): BotPolic
       trace.plainReason = 'Its strongest raise naturally continued the story it had already established.'
     }
 
-    let tableDiceIndices: number[] | undefined
-    if (base.choice.tableDiceIndices && sameBid(base.choice.bid, finalBid)) {
-      // Reuse the wrapped policy's own table-dice choice when the final bid didn't change from
-      // what it picked (brief requirement 2: "reuse the wrapped policy's existing machinery where
-      // possible").
-      tableDiceIndices = base.choice.tableDiceIndices
-    } else if (toldStory && legalActions.canPutDiceOnTable && player.hand && player.hand.length > 1 && random() < tableDiceChance) {
-      // Minimal reveal is deliberate, not an oversight: lab exp-015 duels
-      // showed the "expose ALL qualifying dice" canonical rule loses ~2.7pp
-      // vs this 1-die play — a small reveal keeps most of the hand rerolling
-      // and leaks the least information while still selling the story.
-      const paloFijo = view.paloFijo
-      const qualifying = player.hand.flatMap((die, index) =>
-        die === finalBid.denomination || (!paloFijo && finalBid.denomination !== 1 && die === 1) ? [index] : [],
-      )
-      if (qualifying.length > 0) {
-        const revealCount = aggression === 'aggressive' && qualifying.length >= 2 && player.hand.length >= 4 ? 2 : 1
-        const capped = Math.min(revealCount, qualifying.length, player.hand.length - 1)
-        if (capped > 0) tableDiceIndices = qualifying.slice(0, capped)
-      }
-    }
+    // TABLE DICE ARE PRICED, NOT FLIPPED FOR (2026-08-28). This used to be
+    // `toldStory && ... && random() < tableDiceChance` — an unpriced coin flip that lab
+    // measurement found actively harmful (-0.100 to -0.121 expected qualifying dice per
+    // reveal, CI entirely below zero, across three seed blocks), because showing one die
+    // sends every other matching die back into the reroll. ./tableDiceReveal.ts now picks
+    // the reveal count by maximising rerollGain + proofGain - LEAKAGE_PER_DIE * k over
+    // every legal k INCLUDING 0. Two consequences worth stating plainly:
+    //
+    //   1. It is no longer gated on `toldStory`. The reveal is a property of the HAND and
+    //      the bid on the table, not of whether the persona happened to author that bid —
+    //      which is how the lab arm this ships was measured (it replaced the reveal on
+    //      every legal bid decision). Gating it behind the persona's story would ship a
+    //      strictly rarer motif than the one that was evaluated.
+    //   2. It consumes no `random` draw at all, so the persona's RNG stream is one draw
+    //      shorter per bid than before. Downstream draws therefore differ from any
+    //      pre-2026-08-28 seeded replay; the lab arm reproduces statistically on fresh
+    //      seeds, not bit-for-bit against old artifacts.
+    //
+    // The wrapped policy's own `tableDiceIndices` is no longer passed through: Gen 2
+    // (./beliefEquity.ts) never emits reveals (its only table-dice mention is the
+    // posterior reset, a read), so that branch was verified dead, and the calculator
+    // owning the decision outright is what was measured.
+    const tableDiceIndices = chooseRevealIndices(observation, finalBid)
+
+    // `toldStory` no longer gates anything (the reveal above is priced from the hand, not from
+    // the persona's authorship), but it is the only record of whether this bid is a story beat at
+    // all — the third `toldStory` branch, where Gen 2's own choice already continues the story
+    // face, never sets `personaBluffFired`. Persisting it keeps "was this reveal part of a story?"
+    // answerable downstream instead of leaving it to be re-derived from the history.
+    trace.settings.personaToldStory = toldStory ? 1 : 0
 
     if (tableDiceIndices?.length) {
       trace.plainReason = `${trace.plainReason ?? 'It chose a supported raise.'} It exposed a matching die to make that story more convincing.`
