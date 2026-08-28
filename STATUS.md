@@ -1,19 +1,75 @@
 ---
 project: Cachito
 state: active
-updated: 2026-08-28
-summary: Ian played the champion and read its bluffing as transparent, which opened Living 6 as top priority, produced a structural finding (self-play cannot measure believability) and a drafted design now awaiting his review; the day's two decisions are applied and local match logging is fixed.
+updated: 2026-08-29
 machine: mac
+summary: Two bot changes shipped to production in one session (r2026.08.28.001 and .002) — the table-dice reveal is now priced rather than flipped for, and the champion prices raise-vs-challenge honestly instead of raising into claims it cannot back; the second turned out to be a large strength gain but does not yet meet Ian's stated bluffing goal.
 next:
-  - Ian reviews the forced-escalation spec (TOP PRIORITY, blocking) — docs/superpowers/specs/2026-08-28-forced-escalation-design.md; one section is flagged an open assumption, not a decision
-  - On approval, run writing-plans against that spec; phase 1 changes no bot code, it baselines the detector against the unchanged champion
-  - Then table dice: implement active@leakage 1.5 at the single coin-flip branch in src/bot/champion/personaBluff.ts, re-duel, and build the reveal reel for Ian to read
+  - Section 3 is the real unfinished work — widen the isCheapMoment gate to restore the bluff RATE with voluntary bluffs, then re-measure on lab/tools/corneredDetector.ts; bluffRate is inert and sweeping it again is wasted effort
+  - Play a 3+ player online game and read the bot yourself — both changes are live and no lab number can settle whether the bluffing now reads as deliberate
+  - Build the human-bid control for the detector — with local match logs now persisting, run it on Ian's own bids to see how much readability is inherent to the game rather than a bot defect
   - Finish the level-k falsification suite — arms 4 (passthrough) and 5 (exploit audit) are still unbuilt, WIP at lab 155b272
-  - Decide whether lab/ joins tsc and eslint at all (60 pre-existing type errors under the app config, none from this session)
-handoff_for: ian
+  - Decide whether lab/ joins tsc and eslint at all (60 pre-existing type errors under the app config)
+handoff_for: null
 ---
 
 # Cachito — status
+
+## 2026-08-28 (sixth) — two bot changes shipped; the second is stronger than intended and softer than asked
+
+The first deploys since 2026-08-22, and the first bot-behaviour changes since
+2026-08-06. **A branch problem was found first:** a week of work sat on
+`codex/end-game-replay-analysis` while production ships from `main`. Merged
+(three trivial conflicts), so round replays, local match logging and the Export
+log button went live alongside the bot work.
+
+**r2026.08.28.001 — table dice are priced, not flipped for** (`c2d53b3`). The
+reveal was a per-persona coin flip with no value calculation, and lab
+measurement had it actively harmful. New `src/bot/champion/tableDiceReveal.ts`
+maximises `rerollGain + proofGain - LEAKAGE_PER_DIE * k`. On the same 106-match
+audit corpus, before → after: reveal rate 14.2% → 7.2% of bid decisions, value
+per reveal −0.078 → +0.927 expected dice, dice shown 1.22 → 1.00 (never two),
+and **the claim behind a reveal is true 87.3% of the time against 60.4%**. That
+last figure was not part of the ratification and is the strongest legibility
+fact in the packet. Reel for Ian: `lab/tools/tableDiceRevealReel.ts`, published
+at https://claude.ai/code/artifact/c5e8d076-2483-4cc7-9aa3-c8bcded2ddbe
+
+**r2026.08.28.002 — Living 6 sections 1 and 2** (`b0be692`). `beliefEquity.ts`
+decided Dudo-vs-raise as `evDudo > equityNow`, the same number whether the best
+raise was fully backed or hopeless, so a cornered bot raised without noticing
+and the bluff was the residue of a comparison rather than a choice. It is now
+priced as a gamble on being called (`RAISE_CALL_RATE`, a named chosen constant),
+and the persona rebuilds any raise the layer beneath does not believe into the
+cheapest legal claim on a face it holds.
+
+**It is a big strength gain, which was not the goal.** Win-share floor: 900
+seat-balanced 4p matches, candidate **66.4% [63.4, 69.5] against 50% parity,
+z=10.45**. Declining to raise on a claim you cannot back is simply better play.
+
+**It does not yet meet Ian's stated goal, which is on the record.** He asked for
+"bluff about as often as now, but believably". The packet buys believability
+(readability AUC 0.893 → 0.852) partly *by* bluffing less (32.4% → 22.6% of
+bids), the direction he rejected. He chose to ship with that stated. **Section 3
+is undelivered**: `bluffRate` swept 1x–3x leaves the rate flat, because
+`isCheapMoment` is the binding gate. Widening it is the next real step.
+
+**Two method findings that outlive the packet.** (1) The spec's own metric
+cannot grade believability — "forced escalation" is nearly a function of ladder
+depth (cornered rate by depth: 0/41/53/68/82/84/96%), because five dice cannot
+cover a claim of nine. The detector carries a second, scale-free label instead.
+(2) Most readability is the game, not the bot: raw AUC 0.985, of which 0.946 is
+available from the situation before the bot acts. `lab/tools/corneredDetector.ts`
+reports the nested split; the lift between them is the only part a policy can move.
+
+**Also:** heads-up changed too (section 1 is in the belief layer, not gated at
+two players) — one more divergence, in the worse column. Calzo volume fell as
+accuracy rose (157/195 → 120/141). The `deploy` skill's Cloud Run `--source`
+still pointed at `~/Documents/Cachito` and would have failed verbatim
+(`1ae1760`). A ~50% flake in `dev/onlineRooms.test.ts` fixed. Five lab gates
+re-locked, each with its delta explained rather than merely bumped.
+
+Live: Cloud Run `cachito-rooms-00053-9t9` + Hosting, stamp verified in the
+served bundle. Suite 667 passing, lint and build clean at real exit codes.
 
 ## 2026-08-28 (fifth) — Living 6 designed off a single game Ian played
 
