@@ -1,8 +1,14 @@
 ---
 project: Cachito
 updated: 2026-08-28
-entries: 1
+entries: 2
 ---
+
+### Forced escalation — the bluff nobody chose — opened 2026-08-28, owner: claude
+- done: Diagnosed, not designed. Ian raised this to top priority after playing the champion: bluffing "should be more selective and try to be believable... it read exactly as what it was, and as I'm not a bot, it was an easy dudo." Mechanism located at `src/bot/champion/beliefEquity.ts:416-440` — the Dudo-vs-raise test is `evDudo > evBestBid` where `evBestBid = equityNow`, the same number whether the best available raise is fully supported or hopeless. A bot with nothing supported therefore does not notice and raises. The bluff is the residue of that comparison, and it bypasses `champion/personaBluff.ts`'s deliberate-bluff design entirely (these bids come from `selectBeliefBid`'s fallback).
+- next: Brainstorm with Ian BEFORE touching code — this is a change to the champion's core challenge/raise EV and the gate has to be designed first. Likely shape: make `evBestBid` reflect the actual best available bid (`beliefBidResult.best`; `facingRisk` in `matchAnalysis.ts` already scores a raise's survival odds), then decide what happens when challenging is also bad — that residual case is where a *deliberate* bluff belongs, routed through the persona's selectivity rather than around it.
+- blockers: **The gate, and it is not a formality.** Self-play cannot measure believability: McDonald Lewis survived 7 of 10 transparent bluffs because other bots judged them, while Ian caught them instantly. Duels and win share are structurally blind to this defect, so a duel must not be the opening move. Non-inferiority stays a floor, never the evidence.
+- context: `lab/ROADMAP.md` "NEXT PACKET — forced escalation" (placed above the table-dice wiring at Ian's direction) and the `lab/LOG.md` 2026-08-28 (last) entry. Counter-example worth keeping: Ian made 3 forced escalations himself and all 3 survived — the defect is doing it indiscriminately and legibly, not doing it at all.
 
 ### Table-dice read-back — approach replaced, work not started — opened 2026-08-28, owner: claude
 - done: The decision is made (active@leakage 1.5, ratified by Ian) and every measurable blocker is discharged, including the fresh-seed confirmation on block 810001. Tonight established two things that change the remaining work: the production edit is a SINGLE site (the `random() < tableDiceChance` branch in `src/bot/champion/personaBluff.ts`, ~line 289 — all three `toldStory` branches feed it, and the `base.choice.tableDiceIndices` pass-through is dead because Gen 2 never emits reveals), and asking Ian to "play against it" does not work.

@@ -2,9 +2,10 @@
 project: Cachito
 state: active
 updated: 2026-08-28
-summary: Lab-only on the bot itself, but local match logging is fixed and shipped to the working tree — both of the day's decisions are applied (K2 weight 0.25, table dice active@leakage 1.5), the table-dice change is now confirmed to be a single-site edit, and the read-back approach was rebuilt after playing games proved a bad way to judge an 8%-frequency motif.
+summary: Ian played the champion and found its bluffing transparent, opening Living 6 as top priority (and with it a structural limit — self-play cannot measure believability); local match logging is fixed and shipped to the working tree — both of the day's decisions are applied (K2 weight 0.25, table dice active@leakage 1.5), the table-dice change is now confirmed to be a single-site edit, and the read-back approach was rebuilt after playing games proved a bad way to judge an 8%-frequency motif.
 machine: mac
 next:
+  - Brainstorm the forced-escalation fix with Ian (TOP PRIORITY, his call) — champion/beliefEquity.ts compares evDudo against equityNow, so it cannot see how bad the raise it defaults to is; design the gate BEFORE the fix, because self-play cannot measure believability
   - Implement active@leakage 1.5 at the single coin-flip branch in src/bot/champion/personaBluff.ts, then re-duel with the production policy as candidate
   - Build the reveal reel — one page of ~15 generated reveal moments, current bot vs active@1.5 side by side — as the read-back Ian can actually do
   - Finish the level-k falsification suite — arms 4 (passthrough) and 5 (exploit audit) are still unbuilt, WIP at lab 155b272
