@@ -62,6 +62,7 @@ import type { BotActionResult, BotChoice, BotDecisionTrace, BotObservation, BotP
 import type { Bid, Die, PublicGameView, PublicPlayer } from '../../engine'
 import { loadEquityTable, lookupEquity, type EquityTable } from './equity'
 import { chooseRevealIndices, LEAKAGE_PER_DIE } from './tableDiceReveal'
+import type { BeliefDecisionTrace } from './beliefEquity'
 
 export type PersonaAggression = 'conservative' | 'balanced' | 'aggressive'
 
@@ -90,6 +91,14 @@ const MIN_DICE_FOR_BLUFF = 3
 const MIN_DICE_FOR_CONTINUATION = 2
 /** Fraction of the table's ORIGINAL total dice (playerCount * 5) that must still be in play for "early/mid round." */
 const EARLY_MID_DICE_FRACTION = 0.5
+/**
+ * Below this support probability, the layer beneath does not believe its own best raise, and this
+ * file rebuilds the bid rather than passing it on (Living 6, section 2). CHOSEN, not measured:
+ * 0.5 is "more likely false than true", the plainest reading of "it does not believe it", and it
+ * is the threshold a lab sweep would revise first. Raising it makes the persona take over more
+ * often; at 1 it would rebuild every raise, which would flatten the bot's whole bidding style.
+ */
+const DISBELIEVED_RAISE_SUPPORT = 0.5
 
 export interface PersonaBluffOptions extends BeliefEquityPolicyOptions {
   /** Probability of firing a fresh deliberate bluff on an eligible decision. Defaults from `aggression`. Target band (brief): 0.08-0.12 of ALL bids once eligibility gating is folded in. */
@@ -98,6 +107,11 @@ export interface PersonaBluffOptions extends BeliefEquityPolicyOptions {
   aggression?: PersonaAggression
   /** Let the persona tell stories heads-up instead of delegating (exp-017 gate). Default false. */
   headsUpPersona?: boolean
+  /**
+   * Overrides DISBELIEVED_RAISE_SUPPORT (Living 6, section 2). Production never sets this; the lab
+   * does, to sweep it and to reconstruct pre-Living-6 behaviour — at 0 the rebuild never fires.
+   */
+  disbelievedRaiseSupport?: number
 }
 
 /** Mirror of beliefEquity.ts's private `activeOtherStacks` (itself a mirror of equityAware.ts's) — duplicated for the same reason: not exported, and lab/ files don't reach into each other's private closures. */
@@ -200,6 +214,7 @@ export function createPersonaBluffPolicy(options: PersonaBluffOptions): BotPolic
   const minSamples = options.minSamples ?? 300
   const aggression = options.aggression ?? 'balanced'
   const headsUpPersona = options.headsUpPersona ?? false
+  const disbelievedRaiseSupport = options.disbelievedRaiseSupport ?? DISBELIEVED_RAISE_SUPPORT
   const preset = AGGRESSION_PRESETS[aggression]
   const bluffRate = options.bluffRate ?? preset.bluffRate
   const toleratedExtraQuantity = preset.toleratedExtraQuantity
@@ -269,6 +284,44 @@ export function createPersonaBluffPolicy(options: PersonaBluffOptions): BotPolic
       toldStory = true
       trace.plainReason = 'Its strongest raise naturally continued the story it had already established.'
     }
+
+    // LIVING 6, SECTION 2 — build the bluff, don't inherit it (2026-08-28).
+    //
+    // When the layer beneath is about to raise on a claim IT DOES NOT BELIEVE, the bid it
+    // produced was never designed to be believable: `selectBeliefBid` picks the argmax of a
+    // value formula, and with nothing supported available that argmax is whatever scores least
+    // badly — typically a large quantity on whatever face the belief filter likes, with no story
+    // behind it. Those are the bids Ian read instantly across 27 rounds, and they reach the table
+    // without ever passing through this file's deliberate-bluff machinery.
+    //
+    // The division of labour: Gen 2 decides WHETHER to raise (it now prices that honestly, see
+    // beliefEquity.ts's EV(best bid)); this layer decides WHAT THE RAISE LOOKS LIKE. So when the
+    // raise is disbelieved, rebuild it the same way a deliberate bluff is built — the cheapest
+    // legal raise, on a face the hand actually holds or is already telling a story about. That
+    // directly answers two of the three tells Ian named: the size of the jump, and a face with no
+    // story behind it. Nothing here second-guesses the decision to raise, and Dudo/Calzo remain
+    // untouched, so the file's standing invariant holds.
+    //
+    // Deliberately NOT gated on `bluffRate`: this is not a new bluff being started, it is a bluff
+    // the layer below already committed to, being made presentable. Gating it would leave the
+    // ugly version on the table at a rate of one minus that gate.
+    const bestRaiseSupport = (base.trace as BeliefDecisionTrace).belief?.bidSelection?.best.supportProbability
+    if (!toldStory && bestRaiseSupport !== undefined && bestRaiseSupport < disbelievedRaiseSupport && player.hand) {
+      const storyFace = anchor?.face ?? pickHeldFace(player.hand)
+      const rebuilt = storyFace !== undefined ? cheapestLegalBidForFace(legalActions.bids, storyFace) : undefined
+      // Only take over if the rebuild is actually cheaper. When Gen 2's own pick is already the
+      // cheapest thing available there is nothing to improve, and substituting an equal bid would
+      // just add churn to the trace.
+      if (rebuilt && rebuilt.quantity < finalBid.quantity) {
+        finalBid = rebuilt
+        toldStory = true
+        trace.decisionReason = 'controlled_bluff'
+        trace.settings.personaBluffFired = 1
+        trace.settings.personaRebuiltForcedRaise = 1
+        trace.plainReason = 'It had nothing solid to raise on, so it made the smallest claim it could on a face it actually held.'
+      }
+    }
+    trace.settings.bestRaiseSupport = bestRaiseSupport ?? -1
 
     // TABLE DICE ARE PRICED, NOT FLIPPED FOR (2026-08-28). This used to be
     // `toldStory && ... && random() < tableDiceChance` — an unpriced coin flip that lab

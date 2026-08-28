@@ -1,4 +1,4 @@
-export { buildMatchAnalysis } from './matchAnalysis'
+export { buildMatchAnalysis, fullySupportedRaiseExists } from './matchAnalysis'
 export type {
   MatchAnalysis,
   MatchAnalysisAction,

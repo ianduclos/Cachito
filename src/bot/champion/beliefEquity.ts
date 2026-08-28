@@ -104,6 +104,47 @@ export function loadLikelihoodModel(source: unknown = likelihoodData): Likelihoo
   return raw as LikelihoodModel
 }
 
+
+/**
+ * How often a raise gets called, used to price what a bid risks (see the EV(best bid)
+ * comment in `decide`). CHOSEN, NOT MEASURED — deriving it needs a per-opponent call
+ * model this layer does not have, and pretending otherwise would hide a guess inside a
+ * formula. The starting value is the call rate actually observed on forced escalations
+ * in the 2026-08-28 match (55%). Treat it the way `LEAKAGE_PER_DIE` is treated in
+ * ./tableDiceReveal.ts: an explicit constant a lab sweep may revise, never a fact.
+ *
+ * Raising it makes the bot more reluctant to raise on a claim it cannot back; at 1 it
+ * would stop bluffing altogether, which is the failure mode this packet must avoid.
+ */
+export const RAISE_CALL_RATE = 0.55
+
+/**
+ * Equity if this raise is called and HOLDS — the challenger loses a die. Which opponent
+ * will call is unknowable here, so this charges it to the next active player in turn
+ * order: the seat that acts immediately after this bid, and therefore the likeliest
+ * caller. A documented approximation, not a claim about who calls.
+ */
+function equityAfterChallengerLoses(
+  view: PublicGameView,
+  playerId: string,
+  ownDice: number,
+  others: number[],
+  playerCount: number,
+  table: EquityTable,
+  minSamples: number,
+): number {
+  const order = view.players.filter((candidate) => candidate.diceCount > 0)
+  const self = order.findIndex((candidate) => candidate.id === playerId)
+  const next = self >= 0 && order.length > 1 ? order[(self + 1) % order.length] : undefined
+  if (!next || next.id === playerId) return lookupEquity(table, ownDice, others, true, playerCount, minSamples)
+  const remaining = order
+    .filter((candidate) => candidate.id !== playerId)
+    .map((candidate) => (candidate.id === next.id ? candidate.diceCount - 1 : candidate.diceCount))
+    .filter((count) => count > 0)
+  if (remaining.length === 0) return 1
+  return lookupEquity(table, ownDice, remaining, true, playerCount, minSamples)
+}
+
 /** Mirror of equityAware.ts's private `activeOtherStacks` — not exported there, duplicated verbatim (equityAware.ts is out of scope for lab/ edits). */
 function activeOtherStacks(view: PublicGameView, selfId: string): number[] {
   return view.players.filter((candidate) => candidate.id !== selfId && candidate.diceCount > 0).map((candidate) => candidate.diceCount)
@@ -329,9 +370,15 @@ export interface BeliefEquityPolicyOptions {
    * Conservative — same gate, same reasoning as equityAware.ts's `twoPlayerGate` (exp-002b).
    */
   twoPlayerGate?: boolean
+  /**
+   * Overrides RAISE_CALL_RATE (Living 6). Production never sets this; the lab does, to sweep the
+   * constant and to reconstruct pre-Living-6 behaviour exactly — at 0 the EV(best bid) expression
+   * collapses to `equityNow`, which is the formula this packet replaced.
+   */
+  raiseCallRate?: number
 }
 
-interface BeliefDecisionTrace extends BotDecisionTrace {
+export interface BeliefDecisionTrace extends BotDecisionTrace {
   belief?: {
     calzo?: CalzoDetail
     dudo?: DudoDetail
@@ -345,6 +392,7 @@ export function createBeliefEquityPolicy(options: BeliefEquityPolicyOptions): Bo
   const name = options.name ?? 'Belief Equity'
   const calzoMargin = options.calzoMargin ?? DEFAULT_CALZO_MARGIN
   const minSamples = options.minSamples ?? DEFAULT_MIN_SAMPLES
+  const raiseCallRate = options.raiseCallRate ?? RAISE_CALL_RATE
   const twoPlayerGate = options.twoPlayerGate ?? true
 
   const conservative = createAdversarialPolicyLeague().find((policy) => policy.name === 'Conservative')
@@ -413,6 +461,11 @@ export function createBeliefEquityPolicy(options: BeliefEquityPolicyOptions): Bo
       }
     }
 
+    // Living 6: the belief-scored candidate bid is chosen BEFORE the Dudo comparison, because
+    // that comparison now needs to know how good the raise it would be defaulting to actually is.
+    // Nothing about the selection changed — only where it sits.
+    const beliefBidResult = selectBeliefBid(observation, belief)
+
     let dudoChoice: { evDudo: number; evBestBid: number; worthwhile: boolean; detail: DudoDetail } | undefined
     if (legalActions.canDudo) {
       const pUnsupported = 1 - supportProbability
@@ -429,19 +482,59 @@ export function createBeliefEquityPolicy(options: BeliefEquityPolicyOptions): Bo
       const equityAfterSelfLoses = selfAfter <= 0 ? 0 : lookupEquity(table, selfAfter, others, true, playerCount, minSamples)
 
       const evDudo = pUnsupported * equityAfterBidderLoses + (1 - pUnsupported) * equityAfterSelfLoses
-      // EV(best bid): current-state equity, UNCHANGED from equityAware.ts — no probability source
-      // to swap here (see module docstring point (c)).
-      const evBestBid = equityNow
+
+      // EV(best bid) — LIVING 6, 2026-08-28. This used to be `equityNow`, full stop: the same
+      // number whether the best raise available was fully backed or a hopeless claim. A bot with
+      // nothing supported therefore could not notice, and raised. Every "forced escalation" in
+      // the match logs comes from here, and because they never reach ./personaBluff.ts, nothing
+      // was trying to make them believable — the bluff was the residue of this comparison rather
+      // than anything chosen. Ian read them instantly across 27 rounds.
+      //
+      // Crossing a ratified boundary, deliberately. Point (c) of this file's docstring recorded
+      // "no probability-of-a-bid involved, so there is nothing to swap there." That was true when
+      // written; the belief layer has since produced exactly that quantity, and
+      // `beliefBidResult.best.supportProbability` is it.
+      //
+      // The model. A claim costs nothing unless somebody calls it, so the raise is priced as a
+      // gamble on being called:
+      //
+      //   evBestBid = (1 - c) * equityNow
+      //             + c * ( q * equityAfterChallengerLoses + (1 - q) * equityAfterSelfLoses )
+      //
+      // with q the best raise's own support probability and c = RAISE_CALL_RATE. Assuming c = 1
+      // instead would over-penalise every bluff and collapse this to "never bluff", which is the
+      // outcome Ian explicitly rejected; deriving c properly needs an opponent model this layer
+      // does not have. So c is an undisguised chosen constant, in the same spirit as
+      // tableDiceReveal.ts's LEAKAGE_PER_DIE.
+      //
+      // Note the layering approximation, accepted by Ian 2026-08-28: the persona above may
+      // substitute a smaller, more believable bid for the one priced here. The comparison is
+      // therefore made against a bid that is sometimes not the one played. It errs safe — this
+      // prices the STRONGEST option available, so if even that fails to beat challenging, the bot
+      // challenges — and pricing against the substitute would invert the layering for a
+      // second-order gain.
+      const bestRaiseSupport = beliefBidResult?.best.supportProbability
+      const evBestBid = bestRaiseSupport === undefined
+        ? equityNow
+        : (1 - raiseCallRate) * equityNow
+          + raiseCallRate * (bestRaiseSupport * equityAfterChallengerLoses(view, playerId, player.diceCount, others, playerCount, table, minSamples)
+            + (1 - bestRaiseSupport) * equityAfterSelfLoses)
       dudoChoice = {
         evDudo,
         evBestBid,
         worthwhile: evDudo > evBestBid,
-        detail: { pUnsupported, equityAfterBidderLoses, equityAfterSelfLoses, evDudo, evBestBidApprox: evBestBid },
+        detail: {
+          pUnsupported,
+          equityAfterBidderLoses,
+          equityAfterSelfLoses,
+          evDudo,
+          evBestBidApprox: evBestBid,
+          bestRaiseSupport,
+          raiseCallRate,
+        },
       }
     }
 
-    // Belief-scored candidate bid (design point b.3) replaces Conservative's own bid choice as the fallback.
-    const beliefBidResult = selectBeliefBid(observation, belief)
     const fallbackChoice: BotChoice = beliefBidResult ? { type: 'bid', bid: beliefBidResult.best.bid } : base.choice
 
     trace.currentBidAnalysis = baseTrace.currentBidAnalysis && calzoChoice

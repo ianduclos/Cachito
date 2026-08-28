@@ -353,7 +353,14 @@ function sameBid(left: Bid, right: Bid) {
   return left.quantity === right.quantity && left.denomination === right.denomination
 }
 
-function fullySupportedRaiseExists(state: PlayingState, playerId: string) {
+/**
+ * Whether `playerId` has any legal raise its OWN hand fully covers, ignoring every
+ * other seat's dice. A player with none is "cornered": every raise available to it is
+ * a claim it cannot back alone. Exported because the lab's forced-escalation work must
+ * label decisions with the exact definition the game's own analysis reports, not a
+ * second copy of it that can drift.
+ */
+export function fullySupportedRaiseExists(state: PlayingState, playerId: string) {
   const player = state.players.find((candidate) => candidate.id === playerId)
   if (!player || !state.currentBid) return true
   const supportState: PlayingState = {

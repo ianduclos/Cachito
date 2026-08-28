@@ -83,4 +83,12 @@ export interface DudoDetail {
   equityAfterSelfLoses: number
   evDudo: number
   evBestBidApprox: number
+  /**
+   * Support probability of the best raise this decision was weighed against (Living 6).
+   * Undefined only when no belief-scored raise was available, in which case
+   * `evBestBidApprox` falls back to current-state equity as it always used to.
+   */
+  bestRaiseSupport?: number
+  /** The call-rate constant `evBestBidApprox` was priced with. See RAISE_CALL_RATE. */
+  raiseCallRate?: number
 }
