@@ -2,18 +2,48 @@
 project: Cachito
 state: active
 updated: 2026-08-28
-summary: Lab-only session; production unchanged at r2026.08.11.002 — the level-k consumer's legible challenge volume doubles at unchanged accuracy on fresh seeds, and the shipped table-dice reveal was measured net-negative with a self-computable veto that flips it positive.
+summary: Lab-only session; production unchanged at r2026.08.11.002 — the level-k consumer's legible challenge volume doubles at w=0.25 with no measurable cost, and the shipped table-dice reveal was measured net-negative with three candidate replacements that win share cannot distinguish between.
 machine: mac
 next:
-  - Decide whether to adopt K2 trust weight 0.25 (doubles legible challenges, accuracy unchanged; paired calibration test was in flight at session end)
-  - Decide whether to approve the table-dice veto — a production change, and it needs a non-inferiority duel first since exp-015 showed this mechanic moves win share
-  - Take table dice beyond the veto to ACTIVE reveal decisions including a leakage term, then test (Ian requested 2026-08-28)
+  - Decide the K2 trust weight — 0.25 is indicated and confirmed on fresh seeds with no measurable calibration cost (paired test, 374 matches)
+  - Decide the table-dice mechanism — veto-only, active at leakage 1.5, or active at leakage 2.0; win share gives no signal so this is purely a legibility call
+  - Fix the reveal-side estimator bug in lab/tools/tableDiceActiveDuel.ts (per-decision mean quoted against a differently-grouped CI; means are fine, intervals are not)
   - Finish the level-k falsification suite — arms 4 (passthrough) and 5 (exploit audit) are still unbuilt, WIP at lab 155b272
   - Clean up the 11 pre-existing type errors in lab/, and decide whether lab joins tsc and eslint at all
 handoff_for: ian
 ---
 
 # Cachito — status
+
+## 2026-08-28 (later) — table dice: strength cannot decide it, so legibility must
+
+Second half of the session. Still lab-only; production untouched.
+
+**Level-k settled (`420976f`).** The paired per-match calibration test on 374
+shared matches gives w=0.25 minus w=0.5 as dBrier -0.0027 [-0.0066, +0.0003]
+and dLogLoss -0.0065 [-0.0155, +0.0012] — favouring the larger discount, CIs
+spanning zero. Combined with the fresh-seed confirmation (30.0 vs 16.5
+escalations per 100 matches at 50.8% vs 48.5% accuracy), **w=0.25 is indicated
+at no measurable cost**. An interim claim that it degraded calibration came
+from mixing a pooled per-decision mean with a per-match interval and is
+retracted.
+
+**Table dice (`0ea2688`).** An active reveal policy and a veto-only arm were
+duelled against the champion. The decisive result is negative: every arm's
+win-share CI spans zero, including an arm that never reveals at all. Win share
+carries no signal here, so the choice is a legibility choice. On that axis
+leakage 1.5 dominates the veto — same 8.3% reveal rate, better spots (+0.902
+vs +0.625 expected qualifying dice), and it derives *when* from the hand
+instead of filtering the persona's random coin flip. Leakage 2.0 fires only
+with exactly one qualifier in a five-die hand, converging on Ian's own
+described ace play.
+
+**Mechanism found.** `src/bot/champion/beliefEquity.ts:191` resets the
+revealer's posterior to a blank prior on a reveal — correct, since those dice
+were rerolled, but it means revealing **launders your bid history**. That
+reconciles exp-015 ("reveal fewer dice") with this session ("reveal more
+often"): fewer dice shown means more rerolled, so more laundering and less
+leaked. Nobody had priced this benefit.
 
 ## 2026-08-28 — level-k consumer measured properly; table-dice reveal found net-negative
 
