@@ -1,16 +1,57 @@
 ---
 project: Cachito
 state: active
-updated: 2026-08-17
-summary: Living 2H human-context replay complete — the two-turn bot-variation setup is retired (48/48 lanes diverge within two decisions on real human tables) and the next lab packet is the one-decision motif contract; production champion unchanged since r2026.08.06.002.
+updated: 2026-08-28
+summary: Lab-only session; production unchanged at r2026.08.11.002 — the level-k consumer's legible challenge volume doubles at unchanged accuracy on fresh seeds, and the shipped table-dice reveal was measured net-negative with a self-computable veto that flips it positive.
 machine: mac
 next:
-  - Design the one-decision motif contract (keep-story first) with falsification tests, per lab/ROADMAP.md
-  - Fresh-seed shadow audit against the Living 2 opportunity/diversity gate once that contract is frozen
-handoff_for: null
+  - Decide whether to adopt K2 trust weight 0.25 (doubles legible challenges, accuracy unchanged; paired calibration test was in flight at session end)
+  - Decide whether to approve the table-dice veto — a production change, and it needs a non-inferiority duel first since exp-015 showed this mechanic moves win share
+  - Take table dice beyond the veto to ACTIVE reveal decisions including a leakage term, then test (Ian requested 2026-08-28)
+  - Finish the level-k falsification suite — arms 4 (passthrough) and 5 (exploit audit) are still unbuilt, WIP at lab 155b272
+  - Clean up the 11 pre-existing type errors in lab/, and decide whether lab joins tsc and eslint at all
+handoff_for: ian
 ---
 
 # Cachito — status
+
+## 2026-08-28 — level-k consumer measured properly; table-dice reveal found net-negative
+
+Lab-only. **No production code changed**; the sole main-repo commit is a docs
+note (`d1d7afd`). Five lab commits (`155b272`..`e581d46`).
+
+**Recovered work.** The previous Kimi session did not crash — it hit a 5-hour
+usage quota mid-subagent on 2026-08-27 at 19:32. Its unfinished pass-2
+falsification suite (3 of 5 arms, no tests, no CLI, never run) is preserved as
+`155b272`. Arms 4 and 5 remain unbuilt.
+
+**Level-k consumer (`f716360`, `60b53a1`).** The pass-1 packet's 3.3% flip rate
+overstated the effect: 54 of the 227 core flips land on decisions the champion's
+upper layers already override, so the behavioural rate is 2.5%. Of the 173 real
+flips only 29 are challenge escalations; 124 are bid re-selections with no
+legible intent. Those 29 select well — 57.1% for Dudo escalations against a
+19.7% base rate for an indiscriminate Dudo at the same decisions. A K2 trust
+weight sweep then showed volume scales hard with the weight while accuracy does
+not degrade, and a fresh-seed confirmation (400 matches, seed 510001)
+replicated it almost exactly: 30 escalations per 100 matches at w=0.25 versus
+16.5 at the ratified 0.5, both at 50.8% accuracy. Whether w=0.25 costs
+calibration was still being measured by a paired per-match test when the
+session ended.
+
+**Table dice (`e6f8114`, `e581d46`).** The module everyone assumed was the
+decision logic (`src/bot/tableDice.ts`) is not wired into any policy — its own
+header says so. The live reveal is a per-persona coin flip in
+`personaBluff.ts` with no value calculation, and it is measurably harmful:
+-0.058 expected qualifying dice per reveal, CI entirely below zero, because
+revealing one die sends every other matching die back into the reroll. Three
+self-computable veto rules flip that positive; the best keeps 44.3% of reveals
+at +0.629. Not licensed for production — the reroll axis ignores information
+leakage, and exp-015 showed this mechanic moves win share by ~2.7pp.
+
+**Method gap.** `lab/` is excluded from both `tsc -b` and eslint and has never
+been typechecked. With a working config: 0 errors in today's files, 11
+pre-existing errors in `lab/bots/levelPolicies.ts` and
+`lab/tools/levelKIdentifiability.ts`.
 
 ## 2026-08-17 — Living 2H complete: two-turn variation retired (lab-only)
 
