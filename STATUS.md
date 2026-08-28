@@ -2,18 +2,54 @@
 project: Cachito
 state: active
 updated: 2026-08-28
-summary: Lab-only session; production unchanged at r2026.08.11.002 — the level-k consumer's legible challenge volume doubles at w=0.25 with no measurable cost, and the shipped table-dice reveal was measured net-negative with three candidate replacements that win share cannot distinguish between.
+summary: Lab-only session; production unchanged at r2026.08.11.002 — both open decisions are now made and applied (K2 trust weight 0.25, table dice active@leakage 1.5), the reveal-side estimator bug is fixed with every artifact regenerated, and the one remaining table-dice blocker is Ian's human read-back check.
 machine: mac
 next:
-  - Decide the K2 trust weight — 0.25 is indicated and confirmed on fresh seeds with no measurable calibration cost (paired test, 374 matches)
-  - Decide the table-dice mechanism — veto-only, active at leakage 1.5, or active at leakage 2.0; win share gives no signal so this is purely a legibility call
-  - Fix the reveal-side estimator bug in lab/tools/tableDiceActiveDuel.ts (per-decision mean quoted against a differently-grouped CI; means are fine, intervals are not)
+  - Human read-back check on the table-dice motif (Ian) — the last blocker before any src/bot/personaBluff.ts change; self-play cannot settle a legibility claim
+  - Wire active@leakage 1.5 into src/bot/personaBluff.ts once the read-back passes, then re-duel with the production policy as candidate
   - Finish the level-k falsification suite — arms 4 (passthrough) and 5 (exploit audit) are still unbuilt, WIP at lab 155b272
-  - Clean up the 11 pre-existing type errors in lab/, and decide whether lab joins tsc and eslint at all
+  - Decide whether lab/ joins tsc and eslint at all (60 pre-existing type errors under the app config, none from this session)
 handoff_for: ian
 ---
 
 # Cachito — status
+
+## 2026-08-28 (third) — both decisions made and applied; estimator bug closed
+
+Continuation session. Still lab-only; **no `src/` change**, production untouched.
+Six lab commits (`59030f2`..`d46759a`).
+
+**Estimator bug fixed (`59030f2`, `9386f4d`).** The reveal-side statistics
+reported a pooled per-decision mean next to a match-grouped bootstrap interval,
+so the quoted point estimate could sit outside its own CI. Fixed in
+`tableDiceActiveDuel.ts` and `tableDiceRevealAudit.ts`, plus three further
+instances found in the unrun falsification suite before arms 4/5 get built on
+them. The bootstrap draws are unchanged, so every interval is bit-identical and
+a field-by-field diff of old against new artifacts is identical outside the two
+renamed fields — 3 of 7 main-duel arms and 3 of 8 refine arms previously failed
+the mean-inside-its-own-CI check; none do now. All three artifacts regenerated.
+
+**K2 trust weight 0.25 adopted (`a73f9c1`, Ian).** Applied as the weight and the
+band floor, which are one parameter, not two: trust on a certain-K2 seat *is*
+the weight, so a floor above it clamps the discount away. The floor now derives
+from the weight. This surfaced two stale duplicates of the ratified constant,
+one live: `FLIP_TAXONOMY_TRUST_FLOOR` was a hardcoded `0.5` and at the new
+weight flagged 209 in-band trust readings as integrity violations. Artifacts
+generated before today were produced at w=0.5 and no longer reproduce.
+
+**Table dice ratified: active at leakage 1.5 (`41c9e26`, Ian).** A fresh seed
+block (810001, 1600 matches/arm) discharged the blocker that the constant was
+fitted to the duel judging it — reveal rate 7.96% against 8.31%, value +0.9060
+[+0.8966, +0.9147] against +0.9116 [+0.8973, +0.9260]. It also killed a
+false alarm: the main duel's `leakage 1.0` arm had shown +4.25pp surviving a
+Bonferroni correction by a hair, but across three runs it reads z=2.69 / 1.46 /
+1.64, so it was one high draw. "Strength cannot decide this mechanic" stands, and
+the choice was made on legibility. Full record in
+`lab/notes/table-dice-reveal-decision.md`.
+
+**Also found:** `lab/tools/levelKConsumerShadow.ts` held two raw NUL bytes as
+map-key separators, which made `grep` return *nothing* for every pattern in that
+file without saying why. Now unicode escapes; no other tracked file has one.
 
 ## 2026-08-28 (later) — table dice: strength cannot decide it, so legibility must
 
@@ -294,7 +330,7 @@ Two workstreams share this repo:
   work: a log's `seats` array is only whoever was still in the room when it
   was written — the finished game's full roster is in `analysis.players` /
   `state.players`.
-- Lab commit `3fe182f` is the lab repo's tip; that repo has no remote.
+- Lab commit `d46759a` is the lab repo's tip; that repo has no remote.
 - Earlier history (day one/two: Gens 1–3, persona bluff, replay viewer,
   exp-001..012) lives in lab/LOG.md and lab/ROADMAP.md.
 - Untracked in the parent root: `Cachito_Game_Rules_and_Bot_AI_Status.docx`

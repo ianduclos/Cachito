@@ -1,17 +1,11 @@
 ---
 project: Cachito
 updated: 2026-08-28
-entries: 2
+entries: 1
 ---
 
-### Two decisions waiting on Ian — opened 2026-08-28, owner: ian
-- done: Both are fully measured. (1) K2 trust weight 0.25 doubles the level-k consumer's legible challenge volume (30.0 vs 16.5 escalations per 100 matches) at unchanged accuracy (50.8%), confirmed on a fresh seed block, and a paired per-match test on 374 shared matches shows no measurable calibration cost. (2) Table dice has three candidate replacements for a shipped behaviour measured at -0.084 expected qualifying dice per reveal: veto-only (8.3% reveal rate, +0.625), active at leakage 1.5 (8.3%, +0.902, deterministic trigger), active at leakage 2.0 (1.6%, +1.333, fires only on the one-qualifier-in-five case).
-- next: Ian picks. For (2) note that win share cannot separate these — every arm including a never-reveal arm was statistically indistinguishable from the champion — so it is a legibility judgement about how often the bot should visibly do this and how principled each instance should be.
-- blockers: Decision only. (1) changes a value Ian ratified 2026-08-27 but is a lab parameter and deploys nothing. (2) would be a production change and still needs a leakage constant that is not fitted to the duel that judges it, plus a human read-back check.
-- context: lab/LOG.md entries dated 2026-08-28; artifacts under lab/data/living-v4/ (level-k) and lab/data/living-v5/ (table dice).
-
-### Reveal-side estimator bug in the duel tool — opened 2026-08-28, owner: claude
-- done: Identified and characterised. lab/tools/tableDiceActiveDuel.ts reports `expectedChangeCi95` computed on a different grouping from `meanExpectedChangeOnReveal`, so means fall outside their own intervals (control: mean -0.0836, CI [-0.1547, -0.0913]). This is the same class of bug fixed earlier today in lab/tools/levelKConsumerFlipTaxonomy.ts — see that file's `deltaCi` comment for the fix pattern.
-- next: Make the reported mean and CI the same estimator (per-match mean with a match-grouped bootstrap), then re-run both duel artifacts.
-- blockers: none.
-- context: The reveal MEANS are sound and cross-validate — veto +0.625/+0.627 across two runs plus an independent hand computation of +0.629, control -0.084 vs -0.058 on a different corpus. Only the intervals are wrong, so no conclusion drawn today depends on them.
+### Human read-back check on the table-dice motif — opened 2026-08-28, owner: ian
+- done: The mechanism is chosen and every measurable blocker is discharged. Active reveal at `leakagePerDie = 1.5` was ratified by Ian on the legibility axis (win share cannot separate the candidates — a marginal leakage-1.0 signal was tested on a fresh seed block and did not replicate), and the constant was confirmed on seed block 810001 so it is not fitted to the duel that judged it: reveal rate 7.96% vs 8.31%, value +0.9060 [+0.8966, +0.9147] vs +0.9116 [+0.8973, +0.9260].
+- next: Ian plays against the motif and says whether it reads as deliberate. Nothing else is waiting on anything else.
+- blockers: This one cannot be measured here. The whole claim is that a human reads the reveal as intentional, and the entire corpus is self-play among champion personas with no human opponent. No further lab run substitutes for it.
+- context: `lab/notes/table-dice-reveal-decision.md` holds the decision, the evidence table, the promotion path, and the unpriced laundering benefit at `src/bot/champion/beliefEquity.ts:191`. Artifacts under `lab/data/living-v5/`; the production change, when licensed, belongs in `src/bot/personaBluff.ts` — replacing the per-persona coin flip, not layering over it.
