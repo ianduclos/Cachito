@@ -25,3 +25,7 @@ logs/online-matches/
 .DS_Store
 .idea/
 .vscode/
+
+# Ian's local fixture harness for the analysis screen — deliberately untracked.
+dev/legendaryFixture.vite.config.ts
+legendary-analysis-fixture.html
