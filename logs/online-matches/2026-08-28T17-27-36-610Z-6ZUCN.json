@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 5,
+  "gameVersion": "r2026.08.11.002",
+  "roomCode": "6ZUCN",
+  "startedAt": "2026-08-28T17:27:36.610Z",
+  "updatedAt": "2026-08-28T17:27:36.611Z",
+  "rules": {
+    "turnTimeSeconds": 60,
+    "acesConversion": "halfPlusOne",
+    "paloFijoTrigger": "oneDie",
+    "paloFijoBlindDice": true,
+    "diceAmountsVisible": true,
+    "tableDiceEnabled": true
+  },
+  "seats": [
+    {
+      "id": "player-b95d2d05-e96b-4cb8-a5d2-b47aafff1d56",
+      "name": "Host 2",
+      "nickname": "Host 2",
+      "controller": "human"
+    },
+    {
+      "id": "bot-ce331505-7b0f-41c6-81ec-3628b1735a94",
+      "name": "Miss Blanquita",
+      "nickname": "Miss Blanquita",
+      "controller": "bot",
+      "policyName": "Gen 2 · Measured storyteller + respect gate",
+      "persona": "balanced",
+      "personaLabel": "Measured storyteller"
+    }
+  ],
+  "history": [
+    "Round 1 begins — Miss Blanquita starts."
+  ],
+  "actions": [
+    {
+      "at": "2026-08-28T17:27:36.610Z",
+      "round": 1,
+      "action": {
+        "type": "round-start"
+      }
+    }
+  ],
+  "roundDeals": [
+    {
+      "round": 1,
+      "dealtAt": "2026-08-28T17:27:36.610Z",
+      "paloFijo": false,
+      "starterId": "bot-ce331505-7b0f-41c6-81ec-3628b1735a94",
+      "hands": [
+        {
+          "playerId": "bot-ce331505-7b0f-41c6-81ec-3628b1735a94",
+          "nickname": "Miss Blanquita",
+          "dice": [
+            4,
+            5,
+            3,
+            3,
+            3
+          ]
+        },
+        {
+          "playerId": "player-b95d2d05-e96b-4cb8-a5d2-b47aafff1d56",
+          "nickname": "Host 2",
+          "dice": [
+            1,
+            5,
+            4,
+            2,
+            4
+          ]
+        }
+      ]
+    }
+  ],
+  "roundResolutions": [],
+  "botDecisions": [],
+  "shadowDecisions": [],
+  "turnTimings": [],
+  "connectionEvents": [
+    {
+      "at": "2026-08-28T17:27:36.599Z",
+      "event": "room-created",
+      "role": "player",
+      "connectionId": "6e605720-bea5-44a5-aead-31c74becd007",
+      "ipHash": null,
+      "ipVersion": "ipv4",
+      "forwardedForCount": 0,
+      "userAgentHash": null,
+      "hashConfigured": false,
+      "playerId": "player-b95d2d05-e96b-4cb8-a5d2-b47aafff1d56"
+    }
+  ],
+  "connectionAudit": {
+    "ipHashAlgorithm": "HMAC-SHA-256",
+    "rawIpStored": false,
+    "rawUserAgentStored": false,
+    "hashSaltConfigured": false
+  },
+  "state": {
+    "phase": "playing",
+    "players": [
+      {
+        "id": "bot-ce331505-7b0f-41c6-81ec-3628b1735a94",
+        "name": "Miss Blanquita",
+        "diceCount": 5,
+        "hand": [
+          4,
+          5,
+          3,
+          3,
+          3
+        ],
+        "tableDice": [],
+        "tableDiceUsed": false,
+        "paloFijoTriggered": false
+      },
+      {
+        "id": "player-b95d2d05-e96b-4cb8-a5d2-b47aafff1d56",
+        "name": "Host 2",
+        "diceCount": 5,
+        "hand": [
+          1,
+          5,
+          4,
+          2,
+          4
+        ],
+        "tableDice": [],
+        "tableDiceUsed": false,
+        "paloFijoTriggered": false
+      }
+    ],
+    "round": 1,
+    "paloFijo": false,
+    "rules": {
+      "turnTimeSeconds": 60,
+      "acesConversion": "halfPlusOne",
+      "paloFijoTrigger": "oneDie",
+      "paloFijoBlindDice": true,
+      "diceAmountsVisible": true,
+      "tableDiceEnabled": true
+    },
+    "currentPlayerId": "bot-ce331505-7b0f-41c6-81ec-3628b1735a94",
+    "currentBid": null,
+    "lastBidderId": null
+  }
+}

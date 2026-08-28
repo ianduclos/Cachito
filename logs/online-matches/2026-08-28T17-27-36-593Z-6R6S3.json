@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 5,
+  "gameVersion": "r2026.08.11.002",
+  "roomCode": "6R6S3",
+  "startedAt": "2026-08-28T17:27:36.593Z",
+  "updatedAt": "2026-08-28T17:27:36.593Z",
+  "rules": {
+    "turnTimeSeconds": 60,
+    "acesConversion": "halfPlusOne",
+    "paloFijoTrigger": "oneDie",
+    "paloFijoBlindDice": true,
+    "diceAmountsVisible": true,
+    "tableDiceEnabled": true
+  },
+  "seats": [
+    {
+      "id": "player-13440572-318a-4370-abce-b8b9553d582e",
+      "name": "Host 1",
+      "nickname": "Host 1",
+      "controller": "human"
+    },
+    {
+      "id": "bot-1d00557a-60e1-4f12-a954-84343ede755d",
+      "name": "Renata Canepa",
+      "nickname": "Renata Canepa",
+      "controller": "bot",
+      "policyName": "Gen 2 · Measured storyteller + respect gate",
+      "persona": "balanced",
+      "personaLabel": "Measured storyteller"
+    }
+  ],
+  "history": [
+    "Round 1 begins — Host 1 starts."
+  ],
+  "actions": [
+    {
+      "at": "2026-08-28T17:27:36.593Z",
+      "round": 1,
+      "action": {
+        "type": "round-start"
+      }
+    }
+  ],
+  "roundDeals": [
+    {
+      "round": 1,
+      "dealtAt": "2026-08-28T17:27:36.593Z",
+      "paloFijo": false,
+      "starterId": "player-13440572-318a-4370-abce-b8b9553d582e",
+      "hands": [
+        {
+          "playerId": "player-13440572-318a-4370-abce-b8b9553d582e",
+          "nickname": "Host 1",
+          "dice": [
+            6,
+            2,
+            4,
+            2,
+            6
+          ]
+        },
+        {
+          "playerId": "bot-1d00557a-60e1-4f12-a954-84343ede755d",
+          "nickname": "Renata Canepa",
+          "dice": [
+            4,
+            6,
+            3,
+            2,
+            5
+          ]
+        }
+      ]
+    }
+  ],
+  "roundResolutions": [],
+  "botDecisions": [],
+  "shadowDecisions": [],
+  "turnTimings": [],
+  "connectionEvents": [
+    {
+      "at": "2026-08-28T17:27:36.582Z",
+      "event": "room-created",
+      "role": "player",
+      "connectionId": "280176df-9bfb-4b6e-b8ee-d79abbd8b809",
+      "ipHash": null,
+      "ipVersion": "ipv4",
+      "forwardedForCount": 0,
+      "userAgentHash": null,
+      "hashConfigured": false,
+      "playerId": "player-13440572-318a-4370-abce-b8b9553d582e"
+    }
+  ],
+  "connectionAudit": {
+    "ipHashAlgorithm": "HMAC-SHA-256",
+    "rawIpStored": false,
+    "rawUserAgentStored": false,
+    "hashSaltConfigured": false
+  },
+  "state": {
+    "phase": "playing",
+    "players": [
+      {
+        "id": "player-13440572-318a-4370-abce-b8b9553d582e",
+        "name": "Host 1",
+        "diceCount": 5,
+        "hand": [
+          6,
+          2,
+          4,
+          2,
+          6
+        ],
+        "tableDice": [],
+        "tableDiceUsed": false,
+        "paloFijoTriggered": false
+      },
+      {
+        "id": "bot-1d00557a-60e1-4f12-a954-84343ede755d",
+        "name": "Renata Canepa",
+        "diceCount": 5,
+        "hand": [
+          4,
+          6,
+          3,
+          2,
+          5
+        ],
+        "tableDice": [],
+        "tableDiceUsed": false,
+        "paloFijoTriggered": false
+      }
+    ],
+    "round": 1,
+    "paloFijo": false,
+    "rules": {
+      "turnTimeSeconds": 60,
+      "acesConversion": "halfPlusOne",
+      "paloFijoTrigger": "oneDie",
+      "paloFijoBlindDice": true,
+      "diceAmountsVisible": true,
+      "tableDiceEnabled": true
+    },
+    "currentPlayerId": "player-13440572-318a-4370-abce-b8b9553d582e",
+    "currentBid": null,
+    "lastBidderId": null
+  }
+}

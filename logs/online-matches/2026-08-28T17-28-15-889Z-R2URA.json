@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 5,
+  "gameVersion": "r2026.08.11.002",
+  "roomCode": "R2URA",
+  "startedAt": "2026-08-28T17:28:15.889Z",
+  "updatedAt": "2026-08-28T17:28:15.890Z",
+  "rules": {
+    "turnTimeSeconds": 60,
+    "acesConversion": "halfPlusOne",
+    "paloFijoTrigger": "oneDie",
+    "paloFijoBlindDice": true,
+    "diceAmountsVisible": true,
+    "tableDiceEnabled": true
+  },
+  "seats": [
+    {
+      "id": "player-d7b5c482-df6a-4c98-b238-9cabfbe06c82",
+      "name": "Host 1",
+      "nickname": "Host 1",
+      "controller": "human"
+    },
+    {
+      "id": "bot-a8ce07f8-1b85-42e6-82da-9d2ea66b58ab",
+      "name": "Min-chi Park",
+      "nickname": "Min-chi Park",
+      "controller": "bot",
+      "policyName": "Gen 2 · Measured storyteller + respect gate",
+      "persona": "balanced",
+      "personaLabel": "Measured storyteller"
+    }
+  ],
+  "history": [
+    "Round 1 begins — Min-chi Park starts."
+  ],
+  "actions": [
+    {
+      "at": "2026-08-28T17:28:15.889Z",
+      "round": 1,
+      "action": {
+        "type": "round-start"
+      }
+    }
+  ],
+  "roundDeals": [
+    {
+      "round": 1,
+      "dealtAt": "2026-08-28T17:28:15.889Z",
+      "paloFijo": false,
+      "starterId": "bot-a8ce07f8-1b85-42e6-82da-9d2ea66b58ab",
+      "hands": [
+        {
+          "playerId": "bot-a8ce07f8-1b85-42e6-82da-9d2ea66b58ab",
+          "nickname": "Min-chi Park",
+          "dice": [
+            1,
+            1,
+            1,
+            5,
+            4
+          ]
+        },
+        {
+          "playerId": "player-d7b5c482-df6a-4c98-b238-9cabfbe06c82",
+          "nickname": "Host 1",
+          "dice": [
+            1,
+            4,
+            6,
+            6,
+            6
+          ]
+        }
+      ]
+    }
+  ],
+  "roundResolutions": [],
+  "botDecisions": [],
+  "shadowDecisions": [],
+  "turnTimings": [],
+  "connectionEvents": [
+    {
+      "at": "2026-08-28T17:28:15.879Z",
+      "event": "room-created",
+      "role": "player",
+      "connectionId": "d7b754e8-f057-41fb-a82b-a523955950b1",
+      "ipHash": null,
+      "ipVersion": "ipv4",
+      "forwardedForCount": 0,
+      "userAgentHash": null,
+      "hashConfigured": false,
+      "playerId": "player-d7b5c482-df6a-4c98-b238-9cabfbe06c82"
+    }
+  ],
+  "connectionAudit": {
+    "ipHashAlgorithm": "HMAC-SHA-256",
+    "rawIpStored": false,
+    "rawUserAgentStored": false,
+    "hashSaltConfigured": false
+  },
+  "state": {
+    "phase": "playing",
+    "players": [
+      {
+        "id": "bot-a8ce07f8-1b85-42e6-82da-9d2ea66b58ab",
+        "name": "Min-chi Park",
+        "diceCount": 5,
+        "hand": [
+          1,
+          1,
+          1,
+          5,
+          4
+        ],
+        "tableDice": [],
+        "tableDiceUsed": false,
+        "paloFijoTriggered": false
+      },
+      {
+        "id": "player-d7b5c482-df6a-4c98-b238-9cabfbe06c82",
+        "name": "Host 1",
+        "diceCount": 5,
+        "hand": [
+          1,
+          4,
+          6,
+          6,
+          6
+        ],
+        "tableDice": [],
+        "tableDiceUsed": false,
+        "paloFijoTriggered": false
+      }
+    ],
+    "round": 1,
+    "paloFijo": false,
+    "rules": {
+      "turnTimeSeconds": 60,
+      "acesConversion": "halfPlusOne",
+      "paloFijoTrigger": "oneDie",
+      "paloFijoBlindDice": true,
+      "diceAmountsVisible": true,
+      "tableDiceEnabled": true
+    },
+    "currentPlayerId": "bot-a8ce07f8-1b85-42e6-82da-9d2ea66b58ab",
+    "currentBid": null,
+    "lastBidderId": null
+  }
+}

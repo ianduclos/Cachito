@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 5,
+  "gameVersion": "r2026.08.11.002",
+  "roomCode": "747Q8",
+  "startedAt": "2026-08-28T17:27:36.628Z",
+  "updatedAt": "2026-08-28T17:27:36.628Z",
+  "rules": {
+    "turnTimeSeconds": 60,
+    "acesConversion": "halfPlusOne",
+    "paloFijoTrigger": "oneDie",
+    "paloFijoBlindDice": true,
+    "diceAmountsVisible": true,
+    "tableDiceEnabled": true
+  },
+  "seats": [
+    {
+      "id": "player-3ec49fba-eccf-4194-a393-2973f1bc6f2e",
+      "name": "Host 3",
+      "nickname": "Host 3",
+      "controller": "human"
+    },
+    {
+      "id": "bot-761036c1-18df-4342-98f0-8fa878b41901",
+      "name": "La Del Burro",
+      "nickname": "La Del Burro",
+      "controller": "bot",
+      "policyName": "Gen 2 · Measured storyteller + respect gate",
+      "persona": "balanced",
+      "personaLabel": "Measured storyteller"
+    }
+  ],
+  "history": [
+    "Round 1 begins — Host 3 starts."
+  ],
+  "actions": [
+    {
+      "at": "2026-08-28T17:27:36.628Z",
+      "round": 1,
+      "action": {
+        "type": "round-start"
+      }
+    }
+  ],
+  "roundDeals": [
+    {
+      "round": 1,
+      "dealtAt": "2026-08-28T17:27:36.628Z",
+      "paloFijo": false,
+      "starterId": "player-3ec49fba-eccf-4194-a393-2973f1bc6f2e",
+      "hands": [
+        {
+          "playerId": "player-3ec49fba-eccf-4194-a393-2973f1bc6f2e",
+          "nickname": "Host 3",
+          "dice": [
+            6,
+            2,
+            4,
+            3,
+            3
+          ]
+        },
+        {
+          "playerId": "bot-761036c1-18df-4342-98f0-8fa878b41901",
+          "nickname": "La Del Burro",
+          "dice": [
+            5,
+            3,
+            1,
+            4,
+            1
+          ]
+        }
+      ]
+    }
+  ],
+  "roundResolutions": [],
+  "botDecisions": [],
+  "shadowDecisions": [],
+  "turnTimings": [],
+  "connectionEvents": [
+    {
+      "at": "2026-08-28T17:27:36.617Z",
+      "event": "room-created",
+      "role": "player",
+      "connectionId": "e0a9bbf2-a9ef-4696-8b2d-32919acd6f8f",
+      "ipHash": null,
+      "ipVersion": "ipv4",
+      "forwardedForCount": 0,
+      "userAgentHash": null,
+      "hashConfigured": false,
+      "playerId": "player-3ec49fba-eccf-4194-a393-2973f1bc6f2e"
+    }
+  ],
+  "connectionAudit": {
+    "ipHashAlgorithm": "HMAC-SHA-256",
+    "rawIpStored": false,
+    "rawUserAgentStored": false,
+    "hashSaltConfigured": false
+  },
+  "state": {
+    "phase": "playing",
+    "players": [
+      {
+        "id": "player-3ec49fba-eccf-4194-a393-2973f1bc6f2e",
+        "name": "Host 3",
+        "diceCount": 5,
+        "hand": [
+          6,
+          2,
+          4,
+          3,
+          3
+        ],
+        "tableDice": [],
+        "tableDiceUsed": false,
+        "paloFijoTriggered": false
+      },
+      {
+        "id": "bot-761036c1-18df-4342-98f0-8fa878b41901",
+        "name": "La Del Burro",
+        "diceCount": 5,
+        "hand": [
+          5,
+          3,
+          1,
+          4,
+          1
+        ],
+        "tableDice": [],
+        "tableDiceUsed": false,
+        "paloFijoTriggered": false
+      }
+    ],
+    "round": 1,
+    "paloFijo": false,
+    "rules": {
+      "turnTimeSeconds": 60,
+      "acesConversion": "halfPlusOne",
+      "paloFijoTrigger": "oneDie",
+      "paloFijoBlindDice": true,
+      "diceAmountsVisible": true,
+      "tableDiceEnabled": true
+    },
+    "currentPlayerId": "player-3ec49fba-eccf-4194-a393-2973f1bc6f2e",
+    "currentBid": null,
+    "lastBidderId": null
+  }
+}

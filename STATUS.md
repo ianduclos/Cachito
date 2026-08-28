@@ -2,17 +2,59 @@
 project: Cachito
 state: active
 updated: 2026-08-28
-summary: Lab-only session; production unchanged at r2026.08.11.002 — both open decisions are now made and applied (K2 trust weight 0.25, table dice active@leakage 1.5), the reveal-side estimator bug is fixed with every artifact regenerated, and the one remaining table-dice blocker is Ian's human read-back check.
+summary: Lab-only on the bot itself, but local match logging is fixed and shipped to the working tree — both of the day's decisions are applied (K2 weight 0.25, table dice active@leakage 1.5), the table-dice change is now confirmed to be a single-site edit, and the read-back approach was rebuilt after playing games proved a bad way to judge an 8%-frequency motif.
 machine: mac
 next:
-  - Human read-back check on the table-dice motif (Ian) — the last blocker before any src/bot/personaBluff.ts change; self-play cannot settle a legibility claim
-  - Wire active@leakage 1.5 into src/bot/personaBluff.ts once the read-back passes, then re-duel with the production policy as candidate
+  - Implement active@leakage 1.5 at the single coin-flip branch in src/bot/champion/personaBluff.ts, then re-duel with the production policy as candidate
+  - Build the reveal reel — one page of ~15 generated reveal moments, current bot vs active@1.5 side by side — as the read-back Ian can actually do
   - Finish the level-k falsification suite — arms 4 (passthrough) and 5 (exploit audit) are still unbuilt, WIP at lab 155b272
   - Decide whether lab/ joins tsc and eslint at all (60 pre-existing type errors under the app config, none from this session)
 handoff_for: ian
 ---
 
 # Cachito — status
+
+## 2026-08-28 (fourth) — local games now record themselves; the table-dice change is smaller than thought
+
+Continuation. One production-code commit (`4c7e4b3`, dev + online UI); the bot
+itself is unchanged and nothing is deployed.
+
+**Local match logging fixed (`4c7e4b3`).** A room served locally wrote *nothing*
+to disk — match logs went only to GCS, gated on `MATCH_LOG_BUCKET` — so a
+27-round game played tonight was recoverable only by opening a WebSocket to the
+running server and spectating the room. Now: no bucket configured means the same
+schema-5 record is written to `logs/online-matches/`, atomically, one file per
+match, with the server announcing which mode it is in at startup. Production
+sets the bucket, so that path is untouched. Also added an **Export log** button
+to the online analysis header, mirroring the hot-seat game's own.
+
+**The table-dice change is a SINGLE site.** `champion/personaBluff.ts` sets
+`toldStory` in three places but marks only two with `personaBluffFired`, which
+is why a bot can reveal with `deliberatePersonaBluffs: 0` — the third branch is
+Gen 2 continuing the story face on its own. All three feed one
+`random() < tableDiceChance` coin flip. The other candidate path is dead: Gen 2
+never emits table-dice indices, and `tableDicePlan` in `policies.ts` belongs to
+`createProbabilityPolicy`, which only the local hot-seat app runs.
+
+**The read-back approach was wrong and is replaced.** "Play against it" was not
+executable — the change is not written, and the motif fires on ~8% of decisions,
+so hunting it by hand is hopeless. Evidence: Ian played 27 rounds, came back
+with detailed reactions to the Calzos and the bid ladders, and never mentioned
+table dice. There were 5 bot reveals in that game. **That invisibility is the
+finding** — active@1.5 is less a value upgrade than the difference between a
+motif that registers and one that does not. Replacement plan: generate the
+matches in the lab and hand Ian a page of ~15 reveal moments, current bot
+alongside active@1.5.
+
+**From the match itself.** Ian out-called the table (7/11 Dudos, 1/2 Calzos vs
+3/8 Dudos pooled for the bots) and still went out second. Two genuinely strong
+bot Calzos: Gonchi's 4x3 holding one with three hidden across 15 dice, and
+McDonald Lewis's 3x6 holding **zero** sixes. 18 of 87 bot bids ran at >=1.5x the
+statistically expected count and 7 of those were true at reveal — the "wild"
+ladders track something real often enough to read as human. A suspected
+challenge-donation signature did NOT survive scrutiny: seating put Ian
+immediately before Monkoky, so Ian was its only legal Dudo target in 24 of 33
+turns. That check is now written into the `postgame-review` skill.
 
 ## 2026-08-28 (third) — both decisions made and applied; estimator bug closed
 

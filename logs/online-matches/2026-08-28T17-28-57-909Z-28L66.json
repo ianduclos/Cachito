@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 5,
+  "gameVersion": "r2026.08.11.002",
+  "roomCode": "28L66",
+  "startedAt": "2026-08-28T17:28:57.909Z",
+  "updatedAt": "2026-08-28T17:28:57.911Z",
+  "rules": {
+    "turnTimeSeconds": 60,
+    "acesConversion": "halfPlusOne",
+    "paloFijoTrigger": "oneDie",
+    "paloFijoBlindDice": true,
+    "diceAmountsVisible": true,
+    "tableDiceEnabled": true
+  },
+  "seats": [
+    {
+      "id": "player-d29f97c4-6010-4d91-8b04-fd94609b641d",
+      "name": "Host 3",
+      "nickname": "Host 3",
+      "controller": "human"
+    },
+    {
+      "id": "bot-c9c76a5a-e0c3-4f75-80ca-d91ea3e32791",
+      "name": "McDonald Lewis",
+      "nickname": "McDonald Lewis",
+      "controller": "bot",
+      "policyName": "Gen 2 · Measured storyteller + respect gate",
+      "persona": "balanced",
+      "personaLabel": "Measured storyteller"
+    }
+  ],
+  "history": [
+    "Round 1 begins — Host 3 starts."
+  ],
+  "actions": [
+    {
+      "at": "2026-08-28T17:28:57.909Z",
+      "round": 1,
+      "action": {
+        "type": "round-start"
+      }
+    }
+  ],
+  "roundDeals": [
+    {
+      "round": 1,
+      "dealtAt": "2026-08-28T17:28:57.909Z",
+      "paloFijo": false,
+      "starterId": "player-d29f97c4-6010-4d91-8b04-fd94609b641d",
+      "hands": [
+        {
+          "playerId": "player-d29f97c4-6010-4d91-8b04-fd94609b641d",
+          "nickname": "Host 3",
+          "dice": [
+            2,
+            1,
+            4,
+            4,
+            4
+          ]
+        },
+        {
+          "playerId": "bot-c9c76a5a-e0c3-4f75-80ca-d91ea3e32791",
+          "nickname": "McDonald Lewis",
+          "dice": [
+            2,
+            1,
+            5,
+            1,
+            1
+          ]
+        }
+      ]
+    }
+  ],
+  "roundResolutions": [],
+  "botDecisions": [],
+  "shadowDecisions": [],
+  "turnTimings": [],
+  "connectionEvents": [
+    {
+      "at": "2026-08-28T17:28:57.897Z",
+      "event": "room-created",
+      "role": "player",
+      "connectionId": "8ccea1c6-7741-4ba3-b2c1-6b15b757c032",
+      "ipHash": null,
+      "ipVersion": "ipv4",
+      "forwardedForCount": 0,
+      "userAgentHash": null,
+      "hashConfigured": false,
+      "playerId": "player-d29f97c4-6010-4d91-8b04-fd94609b641d"
+    }
+  ],
+  "connectionAudit": {
+    "ipHashAlgorithm": "HMAC-SHA-256",
+    "rawIpStored": false,
+    "rawUserAgentStored": false,
+    "hashSaltConfigured": false
+  },
+  "state": {
+    "phase": "playing",
+    "players": [
+      {
+        "id": "player-d29f97c4-6010-4d91-8b04-fd94609b641d",
+        "name": "Host 3",
+        "diceCount": 5,
+        "hand": [
+          2,
+          1,
+          4,
+          4,
+          4
+        ],
+        "tableDice": [],
+        "tableDiceUsed": false,
+        "paloFijoTriggered": false
+      },
+      {
+        "id": "bot-c9c76a5a-e0c3-4f75-80ca-d91ea3e32791",
+        "name": "McDonald Lewis",
+        "diceCount": 5,
+        "hand": [
+          2,
+          1,
+          5,
+          1,
+          1
+        ],
+        "tableDice": [],
+        "tableDiceUsed": false,
+        "paloFijoTriggered": false
+      }
+    ],
+    "round": 1,
+    "paloFijo": false,
+    "rules": {
+      "turnTimeSeconds": 60,
+      "acesConversion": "halfPlusOne",
+      "paloFijoTrigger": "oneDie",
+      "paloFijoBlindDice": true,
+      "diceAmountsVisible": true,
+      "tableDiceEnabled": true
+    },
+    "currentPlayerId": "player-d29f97c4-6010-4d91-8b04-fd94609b641d",
+    "currentBid": null,
+    "lastBidderId": null
+  }
+}
